@@ -11,16 +11,12 @@ def get_db_connection():
     return conn
 
 def init_db():
-    """Initializes the database schema with many-to-many project-case relationships."""
+    """Initializes the database with many-to-many project links and BLOB support for meta files."""
     os.makedirs(os.path.dirname(DATABASE_PATH), exist_ok=True)
-    
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    # 1. Roles table
     cursor.execute('CREATE TABLE IF NOT EXISTS roles (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE NOT NULL)')
-
-    # 2. Users table
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -32,36 +28,64 @@ def init_db():
             FOREIGN KEY (role_id) REFERENCES roles (id)
         )
     ''')
-
-    # 3. Projects table
+    
+    # Projects table: added source_file_blob
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS projects (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT UNIQUE NOT NULL,
             description TEXT,
             source_file TEXT,
+            source_file_blob BLOB, 
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
 
-    # 4. Cases table (Formerly documents)
-    # UNIQUE on case_number + version_number ensures deduplication
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS cases (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             case_number TEXT NOT NULL,
             version_number TEXT NOT NULL,
-            filename TEXT,       -- Display name (e.g. 12345-1.json)
-            pages TEXT NOT NULL, -- JSON array of narratives
-            meta TEXT,           -- JSON object (HTML snippets)
-            full_data TEXT,      -- JSON object (ALL original Excel columns)
+            mcn_or_ctu TEXT,
+            report_type TEXT,
+            form_type TEXT,
+            initial_fda_received_date TEXT,
+            latest_fda_received_date TEXT,
+            completeness_score TEXT,
+            patient_id TEXT,
+            age_in_years TEXT,
+            dob TEXT,
+            sex TEXT,
+            weight_in_kg TEXT,
+            race TEXT,
+            medical_history_and_comments TEXT,
+            sender_mfr_organization TEXT,
+            reporter_organization TEXT,
+            country_derived TEXT,
+            reporter_qualifications TEXT,
+            health_professional TEXT,
+            report_source TEXT,
+            narrative TEXT,
+            seriousness TEXT,
+            all_outcomes TEXT,
+            all_suspect_products TEXT,
+            all_suspect_pais TEXT,
+            all_concomitant_products TEXT,
+            all_llts TEXT,
+            all_pts TEXT,
+            all_hlts TEXT,
+            all_hlgts TEXT,
+            all_socs TEXT,
+            annotate_filename TEXT,
+            pages TEXT, 
+            meta TEXT,  
+            full_data TEXT, 
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             UNIQUE(case_number, version_number)
         )
     ''')
 
-    # 5. Project-Case Link table (Many-to-Many)
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS project_cases (
             project_id INTEGER NOT NULL,
@@ -72,7 +96,6 @@ def init_db():
         )
     ''')
 
-    # 6. Annotations table
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS annotations (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -90,55 +113,60 @@ def init_db():
         )
     ''')
 
-    # Seeding
+    # Seed initial data
     roles = [('Admin',), ('Annotator',), ('Adjudicator',), ('AI',)]
     cursor.executemany('INSERT OR IGNORE INTO roles (name) VALUES (?)', roles)
     cursor.execute('SELECT id, name FROM roles')
-    role_map = {name: id for id, name in cursor.fetchall()}
-
-    users_to_seed = [
-        ('Admin', 'System Administrator', role_map['Admin'], None),
-        ('MJ.L', 'MJ.L', role_map['Annotator'], 'SME1'),
-        ('K.L', 'K.L', role_map['Annotator'], 'SME2'),
-        ('L.W', 'L.W', role_map['Adjudicator'], None),
-        ('O.D', 'O.D', role_map['Adjudicator'], None),
-        ('Llama4', 'Meta Llama 4', role_map['AI'], 'LLM'),
-        ('BioBERT', 'BioBERT Foundation', role_map['AI'], 'BERT'),
-        ('Elsa', 'Elsa AI Agent', role_map['AI'], None)
+    rmap = {n: i for i, n in cursor.fetchall()}
+    users = [
+        ('Admin', 'System Administrator', rmap['Admin'], None),
+        ('MJ.L', 'MJ.L', rmap['Annotator'], 'SME1'),
+        ('K.L', 'K.L', rmap['Annotator'], 'SME2'),
+        ('L.W', 'L.W', rmap['Adjudicator'], None),
+        ('O.D', 'O.D', rmap['Adjudicator'], None),
+        ('Llama4', 'Meta Llama 4', rmap['AI'], 'LLM'),
+        ('BioBERT', 'BioBERT Foundation', rmap['AI'], 'BERT'),
+        ('Elsa', 'Elsa AI Agent', rmap['AI'], None)
     ]
-    cursor.executemany('INSERT OR IGNORE INTO users (username, full_name, role_id, migration_key) VALUES (?, ?, ?, ?)', users_to_seed)
-
+    cursor.executemany('INSERT OR IGNORE INTO users (username, full_name, role_id, migration_key) VALUES (?, ?, ?, ?)', users)
     conn.commit()
     conn.close()
 
 # --- Helper Functions ---
 
-def create_project(name, description=None, source_file=None):
+def create_project(name, description=None, source_file=None, source_blob=None):
     conn = get_db_connection()
     try:
         conn.execute('''
-            INSERT INTO projects (name, description, source_file) VALUES (?, ?, ?)
-            ON CONFLICT(name) DO UPDATE SET source_file = COALESCE(excluded.source_file, projects.source_file)
-        ''', (name, description, source_file))
+            INSERT INTO projects (name, description, source_file, source_file_blob) VALUES (?, ?, ?, ?)
+            ON CONFLICT(name) DO UPDATE SET 
+                source_file = COALESCE(excluded.source_file, projects.source_file),
+                source_file_blob = COALESCE(excluded.source_file_blob, projects.source_file_blob)
+        ''', (name, description, source_file, source_blob))
         conn.commit()
         return conn.execute('SELECT id FROM projects WHERE name = ?', (name,)).fetchone()['id']
     finally: conn.close()
 
-def upsert_case(case_num, ver_num, pages, meta, full_data, filename=None):
+def upsert_case(case_num, ver_num, attributes):
     conn = get_db_connection()
     try:
-        # 1. Insert or Update Case
-        conn.execute('''
-            INSERT INTO cases (case_number, version_number, filename, pages, meta, full_data, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-            ON CONFLICT(case_number, version_number) DO UPDATE SET
-                pages = excluded.pages,
-                meta = excluded.meta,
-                full_data = excluded.full_data,
-                updated_at = CURRENT_TIMESTAMP
-        ''', (case_num, ver_num, filename, json.dumps(pages), json.dumps(meta), json.dumps(full_data)))
-        
-        case_id = conn.execute('SELECT id FROM cases WHERE case_number = ? AND version_number = ?', (case_num, ver_num)).fetchone()['id']
+        existing = conn.execute('SELECT * FROM cases WHERE case_number = ? AND version_number = ?', (case_num, ver_num)).fetchone()
+        if existing:
+            updates, params = [], []
+            for col, val in attributes.items():
+                new_val = str(val).strip() if val is not None else ""
+                final_val = new_val if new_val else existing[col]
+                updates.append(f"{col} = ?")
+                params.append(final_val)
+            params.extend([case_num, ver_num])
+            conn.execute(f'UPDATE cases SET {", ".join(updates)}, updated_at = CURRENT_TIMESTAMP WHERE case_number = ? AND version_number = ?', params)
+            case_id = existing['id']
+        else:
+            cols = ['case_number', 'version_number'] + list(attributes.keys())
+            placeholders = ', '.join(['?'] * len(cols))
+            vals = [case_num, ver_num] + [str(v).strip() if v is not None else "" for v in attributes.values()]
+            cursor = conn.execute(f'INSERT INTO cases ({", ".join(cols)}) VALUES ({placeholders})', vals)
+            case_id = cursor.lastrowid
         conn.commit()
         return case_id
     finally: conn.close()
@@ -161,12 +189,11 @@ def get_case(case_id=None, project_id=None, filename=None):
     if case_id:
         res = conn.execute('SELECT * FROM cases WHERE id = ?', (case_id,)).fetchone()
     else:
-        # Find by filename within a specific project
         res = conn.execute('''
             SELECT c.* FROM cases c
             JOIN project_cases pc ON c.id = pc.case_id
-            WHERE pc.project_id = ? AND c.filename = ?
-        ''', (project_id, filename)).fetchone()
+            WHERE pc.project_id = ? AND (c.filename = ? OR c.annotate_filename = ?)
+        ''', (project_id, filename, filename)).fetchone()
     conn.close()
     return res
 
