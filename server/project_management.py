@@ -91,8 +91,12 @@ def create_project_from_excel():
             except: ver_num = str(raw_ver).strip() or "1"
 
             attrs = {k: get_mapped_value(row, k) for k in COL_MAP.keys()}
+            
+            # Default annotate_filename if missing
+            if not attrs['annotate_filename']:
+                attrs['annotate_filename'] = f"{case_num}-{ver_num}.json"
+
             attrs['pages'] = json.dumps([attrs['narrative']])
-            attrs['filename'] = f"{case_num}-{ver_num}.json"
             attrs['meta'] = json.dumps({
                 "demographic": generate_demographic_content(row, mode=file_mode),
                 "outcomes": generate_outcomes_content(row, mode=file_mode),
@@ -103,7 +107,7 @@ def create_project_from_excel():
             case_id = upsert_case(case_num, ver_num, attrs)
             link_case_to_project(project_id, case_id)
 
-        return jsonify({'message': f'Project {project_name} imported to database.'}), 200
+        return jsonify({'message': f'Project {project_name} imported successfully.'}), 200
 
     except Exception as e:
         print(traceback.format_exc())

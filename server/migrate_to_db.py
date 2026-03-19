@@ -9,13 +9,13 @@ HISTORY_DIR = os.path.join(os.path.dirname(__file__), 'history')
 META_DIR = os.path.join(HISTORY_DIR, 'Meta')
 
 def migrate():
-    # 1. Initialize DB with the latest schema (including cases table and blobs)
+    # 1. Initialize DB with the latest schema
     init_db()
     
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    # 2. User mapping cache for migration
+    # 2. User mapping cache
     cursor.execute('SELECT id, username, migration_key FROM users')
     user_mapping = {}
     for u in cursor.fetchall():
@@ -38,7 +38,7 @@ def migrate():
 
         print(f"--- Migrating Project: {project_name} ---")
         
-        # Determine source_file and blob from Meta folder
+        # Determine source_file and blob
         source_file = None
         source_blob = None
         if os.path.exists(META_DIR):
@@ -51,12 +51,11 @@ def migrate():
 
         project_id = create_project(project_name, source_file=source_file, source_blob=source_blob)
 
-        # 4. Process JSON Files in the project subfolder
+        # 4. Process JSON Files
         for filename in os.listdir(project_path):
             if not filename.endswith('.json'):
                 continue
                 
-            # Extract case/version from filename (e.g., "12345-1.json")
             case_num, ver_num = "0", "1"
             match = re.match(r'^(.+)-(.+)\.json$', filename)
             if match:
@@ -67,32 +66,25 @@ def migrate():
                 with open(file_path, 'r', encoding='utf-8') as f:
                     data = json.load(f)
                 
-                # Narrative and Meta logic
                 narrative = data.get('pages', [""])[0]
                 meta_data = data.get('meta', {})
                 
-                # Prepare attributes for upsert_case
-                # Since we are migrating from JSON, we might not have all 31 columns 
-                # unless they were saved in the JSON. We'll populate what we have.
                 attrs = {
                     'narrative': narrative,
                     'pages': json.dumps(data.get('pages', [])),
                     'meta': json.dumps(meta_data),
-                    'filename': filename,
                     'annotate_filename': filename
                 }
                 
-                # If the JSON has a 'full_data' key (saved by newer versions), use it
                 if 'full_data' in data:
                     attrs.update(data['full_data'])
 
-                # 5. Upsert Case and Link to Project
+                # 5. Upsert Case and Link
                 case_id = upsert_case(case_num, ver_num, attrs)
                 link_case_to_project(project_id, case_id)
 
                 # 6. Insert Annotations
                 annotations = data.get('annotations', [])
-                # Clear existing for this case before re-migrating
                 conn.execute('DELETE FROM annotations WHERE case_id = ?', (case_id,))
                 
                 for ann in annotations:
@@ -103,16 +95,10 @@ def migrate():
                             user_id = val
                             break
                     
-                    label = ann.get('label', 'UNKNOWN')
-                    start = ann.get('textContext', {}).get('start', 0)
-                    end = ann.get('textContext', {}).get('end', 0)
-                    text_content = ann.get('textContext', {}).get('text', '')
-                    relationships = json.dumps(ann.get('relationships', {}))
-                    
                     conn.execute('''
                         INSERT INTO annotations (case_id, user_id, label, start_offset, end_offset, text_content, note, relationships)
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                    ''', (case_id, user_id, label, start, end, text_content, note, relationships))
+                    ''', (case_id, user_id, ann.get('label', 'UNKNOWN'), ann.get('textContext', {}).get('start', 0), ann.get('textContext', {}).get('end', 0), ann.get('textContext', {}).get('text', ''), ann.get('note', ''), json.dumps(ann.get('relationships', {}))))
 
             except Exception as e:
                 print(f"  Error processing {filename}: {e}")
@@ -120,7 +106,7 @@ def migrate():
         conn.commit()
 
     conn.close()
-    print("--- Migration Complete (New Schema) ---")
+    print("--- Migration Complete ---")
 
 if __name__ == "__main__":
     migrate()

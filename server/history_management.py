@@ -25,7 +25,7 @@ def list_history_files(folder_name=''):
         if not project: return jsonify({'files': []}), 200
 
         conn = get_db_connection()
-        docs = conn.execute('SELECT id, filename, meta FROM cases c JOIN project_cases pc ON c.id = pc.case_id WHERE pc.project_id = ?', (project['id'],)).fetchall()
+        docs = conn.execute('SELECT id, annotate_filename, meta FROM cases c JOIN project_cases pc ON c.id = pc.case_id WHERE pc.project_id = ?', (project['id'],)).fetchall()
         
         json_files = []
         for doc in docs:
@@ -39,14 +39,13 @@ def list_history_files(folder_name=''):
                 else: counts['Other'] += 1
 
             json_files.append({
-                'filename': doc['filename'],
+                'filename': doc['annotate_filename'],
                 'counts': counts,
                 'meta': json.loads(doc['meta']) if doc['meta'] else {}
             })
         conn.close()
         return jsonify({'files': json_files})
     except Exception as e:
-        logging.error(f"List error: {e}")
         return jsonify({'error': str(e)}), 500
 
 @history_blueprint.route('/api/history/<path:file_path>', methods=['GET', 'POST', 'DELETE'])
@@ -58,7 +57,7 @@ def history_file(file_path):
         else:
             project_name, filename = 'Playground', file_path
 
-        if not filename.endswith('.json'): filename += '.json'
+        # filename here refers to annotate_filename
         project = get_project_by_name(project_name)
 
         if request.method in ['GET', 'POST']:
@@ -68,7 +67,11 @@ def history_file(file_path):
                 narrative = data.get('narrative', '')
                 if narrative:
                     pid = project['id'] if project else create_project(project_name)
-                    cid = upsert_case("0", "1", {'narrative': narrative, 'pages': json.dumps([narrative]), 'filename': filename})
+                    cid = upsert_case("0", "1", {
+                        'narrative': narrative, 
+                        'pages': json.dumps([narrative]), 
+                        'annotate_filename': filename
+                    })
                     from database_manager import link_case_to_project
                     link_case_to_project(pid, cid)
                     doc = get_case(case_id=cid)
@@ -88,7 +91,7 @@ def history_file(file_path):
         elif request.method == 'DELETE':
             if not project: return jsonify({'error': 'No project'}), 404
             conn = get_db_connection()
-            conn.execute('DELETE FROM project_cases WHERE project_id = ? AND case_id = (SELECT id FROM cases WHERE filename = ?)', (project['id'], filename))
+            conn.execute('DELETE FROM project_cases WHERE project_id = ? AND case_id = (SELECT id FROM cases WHERE annotate_filename = ?)', (project['id'], filename))
             conn.commit()
             conn.close()
             return jsonify({'message': 'Deleted'})
@@ -101,16 +104,18 @@ def save_file():
     fname = data.get('fileName', '').strip()
     folder = data.get('curr_folder', 'Playground').strip()
     if '___' in folder: folder = folder.split('___')[0]
-    if not fname.endswith('.json'): fname += '.json'
 
     try:
         project_id = create_project(folder)
-        # For ad-hoc saves, we use generic case/ver if not provided
-        case_id = upsert_case("0", "1", {
+        # Check if already exists to get its case/ver
+        existing = get_case(project_id=project_id, filename=fname)
+        c_num, v_num = (existing['case_number'], existing['version_number']) if existing else ("0", "1")
+
+        case_id = upsert_case(c_num, v_num, {
             'narrative': data.get('pages', [""])[0],
             'pages': json.dumps(data.get('pages', [])),
             'meta': json.dumps(data.get('meta', {})),
-            'filename': fname
+            'annotate_filename': fname
         })
         from database_manager import link_case_to_project
         link_case_to_project(project_id, case_id)
@@ -133,23 +138,15 @@ def save_file():
 def get_meta_file():
     fname = request.args.get('file')
     if not fname: return jsonify({'error': 'Missing file'}), 400
-    
     try:
         conn = get_db_connection()
         row = conn.execute('SELECT source_file_blob FROM projects WHERE source_file = ?', (fname,)).fetchone()
         conn.close()
-        
         if row and row['source_file_blob']:
-            file_stream = io.BytesIO(row['source_file_blob'])
-        else:
-            # Fallback to file system
-            path = os.path.join(os.path.dirname(__file__), 'history', 'Meta', fname)
-            if not os.path.exists(path): return jsonify({'error': 'Not found'}), 404
-            with open(path, 'rb') as f: file_stream = io.BytesIO(f.read())
-
-        xl = pd.ExcelFile(file_stream, engine='openpyxl')
-        target = "Case Detail" if "Case Detail" in xl.sheet_names else ("Case Details" if "Case Details" in xl.sheet_names else xl.sheet_names[0])
-        df = xl.parse(sheet_name=target).fillna('')
-        return jsonify({'records': df.to_dict(orient="records")})
+            xl = pd.ExcelFile(io.BytesIO(row['source_file_blob']), engine='openpyxl')
+            target = "Case Detail" if "Case Detail" in xl.sheet_names else ("Case Details" if "Case Details" in xl.sheet_names else xl.sheet_names[0])
+            df = xl.parse(sheet_name=target).fillna('')
+            return jsonify({'records': df.to_dict(orient="records")})
+        return jsonify({'error': 'Not found'}), 404
     except Exception as e:
         return jsonify({'error': str(e)}), 500

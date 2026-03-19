@@ -11,7 +11,7 @@ def get_db_connection():
     return conn
 
 def init_db():
-    """Initializes the database with many-to-many project links and BLOB support for meta files."""
+    """Initializes the database without the redundant filename column."""
     os.makedirs(os.path.dirname(DATABASE_PATH), exist_ok=True)
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -29,7 +29,6 @@ def init_db():
         )
     ''')
     
-    # Projects table: added source_file_blob
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS projects (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -113,7 +112,6 @@ def init_db():
         )
     ''')
 
-    # Seed initial data
     roles = [('Admin',), ('Annotator',), ('Adjudicator',), ('AI',)]
     cursor.executemany('INSERT OR IGNORE INTO roles (name) VALUES (?)', roles)
     cursor.execute('SELECT id, name FROM roles')
@@ -154,17 +152,18 @@ def upsert_case(case_num, ver_num, attributes):
         if existing:
             updates, params = [], []
             for col, val in attributes.items():
+                if col in ['case_number', 'version_number']: continue
                 new_val = str(val).strip() if val is not None else ""
-                final_val = new_val if new_val else existing[col]
+                final_val = new_val if new_val else (existing[col] or "")
                 updates.append(f"{col} = ?")
                 params.append(final_val)
             params.extend([case_num, ver_num])
             conn.execute(f'UPDATE cases SET {", ".join(updates)}, updated_at = CURRENT_TIMESTAMP WHERE case_number = ? AND version_number = ?', params)
             case_id = existing['id']
         else:
-            cols = ['case_number', 'version_number'] + list(attributes.keys())
+            cols = ['case_number', 'version_number'] + [k for k in attributes.keys() if k not in ['case_number', 'version_number']]
             placeholders = ', '.join(['?'] * len(cols))
-            vals = [case_num, ver_num] + [str(v).strip() if v is not None else "" for v in attributes.values()]
+            vals = [case_num, ver_num] + [str(attributes[k]).strip() if attributes[k] is not None else "" for k in cols[2:]]
             cursor = conn.execute(f'INSERT INTO cases ({", ".join(cols)}) VALUES ({placeholders})', vals)
             case_id = cursor.lastrowid
         conn.commit()
@@ -189,11 +188,12 @@ def get_case(case_id=None, project_id=None, filename=None):
     if case_id:
         res = conn.execute('SELECT * FROM cases WHERE id = ?', (case_id,)).fetchone()
     else:
+        # Search by annotate_filename within a project
         res = conn.execute('''
             SELECT c.* FROM cases c
             JOIN project_cases pc ON c.id = pc.case_id
-            WHERE pc.project_id = ? AND (c.filename = ? OR c.annotate_filename = ?)
-        ''', (project_id, filename, filename)).fetchone()
+            WHERE pc.project_id = ? AND c.annotate_filename = ?
+        ''', (project_id, filename)).fetchone()
     conn.close()
     return res
 
