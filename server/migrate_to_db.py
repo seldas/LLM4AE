@@ -1,62 +1,71 @@
 import os
 import json
 import sqlite3
+import re
 from database_manager import get_db_connection, init_db
 
 # Configuration
 HISTORY_DIR = os.path.join(os.path.dirname(__file__), 'history')
+META_DIR = os.path.join(HISTORY_DIR, 'Meta')
 
 def migrate():
-    # 1. Initialize DB if not exists
+    # 1. Initialize DB with new schema
     init_db()
     
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    # 2. Build User/Role Cache for mapping
-    # We map 'SME1', 'SME2', 'LLM' (migration_keys) to actual user_ids
+    # 2. User mapping cache
     cursor.execute('SELECT id, username, migration_key FROM users')
-    user_rows = cursor.fetchall()
-    
-    # Map both username and migration_key to the same user_id
     user_mapping = {}
-    for u in user_rows:
+    for u in cursor.fetchall():
         user_mapping[u['username'].upper()] = u['id']
         if u['migration_key']:
             user_mapping[u['migration_key'].upper()] = u['id']
             
-    # Default fallback user (Admin) for unknown notes
     cursor.execute("SELECT id FROM users WHERE username = 'Admin'")
     admin_id = cursor.fetchone()['id']
 
-    # 3. Process Projects
     if not os.path.exists(HISTORY_DIR):
         print(f"Error: History directory {HISTORY_DIR} not found.")
         return
 
-    # Ensure "Playground" project exists
-    cursor.execute("INSERT OR IGNORE INTO projects (name, description) VALUES (?, ?)", 
-                   ('Playground', 'Ad-hoc manual annotations'))
-    conn.commit()
-
+    # 3. Process Projects
     for project_name in os.listdir(HISTORY_DIR):
         project_path = os.path.join(HISTORY_DIR, project_name)
-        
-        # Skip 'Meta' folder and non-directories
         if not os.path.isdir(project_path) or project_name == 'Meta':
             continue
 
         print(f"--- Migrating Project: {project_name} ---")
         
-        # Create or Get Project ID
-        cursor.execute("INSERT OR IGNORE INTO projects (name) VALUES (?)", (project_name,))
+        # Determine source_file from Meta folder
+        # Expecting something like "{project_name}_Meta.xlsx"
+        source_file = None
+        if os.path.exists(META_DIR):
+            for mfile in os.listdir(META_DIR):
+                if mfile.startswith(project_name) and mfile.endswith('.xlsx'):
+                    source_file = mfile
+                    break
+
+        cursor.execute('''
+            INSERT INTO projects (name, source_file) 
+            VALUES (?, ?)
+            ON CONFLICT(name) DO UPDATE SET source_file = excluded.source_file
+        ''', (project_name, source_file))
+        
         cursor.execute("SELECT id FROM projects WHERE name = ?", (project_name,))
         project_id = cursor.fetchone()['id']
 
-        # 4. Process JSON Files in Project
+        # 4. Process JSON Files
         for filename in os.listdir(project_path):
             if not filename.endswith('.json'):
                 continue
+                
+            # Extract case/version from filename (e.g., "12345-1.json")
+            case_num, ver_num = None, None
+            match = re.match(r'^(.+)-(.+)\.json$', filename)
+            if match:
+                case_num, ver_num = match.groups()
                 
             file_path = os.path.join(project_path, filename)
             try:
@@ -66,30 +75,32 @@ def migrate():
                 pages_json = json.dumps(data.get('pages', []))
                 meta_json = json.dumps(data.get('meta', {}))
                 
-                # Insert Document
                 cursor.execute('''
-                    INSERT OR IGNORE INTO documents (project_id, filename, pages, meta)
-                    VALUES (?, ?, ?, ?)
-                ''', (project_id, filename, pages_json, meta_json))
+                    INSERT INTO documents (project_id, filename, pages, meta, case_number, version_number)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(project_id, filename) DO UPDATE SET
+                        pages = excluded.pages,
+                        meta = excluded.meta,
+                        case_number = excluded.case_number,
+                        version_number = excluded.version_number
+                ''', (project_id, filename, pages_json, meta_json, case_num, ver_num))
                 
-                cursor.execute('SELECT id FROM documents WHERE project_id = ? AND filename = ?', 
-                               (project_id, filename))
+                cursor.execute('SELECT id FROM documents WHERE project_id = ? AND filename = ?', (project_id, filename))
                 doc_id = cursor.fetchone()['id']
 
                 # 5. Insert Annotations
                 annotations = data.get('annotations', [])
+                # Clear existing for this doc before re-migrating
+                conn.execute('DELETE FROM annotations WHERE document_id = ?', (doc_id,))
+                
                 for ann in annotations:
-                    # Determine User ID from 'note' or fallback
                     note = str(ann.get('note', '')).strip().upper()
-                    
-                    # Search mapping (e.g., 'SME1' -> MJ.L's ID)
                     user_id = admin_id
                     for key, val in user_mapping.items():
-                        if key in note: # Partial match (e.g. 'SME1 (auto)')
+                        if key in note:
                             user_id = val
                             break
                     
-                    # Extract fields
                     label = ann.get('label', 'UNKNOWN')
                     start = ann.get('textContext', {}).get('start', 0)
                     end = ann.get('textContext', {}).get('end', 0)
@@ -107,7 +118,7 @@ def migrate():
         conn.commit()
 
     conn.close()
-    print("--- Migration Complete ---")
+    print("--- Migration Complete with Meta Info ---")
 
 if __name__ == "__main__":
     migrate()
