@@ -1,0 +1,7 @@
+*
+.*
+!history
+!uploads
+!*.json
+!*.py
+!*.txt

@@ -1,0 +1,64 @@
+services:
+  nginx_dev:
+    image: nginx:1.27-alpine
+    container_name: docanno_nginx_dev
+    restart: always
+    ports:
+      - "8862:80"
+    volumes:
+      - ./nginx/conf.dev.d:/etc/nginx/conf.d
+    depends_on:
+      - docanno_frontend_dev
+      - docanno_backend_dev
+    networks:
+      - internal
+
+  docanno_frontend_dev:
+    build:
+      context: ./client
+    container_name: docanno_frontend_dev
+    image: docanno_frontend_dev
+    working_dir: /app
+    user: "${LOCAL_UID}:${LOCAL_GID}"
+    volumes:
+      - ./client:/app
+    expose:
+      - "3000"
+    environment:
+      - NODE_ENV=development
+      - HOME=/tmp
+      - npm_config_cache=/tmp/.npm
+    command: sh -c "npm install --legacy-peer-deps && npm run dev"
+    networks:
+      - internal
+
+  docanno_backend_dev:
+    image: python:3.11-slim
+    container_name: docanno_backend_dev
+    working_dir: /app
+    user: "${LOCAL_UID}:${LOCAL_GID}"
+    volumes:
+      - ./server:/app
+    expose:
+      - "5000"
+    environment:
+      FLASK_ENV: development
+      HOME: /tmp
+      PIP_DISABLE_PIP_VERSION_CHECK: "1"
+      VIRTUAL_ENV: /app/.venv
+      PATH: /app/.venv/bin:$PATH
+    command: >
+      sh -c "python -m venv /app/.venv &&
+             pip install --no-cache-dir -r requirements.txt &&
+             python -u app.py"
+    networks:
+      - internal
+
+
+volumes:
+  docanno_backend_venv:
+  docanno_frontend_node_modules:
+
+networks:
+  internal:
+    driver: bridge
