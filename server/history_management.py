@@ -4,203 +4,201 @@ import os
 import re
 import logging
 import pandas as pd
+from database_manager import (
+    get_db_connection, 
+    get_project_by_name, 
+    create_project, 
+    get_document, 
+    upsert_document, 
+    get_annotations, 
+    save_annotations, 
+    get_user_by_note
+)
 
 history_blueprint = Blueprint('history', __name__)
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 HISTORY_FOLDER = os.path.join(BASE_DIR, 'history')
-os.makedirs(HISTORY_FOLDER, exist_ok=True)
 
-# Endpoint to list .json files in the history folder and update LLM meta info
+# Endpoint to list documents in a project from DB
 @history_blueprint.route('/api/history-files/<folder_name>', methods=['GET'])
 def list_history_files(folder_name=''):
     try:
-        base_folder = HISTORY_FOLDER
-        folder_path = os.path.join(base_folder, 'Playground') if not folder_name else os.path.join(base_folder, folder_name)
+        project_name = folder_name or 'Playground'
+        project = get_project_by_name(project_name)
+        
+        if not project:
+            return jsonify({'files': [], 'message': f'Project {project_name} not found in DB'}), 200
 
-        if not os.path.exists(folder_path):
-            return jsonify({'files': [], 'error': f'Folder not found: {folder_path}'}), 200
-
+        conn = get_db_connection()
+        query = '''
+            SELECT d.id, d.filename, d.meta
+            FROM documents d
+            WHERE d.project_id = ?
+        '''
+        docs = conn.execute(query, (project['id'],)).fetchall()
+        
         json_files = []
+        for doc in docs:
+            doc_id = doc['id']
+            filename = doc['filename']
+            meta = json.loads(doc['meta']) if doc['meta'] else {}
+            
+            # Count annotations per functional group
+            # Mapping database notes/usernames to frontend groups
+            counts = {'LLM': 0, 'SME1': 0, 'SME2': 0, 'Other': 0}
+            
+            annotations = get_annotations(doc_id)
+            for ann in annotations:
+                note = (ann['note'] or '').upper()
+                if 'LLM' in note or 'Llama4' in note.capitalize() or 'BioBERT' in note.capitalize():
+                    counts['LLM'] += 1
+                elif 'SME2' in note or 'K.L' in note: 
+                    counts['SME2'] += 1
+                elif 'SME' in note or 'MJ.L' in note:
+                    counts['SME1'] += 1
+                else:
+                    counts['Other'] += 1
 
-        for entry in os.scandir(folder_path):
-            if entry.is_file() and entry.name.endswith('.json'):
-                file_info = {
-                    'filename': entry.name,
-                    'counts': {'LLM': 0, 'SME1': 0, 'SME2': 0, 'Other': 0}
-                }
+            json_files.append({
+                'filename': filename,
+                'counts': counts,
+                'meta': meta
+            })
 
-                try:
-                    full_path = entry.path
-                    with open(full_path, 'r', encoding='utf-8') as f:
-                        data = json.load(f)
-
-                    updated = False
-                    annotations = data.get('annotations', [])
-                    for ann in annotations:
-                        note = (ann.get('note') or '').upper()
-                        if 'LLM' in note:
-                            file_info['counts']['LLM'] += 1
-                        elif 'SME2' in note: 
-                            file_info['counts']['SME2'] += 1
-                        elif 'SME' in note: # SME, if not specified, related to SME1
-                            file_info['counts']['SME1'] += 1
-                        else:
-                            file_info['counts']['Other'] += 1
-
-                    if 'meta' not in data:
-                        data['meta'] = {}
-                        updated = True
-                        
-                    file_info['meta'] = data['meta']
-
-                    if updated:
-                        with open(full_path, 'w', encoding='utf-8') as fw:
-                            json.dump(data, fw, indent=2, ensure_ascii=False)
-
-                except Exception as e:
-                    file_info['error'] = str(e)
-
-                json_files.append(file_info)
-
+        conn.close()
         return jsonify({'files': json_files})
 
     except Exception as e:
+        logging.error(f"Error listing history files: {e}")
         return jsonify({'error': str(e)}), 500
 
-# Endpoint to upload a history file
-@history_blueprint.route('/api/upload-history', methods=['POST'])
-def upload_history_file():
-    curr_folder = request.form.get('curr_folder')
-
-    if not curr_folder:
-        return jsonify({'error': 'Missing target folder'}), 400
-
-    # Ensure slashes are normalized and secure
-    curr_folder = re.sub('___', '/', curr_folder.strip())
-    target_folder = os.path.join(HISTORY_FOLDER, curr_folder)
-
-    # Ensure the file exists in the request
-    if 'file' not in request.files:
-        return jsonify({'error': 'No file uploaded'}), 400
-
-    uploaded_file = request.files['file']
-
-    if not uploaded_file.filename.endswith('.json'):
-        return jsonify({'error': 'Unsupported file format. Only JSON files are allowed.'}), 400
-
-    # Extract base filename and prepare target path
-    original_filename = uploaded_file.filename
-    file_name, file_extension = os.path.splitext(original_filename)
-
-    os.makedirs(target_folder, exist_ok=True)  # Ensure directory exists
-    file_path = os.path.join(target_folder, original_filename)
-
-    counter = 1
-    while os.path.exists(file_path):
-        file_path = os.path.join(target_folder, f"{file_name}({counter}){file_extension}")
-        counter += 1
-
-    try:
-        uploaded_file.save(file_path)
-        return jsonify({'message': f'File {os.path.basename(file_path)} uploaded successfully.'}), 200
-    except Exception as e:
-        logging.error(f"Error while uploading history file: {e}")
-        return jsonify({'error': f'Failed to upload file: {str(e)}'}), 500
-
-# Endpoint to load or delete a specific history file
+# Endpoint to load or delete a specific history file from DB
 @history_blueprint.route('/api/history/<path:file_path>', methods=['GET', 'POST', 'DELETE'])
 def history_file(file_path):
     try:
         if '___' in file_path:
             parts = file_path.split('___')
+            project_name = parts[0]
+            filename = parts[1]
         else:
-            parts = [file_path]
+            project_name = 'Playground'
+            filename = file_path
 
-        json_file_path = os.path.join(HISTORY_FOLDER, *parts)
-        print(f"DEBUG: Accessing file at {json_file_path}")
+        if not filename.endswith('.json'):
+            filename += '.json'
+
+        project = get_project_by_name(project_name)
+        if not project and request.method != 'DELETE':
+            project_id = create_project(project_name)
+            project = {'id': project_id}
 
         if request.method in ['GET', 'POST']:
-            if not os.path.exists(json_file_path):
-                # ✅ Check for narrative in query params
-                data = request.get_json()
+            doc = get_document(project['id'], filename)
+            
+            if not doc:
+                data = request.get_json(silent=True) or {}
                 narrative = data.get('narrative', '')
                 if narrative:
-                    print(f"INFO: File not found, creating new with narrative.")
-                    os.makedirs(os.path.dirname(json_file_path), exist_ok=True)
-                    with open(json_file_path, 'w', encoding='utf-8') as f:
-                        json.dump({
-                            "pages": [narrative],
-                            "annotations": [],
-                            "meta": {}
-                        }, f, ensure_ascii=False, indent=2)
+                    upsert_document(project['id'], filename, [narrative], {})
+                    doc = get_document(project['id'], filename)
                 else:
-                    return jsonify({'error': 'File not found and no narrative provided'}), 404
+                    return jsonify({'error': 'Document not found in database'}), 404
 
-            with open(json_file_path, "r", encoding="utf-8", errors="ignore") as f:
-                json_data = json.load(f)
-                try:
-                    json_data['pages'] = [x.encode("latin1").decode("utf-8") for x in json_data['pages']]
-                except Exception:
-                    pass
-                return jsonify(json_data)
+            # Prepare JSON response in existing format
+            # pages is stored as JSON string in DB
+            pages = json.loads(doc['pages'])
+            meta = json.loads(doc['meta']) if doc['meta'] else {}
+            
+            # Get all annotations
+            db_annotations = get_annotations(doc['id'])
+            annotations = []
+            for ann in db_annotations:
+                annotations.append({
+                    'label': ann['label'],
+                    'textContext': {
+                        'start': ann['start_offset'],
+                        'end': ann['end_offset'],
+                        'text': ann['text_content']
+                    },
+                    'note': ann['note'],
+                    'relationships': json.loads(ann['relationships']) if ann['relationships'] else {}
+                })
+            
+            return jsonify({
+                'pages': pages,
+                'annotations': annotations,
+                'meta': meta
+            })
+
         elif request.method == 'DELETE':
-            if not os.path.exists(json_file_path):
-                return jsonify({'error': 'File not found'}), 404
-            os.remove(json_file_path)
-            return jsonify({'message': f'{parts[-1]} deleted successfully.'}), 200
+            if not project:
+                return jsonify({'error': 'Project not found'}), 404
+            
+            conn = get_db_connection()
+            conn.execute('DELETE FROM documents WHERE project_id = ? AND filename = ?', (project['id'], filename))
+            conn.commit()
+            conn.close()
+            return jsonify({'message': f'{filename} deleted successfully from database.'}), 200
 
     except Exception as e:
+        logging.error(f"Error in history_file: {e}")
         return jsonify({'error': str(e)}), 500
 
-# Endpoint to save content to a .txt file in the history folder
+# Endpoint to save content to DB
 @history_blueprint.route('/api/save', methods=['POST'])
 def save_file():
     data = request.get_json()
     file_name = data.get('fileName', '').strip()
-    curr_folder = data.get('curr_folder', HISTORY_FOLDER).strip()
+    curr_folder = data.get('curr_folder', 'Playground').strip()
     pages = data.get('pages', [])
     annotations = data.get('annotations', [])
     meta = data.get('meta', {})
     
     if '___' in curr_folder:
-        curr_folder = re.sub('___', '/', curr_folder)
+        curr_folder = curr_folder.split('___')[0] # Simplify for DB lookup
 
-    if not file_name or not pages:
-        return jsonify({'error': 'File name and content are required'}), 400
+    if not file_name:
+        return jsonify({'error': 'File name is required'}), 400
 
-    full_path = os.path.join(HISTORY_FOLDER, curr_folder)
-    os.makedirs(full_path, exist_ok=True)  # ensure folder exists
-
-    json_file_path = os.path.join(full_path, f"{file_name}.json")
+    if not file_name.endswith('.json'):
+        file_name += '.json'
 
     try:
-        with open(json_file_path, 'w', encoding='utf-8') as f:
-            json.dump({'pages': pages, 'annotations': annotations, 'meta': meta}, f, ensure_ascii=False, indent=2)
-        return jsonify({'message': 'File saved successfully.'})
+        project_id = create_project(curr_folder)
+        doc_id = upsert_document(project_id, file_name, pages, meta)
+        
+        # Save annotations grouped by user
+        # In a real multi-user app, we'd get the current user from session
+        # For now, we'll infer user from the 'note' field in each annotation
+        # and fall back to the Admin user (id=1)
+        
+        # 1. Clear existing annotations for this doc
+        conn = get_db_connection()
+        conn.execute('DELETE FROM annotations WHERE document_id = ?', (doc_id,))
+        
+        # 2. Insert new annotations
+        for ann in annotations:
+            note = ann.get('note', 'Admin')
+            user_id = get_user_by_note(note) or 1 # Fallback to Admin
+            
+            relationships = json.dumps(ann.get('relationships', {}))
+            label = ann.get('label', 'UNKNOWN')
+            start = ann.get('textContext', {}).get('start', 0)
+            end = ann.get('textContext', {}).get('end', 0)
+            text_content = ann.get('textContext', {}).get('text', '')
+            
+            conn.execute('''
+                INSERT INTO annotations (document_id, user_id, label, start_offset, end_offset, text_content, note, relationships)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (doc_id, user_id, label, start, end, text_content, note, relationships))
+        
+        conn.commit()
+        conn.close()
+        
+        return jsonify({'message': 'File saved successfully to database.'})
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-# Endpoint to create a folder
-@history_blueprint.route('/api/create-folder', methods=['POST'])
-def create_folder():
-    data = request.get_json()
-    folder_path = data.get('folderPath')
-
-    if not folder_path:
-        return jsonify({'error': 'No folder path provided'}), 400
-
-    # Replace custom delimiter with system path separator
-    safe_folder_path = folder_path.replace('___', os.sep)
-
-    # Base directory where folders are stored
-    base_dir = os.path.join(os.getcwd(), 'data', 'history')
-    full_path = os.path.join(base_dir, safe_folder_path)
-
-    try:
-        os.makedirs(full_path, exist_ok=True)
-        return jsonify({'success': True}), 200
-    except Exception as e:
+        logging.error(f"Error saving file: {e}")
         return jsonify({'error': str(e)}), 500
 
 @history_blueprint.route('/api/meta', methods=['GET'])
@@ -213,7 +211,6 @@ def get_meta_file():
     if not os.path.exists(meta_path):
         return jsonify({'error': 'File not found'}), 404
 
-    # Try Case Detail sheet first, then any sheet with "detail"
     try:
         try:
             df = pd.read_excel(meta_path, engine='openpyxl')
@@ -221,7 +218,6 @@ def get_meta_file():
             xl = pd.ExcelFile(meta_path, engine='openpyxl')
             detail_sheets = [s for s in xl.sheet_names if "detail" in s.lower()]
             if not detail_sheets:
-                # If no detail sheet, just try the first sheet
                 df = xl.parse(sheet_name=0)
             else:
                 df = xl.parse(sheet_name=detail_sheets[0], skiprows=2)
