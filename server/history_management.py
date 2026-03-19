@@ -215,17 +215,21 @@ def get_meta_file():
 
     # Try Case Detail sheet first, then any sheet with "detail"
     try:
-        df = pd.read_excel(meta_path, engine='openpyxl')
-    except Exception:
-        xl = pd.ExcelFile(meta_path, engine='openpyxl')
-        detail_sheets = [s for s in xl.sheet_names if "detail" in s.lower()]
-        if not detail_sheets:
-            return jsonify({'error': 'No sheet named "Case Detail" or similar found'}), 400
-        df = xl.parse(sheet_name=detail_sheets[0], skiprows=2)
-    
-    df = df.fillna('')
-    records = df.to_dict(orient="records")
-    return jsonify({'records': records})
+        try:
+            df = pd.read_excel(meta_path, engine='openpyxl')
+        except Exception:
+            xl = pd.ExcelFile(meta_path, engine='openpyxl')
+            detail_sheets = [s for s in xl.sheet_names if "detail" in s.lower()]
+            if not detail_sheets:
+                # If no detail sheet, just try the first sheet
+                df = xl.parse(sheet_name=0)
+            else:
+                df = xl.parse(sheet_name=detail_sheets[0], skiprows=2)
+        
+        df = df.fillna('')
+        records = df.to_dict(orient="records")
+        return jsonify({'records': records})
 
-    #except Exception as e:
-    #    return jsonify({'error': f'Internal error: {str(e)}'}), 500
+    except Exception as e:
+        logging.error(f"Error reading meta file {file_name}: {e}")
+        return jsonify({'error': f'Failed to read Excel file: {str(e)}'}), 500

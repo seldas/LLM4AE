@@ -3,9 +3,22 @@ from flask_cors import cross_origin
 import pandas as pd
 import os
 import json
+import traceback
 from text_processing import generate_demographic_content, generate_outcomes_content, generate_products_content
 
 project_blueprint = Blueprint('project', __name__)
+
+def find_header_row(excel_path, sheet_name, engine='openpyxl'):
+    """
+    Search for the row containing 'Case Number' and 'Version Number'.
+    Returns the row index (to be used as 'header' in pd.read_excel).
+    """
+    df_preview = pd.read_excel(excel_path, sheet_name=sheet_name, header=None, nrows=20, engine=engine)
+    for idx, row in df_preview.iterrows():
+        row_values = [str(val).strip() for val in row.values]
+        if "Case Number" in row_values and "Version Number" in row_values:
+            return idx
+    return 0  # Fallback to first row
 
 # Endpoint to create a project from an Excel file
 @project_blueprint.route('/api/create-project-from-excel', methods=['POST'])
@@ -27,21 +40,22 @@ def create_project_from_excel():
         os.makedirs(meta_path, exist_ok=True)
         excel_save_path = os.path.join(meta_path, f'{project_name}_Meta.xlsx')
         uploaded_file.save(excel_save_path)
-        # Try to load the "Case Detail" sheet first
         
-        excel_file = pd.ExcelFile(excel_save_path)
+        excel_file = pd.ExcelFile(excel_save_path, engine='openpyxl')
         sheet_names = excel_file.sheet_names
             
         if "Case Detail" in sheet_names:
             file_mode = 'RxLogix'
-            df = pd.read_excel(excel_save_path, sheet_name="Case Detail", skiprows=2, engine='openpyxl')
+            header_idx = find_header_row(excel_save_path, "Case Detail")
+            df = pd.read_excel(excel_save_path, sheet_name="Case Detail", header=header_idx, engine='openpyxl')
             if not df.empty:
                 first_cell_last_row = str(df.iloc[-1, 0]).strip().lower()
             if 'meddra version' in first_cell_last_row:
                 df = df.iloc[:-1]  # Drop the last row
         elif 'Case Details' in sheet_names:
             file_mode = 'InfoVIP'
-            df = pd.read_excel(excel_save_path, sheet_name="Case Details", engine='openpyxl')
+            header_idx = find_header_row(excel_save_path, "Case Details")
+            df = pd.read_excel(excel_save_path, sheet_name="Case Details", header=header_idx, engine='openpyxl')
             df = df.rename(columns={
                 "Attachments Info/Link":"Attachments Info-Link",
                 "FAERS Case #": "Case Number",
@@ -65,7 +79,7 @@ def create_project_from_excel():
             df = excel_file.parse(sheet_name=detail_sheets[0])
         #update the table with new columns
         df = df.fillna('')
-        df.to_excel(excel_save_path,index=None)
+        df.to_excel(excel_save_path, index=None, engine='openpyxl')
 
         # Ensure project folder exists
         project_path = os.path.join('history', project_name)
@@ -75,8 +89,20 @@ def create_project_from_excel():
         for idx, row in df.iterrows():
             # === Basic Content ===
             text = str(row.get("Narrative", "")).strip()
-            case_number = str(int(row.get("Case Number", "0"))).strip()
-            version_number = str(int(row.get("Version Number", "Tmp"))).strip()
+            
+            # Safely get Case Number and Version Number as strings
+            raw_case = row.get("Case Number", "0")
+            try:
+                # If it's a number (float/int), convert to int then str to avoid .0
+                case_number = str(int(float(raw_case))) if raw_case != "" else "0"
+            except (ValueError, TypeError):
+                case_number = str(raw_case).strip() or "0"
+
+            raw_version = row.get("Version Number", "1")
+            try:
+                version_number = str(int(float(raw_version))) if raw_version != "" else "1"
+            except (ValueError, TypeError):
+                version_number = str(raw_version).strip() or "1"
 
             file_name = str(row.get("annotate_filename", "")).strip()
             if not file_name:
@@ -90,9 +116,21 @@ def create_project_from_excel():
             products_html = generate_products_content(row, columns=df.columns, mode=file_mode)
 
             # === Save JSON ===
+            file_path = os.path.join(project_path, file_name)
+            
+            # Smart logic: if file exists, preserve annotations
+            existing_annotations = []
+            if os.path.exists(file_path):
+                try:
+                    with open(file_path, 'r', encoding='utf-8') as f:
+                        old_data = json.load(f)
+                        existing_annotations = old_data.get("annotations", [])
+                except Exception as e:
+                    print(f"Warning: Failed to load existing file {file_name} for merging: {e}")
+
             json_data = {
                 "pages": [text],
-                "annotations": [],
+                "annotations": existing_annotations,
                 "meta": {
                     "demographic": demographic_html,
                     "outcomes": outcomes_html,
@@ -100,7 +138,6 @@ def create_project_from_excel():
                 }
             }
 
-            file_path = os.path.join(project_path, file_name)
             with open(file_path, 'w', encoding='utf-8') as f:
                 json.dump(json_data, f, ensure_ascii=False, indent=2)
 

@@ -111,8 +111,19 @@ def generate_outcomes_content(row, mode='RxLogix'):
         categories = ['All SOCs', 'All HLGTs', 'All HLTs', 'All PTs', 'All LLTs']
         
         def parse_list(text):
-            return [(int(item.split(')', 1)[0]), item.split(')', 1)[1].strip()) 
-                    for item in text.split(';') if item.strip()]
+            items = []
+            for item in str(text).split(';'):
+                item = item.strip()
+                if not item:
+                    continue
+                # Try to extract "N) Term Name"
+                match = re.match(r'^(\d+)\)\s*(.*)$', item)
+                if match:
+                    items.append((int(match.group(1)), match.group(2).strip()))
+                else:
+                    # Fallback for unnumbered items
+                    items.append((0, item))
+            return items
         
         include_start_date = True
 
@@ -193,15 +204,17 @@ def generate_products_content(row, columns, mode='RxLogix'):
     # Detect prefixes (Product 1, Product 2, etc.)
     product_prefixes = set()
     for col in columns:
-        if col.startswith("Product ") and "Product Name" in col:
-            prefix = col.split("Product Name")[0].strip()
+        col_str = str(col)
+        if col_str.startswith("Product ") and "Product Name" in col_str:
+            prefix = col_str.split("Product Name")[0].strip()
             product_prefixes.add(prefix)
 
     # Categorize products by Role
     grouped_products = {"Suspect": [], "Concomitant":[], "Other": []}
 
-    for prefix in sorted(product_prefixes, key=lambda x: int(x.split()[-1]) if x.split()[-1].isdigit() else 0):
-        product_data = {col[len(prefix):].strip(): row[col] for col in columns if col.startswith(prefix)}
+    sorted_prefixes = sorted(product_prefixes, key=lambda x: int(x.split()[-1]) if x.split()[-1].isdigit() else 0)
+    for prefix in sorted_prefixes:
+        product_data = {str(col)[len(prefix):].strip(): row[col] for col in columns if str(col).startswith(prefix)}
         role = str(product_data.get("Role", "")).strip().lower()
         if role == "suspect":
             grouped_products["Suspect"].append(product_data)
