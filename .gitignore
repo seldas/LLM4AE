@@ -34,8 +34,4 @@ development/train_data.xlsx
 development/train_data.header.xlsx
 
 # data folder
-/server/history/FAERS_R1
-/server/history/FAERS_R4
-/server/history/Meta
-/server/history/train_data
-/server/database/
+/server/history
