@@ -6,12 +6,13 @@ from datetime import datetime
 DATABASE_PATH = os.path.join(os.path.dirname(__file__), 'database', 'llm4ae.db')
 
 def get_db_connection():
-    conn = sqlite3.connect(DATABASE_PATH)
+    # Added timeout to prevent "database is locked" errors
+    conn = sqlite3.connect(DATABASE_PATH, timeout=30)
     conn.row_factory = sqlite3.Row
     return conn
 
 def init_db():
-    """Initializes the database without the redundant filename column."""
+    """Initializes the database schema."""
     os.makedirs(os.path.dirname(DATABASE_PATH), exist_ok=True)
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -114,8 +115,10 @@ def init_db():
 
     roles = [('Admin',), ('Annotator',), ('Adjudicator',), ('AI',)]
     cursor.executemany('INSERT OR IGNORE INTO roles (name) VALUES (?)', roles)
+    
     cursor.execute('SELECT id, name FROM roles')
     rmap = {n: i for i, n in cursor.fetchall()}
+    
     users = [
         ('Admin', 'System Administrator', rmap['Admin'], None),
         ('MJ.L', 'MJ.L', rmap['Annotator'], 'SME1'),
@@ -127,6 +130,7 @@ def init_db():
         ('Elsa', 'Elsa AI Agent', rmap['AI'], None)
     ]
     cursor.executemany('INSERT OR IGNORE INTO users (username, full_name, role_id, migration_key) VALUES (?, ?, ?, ?)', users)
+    
     conn.commit()
     conn.close()
 
@@ -142,7 +146,8 @@ def create_project(name, description=None, source_file=None, source_blob=None):
                 source_file_blob = COALESCE(excluded.source_file_blob, projects.source_file_blob)
         ''', (name, description, source_file, source_blob))
         conn.commit()
-        return conn.execute('SELECT id FROM projects WHERE name = ?', (name,)).fetchone()['id']
+        res = conn.execute('SELECT id FROM projects WHERE name = ?', (name,)).fetchone()
+        return res['id']
     finally: conn.close()
 
 def upsert_case(case_num, ver_num, attributes):
@@ -154,6 +159,7 @@ def upsert_case(case_num, ver_num, attributes):
             for col, val in attributes.items():
                 if col in ['case_number', 'version_number']: continue
                 new_val = str(val).strip() if val is not None else ""
+                # Keep existing if Excel is empty
                 final_val = new_val if new_val else (existing[col] or "")
                 updates.append(f"{col} = ?")
                 params.append(final_val)
@@ -179,37 +185,37 @@ def link_case_to_project(project_id, case_id):
 
 def get_project_by_name(name):
     conn = get_db_connection()
-    res = conn.execute('SELECT * FROM projects WHERE name = ?', (name,)).fetchone()
-    conn.close()
-    return res
+    try:
+        res = conn.execute('SELECT * FROM projects WHERE name = ?', (name,)).fetchone()
+        return res
+    finally: conn.close()
 
 def get_case(case_id=None, project_id=None, filename=None):
     conn = get_db_connection()
-    if case_id:
-        res = conn.execute('SELECT * FROM cases WHERE id = ?', (case_id,)).fetchone()
-    else:
-        # Search by annotate_filename within a project
-        res = conn.execute('''
+    try:
+        if case_id:
+            return conn.execute('SELECT * FROM cases WHERE id = ?', (case_id,)).fetchone()
+        return conn.execute('''
             SELECT c.* FROM cases c
             JOIN project_cases pc ON c.id = pc.case_id
             WHERE pc.project_id = ? AND c.annotate_filename = ?
         ''', (project_id, filename)).fetchone()
-    conn.close()
-    return res
+    finally: conn.close()
 
 def get_annotations(case_id):
     conn = get_db_connection()
-    query = 'SELECT a.*, u.username, r.name as role_name FROM annotations a JOIN users u ON a.user_id = u.id JOIN roles r ON u.role_id = r.id WHERE a.case_id = ?'
-    rows = conn.execute(query, (case_id,)).fetchall()
-    conn.close()
-    return rows
+    try:
+        query = 'SELECT a.*, u.username, r.name as role_name FROM annotations a JOIN users u ON a.user_id = u.id JOIN roles r ON u.role_id = r.id WHERE a.case_id = ?'
+        return conn.execute(query, (case_id,)).fetchall()
+    finally: conn.close()
 
 def get_user_by_note(note):
     conn = get_db_connection()
-    n = str(note).strip().upper()
-    user = conn.execute('SELECT id FROM users WHERE UPPER(username) = ? OR UPPER(migration_key) = ?', (n, n)).fetchone()
-    conn.close()
-    return user['id'] if user else None
+    try:
+        n = str(note).strip().upper()
+        res = conn.execute('SELECT id FROM users WHERE UPPER(username) = ? OR UPPER(migration_key) = ?', (n, n)).fetchone()
+        return res['id'] if res else None
+    finally: conn.close()
 
 if __name__ == "__main__":
     init_db()

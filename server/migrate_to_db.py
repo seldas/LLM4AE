@@ -2,14 +2,14 @@ import os
 import json
 import sqlite3
 import re
-from database_manager import get_db_connection, init_db, create_project, upsert_case, link_case_to_project
+from database_manager import init_db, get_db_connection
 
 # Configuration
 HISTORY_DIR = os.path.join(os.path.dirname(__file__), 'history')
 META_DIR = os.path.join(HISTORY_DIR, 'Meta')
 
 def migrate():
-    # 1. Initialize DB with the latest schema
+    # 1. Initialize schema
     init_db()
     
     conn = get_db_connection()
@@ -39,8 +39,7 @@ def migrate():
         print(f"--- Migrating Project: {project_name} ---")
         
         # Determine source_file and blob
-        source_file = None
-        source_blob = None
+        source_file, source_blob = None, None
         if os.path.exists(META_DIR):
             for mfile in os.listdir(META_DIR):
                 if mfile.startswith(project_name) and mfile.endswith('.xlsx'):
@@ -49,45 +48,53 @@ def migrate():
                         source_blob = fb.read()
                     break
 
-        project_id = create_project(project_name, source_file=source_file, source_blob=source_blob)
+        # Create project manually to avoid nested connection
+        cursor.execute('''
+            INSERT INTO projects (name, source_file, source_file_blob) VALUES (?, ?, ?)
+            ON CONFLICT(name) DO UPDATE SET source_file_blob = excluded.source_file_blob
+        ''', (project_name, source_file, source_blob))
+        cursor.execute('SELECT id FROM projects WHERE name = ?', (project_name,))
+        project_id = cursor.fetchone()['id']
 
         # 4. Process JSON Files
         for filename in os.listdir(project_path):
-            if not filename.endswith('.json'):
-                continue
+            if not filename.endswith('.json'): continue
                 
             case_num, ver_num = "0", "1"
             match = re.match(r'^(.+)-(.+)\.json$', filename)
-            if match:
-                case_num, ver_num = match.groups()
+            if match: case_num, ver_num = match.groups()
                 
             file_path = os.path.join(project_path, filename)
             try:
                 with open(file_path, 'r', encoding='utf-8') as f:
                     data = json.load(f)
                 
-                narrative = data.get('pages', [""])[0]
-                meta_data = data.get('meta', {})
+                pages = json.dumps(data.get('pages', []))
+                meta = json.dumps(data.get('meta', {}))
                 
-                attrs = {
-                    'narrative': narrative,
-                    'pages': json.dumps(data.get('pages', [])),
-                    'meta': json.dumps(meta_data),
-                    'annotate_filename': filename
-                }
+                # Check for existing case to implement smart merge manually
+                cursor.execute('SELECT * FROM cases WHERE case_number = ? AND version_number = ?', (case_num, ver_num))
+                existing = cursor.fetchone()
                 
-                if 'full_data' in data:
-                    attrs.update(data['full_data'])
+                if existing:
+                    cursor.execute('''
+                        UPDATE cases SET pages = ?, meta = ?, annotate_filename = ?, updated_at = CURRENT_TIMESTAMP 
+                        WHERE id = ?
+                    ''', (pages, meta, filename, existing['id']))
+                    case_id = existing['id']
+                else:
+                    cursor.execute('''
+                        INSERT INTO cases (case_number, version_number, pages, meta, annotate_filename)
+                        VALUES (?, ?, ?, ?, ?)
+                    ''', (case_num, ver_num, pages, meta, filename))
+                    case_id = cursor.lastrowid
 
-                # 5. Upsert Case and Link
-                case_id = upsert_case(case_num, ver_num, attrs)
-                link_case_to_project(project_id, case_id)
+                # Link project and case
+                cursor.execute('INSERT OR IGNORE INTO project_cases (project_id, case_id) VALUES (?, ?)', (project_id, case_id))
 
-                # 6. Insert Annotations
-                annotations = data.get('annotations', [])
-                conn.execute('DELETE FROM annotations WHERE case_id = ?', (case_id,))
-                
-                for ann in annotations:
+                # Annotations
+                cursor.execute('DELETE FROM annotations WHERE case_id = ?', (case_id,))
+                for ann in data.get('annotations', []):
                     note = str(ann.get('note', '')).strip().upper()
                     user_id = admin_id
                     for key, val in user_mapping.items():
@@ -95,7 +102,7 @@ def migrate():
                             user_id = val
                             break
                     
-                    conn.execute('''
+                    cursor.execute('''
                         INSERT INTO annotations (case_id, user_id, label, start_offset, end_offset, text_content, note, relationships)
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                     ''', (case_id, user_id, ann.get('label', 'UNKNOWN'), ann.get('textContext', {}).get('start', 0), ann.get('textContext', {}).get('end', 0), ann.get('textContext', {}).get('text', ''), ann.get('note', ''), json.dumps(ann.get('relationships', {}))))
@@ -103,6 +110,7 @@ def migrate():
             except Exception as e:
                 print(f"  Error processing {filename}: {e}")
 
+        # Commit after each project to keep transactions manageable
         conn.commit()
 
     conn.close()
