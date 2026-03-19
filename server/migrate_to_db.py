@@ -2,20 +2,20 @@ import os
 import json
 import sqlite3
 import re
-from database_manager import get_db_connection, init_db
+from database_manager import get_db_connection, init_db, create_project, upsert_case, link_case_to_project
 
 # Configuration
 HISTORY_DIR = os.path.join(os.path.dirname(__file__), 'history')
 META_DIR = os.path.join(HISTORY_DIR, 'Meta')
 
 def migrate():
-    # 1. Initialize DB with new schema
+    # 1. Initialize DB with the latest schema (including cases table and blobs)
     init_db()
     
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    # 2. User mapping cache
+    # 2. User mapping cache for migration
     cursor.execute('SELECT id, username, migration_key FROM users')
     user_mapping = {}
     for u in cursor.fetchall():
@@ -38,31 +38,26 @@ def migrate():
 
         print(f"--- Migrating Project: {project_name} ---")
         
-        # Determine source_file from Meta folder
-        # Expecting something like "{project_name}_Meta.xlsx"
+        # Determine source_file and blob from Meta folder
         source_file = None
+        source_blob = None
         if os.path.exists(META_DIR):
             for mfile in os.listdir(META_DIR):
                 if mfile.startswith(project_name) and mfile.endswith('.xlsx'):
                     source_file = mfile
+                    with open(os.path.join(META_DIR, mfile), 'rb') as fb:
+                        source_blob = fb.read()
                     break
 
-        cursor.execute('''
-            INSERT INTO projects (name, source_file) 
-            VALUES (?, ?)
-            ON CONFLICT(name) DO UPDATE SET source_file = excluded.source_file
-        ''', (project_name, source_file))
-        
-        cursor.execute("SELECT id FROM projects WHERE name = ?", (project_name,))
-        project_id = cursor.fetchone()['id']
+        project_id = create_project(project_name, source_file=source_file, source_blob=source_blob)
 
-        # 4. Process JSON Files
+        # 4. Process JSON Files in the project subfolder
         for filename in os.listdir(project_path):
             if not filename.endswith('.json'):
                 continue
                 
             # Extract case/version from filename (e.g., "12345-1.json")
-            case_num, ver_num = None, None
+            case_num, ver_num = "0", "1"
             match = re.match(r'^(.+)-(.+)\.json$', filename)
             if match:
                 case_num, ver_num = match.groups()
@@ -72,26 +67,33 @@ def migrate():
                 with open(file_path, 'r', encoding='utf-8') as f:
                     data = json.load(f)
                 
-                pages_json = json.dumps(data.get('pages', []))
-                meta_json = json.dumps(data.get('meta', {}))
+                # Narrative and Meta logic
+                narrative = data.get('pages', [""])[0]
+                meta_data = data.get('meta', {})
                 
-                cursor.execute('''
-                    INSERT INTO documents (project_id, filename, pages, meta, case_number, version_number)
-                    VALUES (?, ?, ?, ?, ?, ?)
-                    ON CONFLICT(project_id, filename) DO UPDATE SET
-                        pages = excluded.pages,
-                        meta = excluded.meta,
-                        case_number = excluded.case_number,
-                        version_number = excluded.version_number
-                ''', (project_id, filename, pages_json, meta_json, case_num, ver_num))
+                # Prepare attributes for upsert_case
+                # Since we are migrating from JSON, we might not have all 31 columns 
+                # unless they were saved in the JSON. We'll populate what we have.
+                attrs = {
+                    'narrative': narrative,
+                    'pages': json.dumps(data.get('pages', [])),
+                    'meta': json.dumps(meta_data),
+                    'filename': filename,
+                    'annotate_filename': filename
+                }
                 
-                cursor.execute('SELECT id FROM documents WHERE project_id = ? AND filename = ?', (project_id, filename))
-                doc_id = cursor.fetchone()['id']
+                # If the JSON has a 'full_data' key (saved by newer versions), use it
+                if 'full_data' in data:
+                    attrs.update(data['full_data'])
 
-                # 5. Insert Annotations
+                # 5. Upsert Case and Link to Project
+                case_id = upsert_case(case_num, ver_num, attrs)
+                link_case_to_project(project_id, case_id)
+
+                # 6. Insert Annotations
                 annotations = data.get('annotations', [])
-                # Clear existing for this doc before re-migrating
-                conn.execute('DELETE FROM annotations WHERE document_id = ?', (doc_id,))
+                # Clear existing for this case before re-migrating
+                conn.execute('DELETE FROM annotations WHERE case_id = ?', (case_id,))
                 
                 for ann in annotations:
                     note = str(ann.get('note', '')).strip().upper()
@@ -107,10 +109,10 @@ def migrate():
                     text_content = ann.get('textContext', {}).get('text', '')
                     relationships = json.dumps(ann.get('relationships', {}))
                     
-                    cursor.execute('''
-                        INSERT INTO annotations (document_id, user_id, label, start_offset, end_offset, text_content, note, relationships)
+                    conn.execute('''
+                        INSERT INTO annotations (case_id, user_id, label, start_offset, end_offset, text_content, note, relationships)
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                    ''', (doc_id, user_id, label, start, end, text_content, note, relationships))
+                    ''', (case_id, user_id, label, start, end, text_content, note, relationships))
 
             except Exception as e:
                 print(f"  Error processing {filename}: {e}")
@@ -118,7 +120,7 @@ def migrate():
         conn.commit()
 
     conn.close()
-    print("--- Migration Complete with Meta Info ---")
+    print("--- Migration Complete (New Schema) ---")
 
 if __name__ == "__main__":
     migrate()
