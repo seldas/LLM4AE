@@ -4,7 +4,7 @@ services:
     container_name: docanno_nginx_dev
     restart: always
     ports:
-      - "8862:80"
+      - "8861:80"
     volumes:
       - ./nginx/conf.dev.d:/etc/nginx/conf.d
     depends_on:
@@ -19,7 +19,7 @@ services:
     container_name: docanno_frontend_dev
     image: docanno_frontend_dev
     working_dir: /app
-    user: "${LOCAL_UID}:${LOCAL_GID}"
+    # user: "${LOCAL_UID}:${LOCAL_GID}"
     volumes:
       - ./client:/app
     expose:
@@ -28,7 +28,7 @@ services:
       - NODE_ENV=development
       - HOME=/tmp
       - npm_config_cache=/tmp/.npm
-    command: sh -c "npm install --legacy-peer-deps && npm run dev"
+    command: sh -c "npm install --legacy-peer-deps && npx next dev -p 3000 -H 0.0.0.0"
     networks:
       - internal
 
@@ -36,7 +36,7 @@ services:
     image: python:3.11-slim
     container_name: docanno_backend_dev
     working_dir: /app
-    user: "${LOCAL_UID}:${LOCAL_GID}"
+    # user: "${LOCAL_UID}:${LOCAL_GID}"
     volumes:
       - ./server:/app
     expose:
@@ -45,12 +45,10 @@ services:
       FLASK_ENV: development
       HOME: /tmp
       PIP_DISABLE_PIP_VERSION_CHECK: "1"
-      VIRTUAL_ENV: /app/.venv
-      PATH: /app/.venv/bin:$PATH
     command: >
       sh -c "python -m venv /app/.venv &&
-             pip install --no-cache-dir -r requirements.txt &&
-             python -u app.py"
+             /app/.venv/bin/pip install --no-cache-dir -r requirements.txt &&
+             /app/.venv/bin/python -u app.py"
     networks:
       - internal
 
