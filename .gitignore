@@ -16,7 +16,6 @@ certbot/
 **/build
 
 # misc
-/server/history
 __pycache__
 .DS_Store
 **/.env
@@ -29,3 +28,11 @@ __pycache__
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+
+#train data folder
+development/train_data.xlsx
+
+# data folder
+/server/history/FAERS_R1
+/server/history/FAERS_R4
+/server/history/Meta
