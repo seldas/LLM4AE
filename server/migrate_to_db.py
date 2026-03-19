@@ -2,119 +2,120 @@ import os
 import json
 import sqlite3
 import re
+import io
+import pandas as pd
 from database_manager import init_db, get_db_connection
 
-# Configuration
-HISTORY_DIR = os.path.join(os.path.dirname(__file__), 'history')
-META_DIR = os.path.join(HISTORY_DIR, 'Meta')
+# Re-use the mapping from project_management
+COL_MAP = {
+    "mcn_or_ctu": ["MCN or CTU", "Manufacturer Control #"],
+    "report_type": ["Report Type"],
+    "form_type": ["Form Type"],
+    "initial_fda_received_date": ["Initial FDA Received Date"],
+    "latest_fda_received_date": ["Latest FDA Received Date", "Latest FDA Received date"],
+    "completeness_score": ["Completeness Score"],
+    "patient_id": ["Patient ID", "Patient Id"],
+    "age_in_years": ["Age in Years"],
+    "dob": ["DOB"],
+    "sex": ["Sex"],
+    "weight_in_kg": ["Weight In kg", "Weight (kg)"],
+    "race": ["Race"],
+    "medical_history_and_comments": ["Medical History and Comments", "Medical History/Medical History Comments"],
+    "sender_mfr_organization": ["Sender Mfr Organization"],
+    "reporter_organization": ["Reporter Organization"],
+    "country_derived": ["Country Derived"],
+    "reporter_qualifications": ["Reporter Qualifications"],
+    "health_professional": ["Health Professional"],
+    "report_source": ["Report Source"],
+    "narrative": ["Narrative"],
+    "seriousness": ["Seriousness"],
+    "all_outcomes": ["All Outcomes"],
+    "all_suspect_products": ["ALL Suspect Products", "All Suspect Product Names"],
+    "all_suspect_pais": ["All Suspect PAIs", "ALL Suspect PAIs"],
+    "all_concomitant_products": ["All Concomitant Products"],
+    "all_llts": ["All LLTs"],
+    "all_pts": ["All PTs"],
+    "all_hlts": ["All HLTs"],
+    "all_hlgts": ["All HLGTs"],
+    "all_socs": ["All SOCs"],
+    "annotate_filename": ["annotate_filename"]
+}
+
+def get_mapped_val(row, internal_key):
+    row_keys = {str(k).strip().lower(): k for k in row.index}
+    possible_cols = COL_MAP.get(internal_key, [])
+    for c in possible_cols:
+        c_lower = c.lower()
+        if c_lower in row_keys:
+            val = row[row_keys[c_lower]]
+            return str(val).strip() if pd.notna(val) else ""
+    return ""
 
 def migrate():
-    # 1. Initialize schema
     init_db()
-    
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    # 2. User mapping cache
-    cursor.execute('SELECT id, username, migration_key FROM users')
-    user_mapping = {}
-    for u in cursor.fetchall():
-        user_mapping[u['username'].upper()] = u['id']
-        if u['migration_key']:
-            user_mapping[u['migration_key'].upper()] = u['id']
-            
-    cursor.execute("SELECT id FROM users WHERE username = 'Admin'")
-    admin_id = cursor.fetchone()['id']
+    # 1. Map existing projects
+    cursor.execute("SELECT id, name, source_file_blob FROM projects")
+    projects = cursor.fetchall()
 
-    if not os.path.exists(HISTORY_DIR):
-        print(f"Error: History directory {HISTORY_DIR} not found.")
-        return
-
-    # 3. Process Projects
-    for project_name in os.listdir(HISTORY_DIR):
-        project_path = os.path.join(HISTORY_DIR, project_name)
-        if not os.path.isdir(project_path) or project_name == 'Meta':
+    for proj in projects:
+        p_id, p_name, p_blob = proj['id'], proj['name'], proj['source_file_blob']
+        if not p_blob:
+            print(f"Skipping {p_name}: No Excel BLOB found.")
             continue
 
-        print(f"--- Migrating Project: {project_name} ---")
-        
-        # Determine source_file and blob
-        source_file, source_blob = None, None
-        if os.path.exists(META_DIR):
-            for mfile in os.listdir(META_DIR):
-                if mfile.startswith(project_name) and mfile.endswith('.xlsx'):
-                    source_file = mfile
-                    with open(os.path.join(META_DIR, mfile), 'rb') as fb:
-                        source_blob = fb.read()
-                    break
+        print(f"--- Deep Migrating Meta for Project: {p_name} ---")
+        try:
+            xl = pd.ExcelFile(io.BytesIO(p_blob), engine='openpyxl')
+            target = "Case Detail" if "Case Detail" in xl.sheet_names else ("Case Details" if "Case Details" in xl.sheet_names else xl.sheet_names[0])
+            df = pd.read_excel(io.BytesIO(p_blob), sheet_name=target, engine='openpyxl').fillna('')
+            df.columns = [str(c).strip() for c in df.columns]
+            
+            # Map Case #
+            case_col = "Case Number"
+            if "FAERS Case #" in df.columns: df = df.rename(columns={"FAERS Case #": "Case Number"})
 
-        # Create project manually to avoid nested connection
-        cursor.execute('''
-            INSERT INTO projects (name, source_file, source_file_blob) VALUES (?, ?, ?)
-            ON CONFLICT(name) DO UPDATE SET source_file_blob = excluded.source_file_blob
-        ''', (project_name, source_file, source_blob))
-        cursor.execute('SELECT id FROM projects WHERE name = ?', (project_name,))
-        project_id = cursor.fetchone()['id']
+            for _, row in df.iterrows():
+                raw_case = str(row.get("Case Number", "0"))
+                try: case_num = str(int(float(raw_case))) if raw_case else "0"
+                except: case_num = raw_case or "0"
 
-        # 4. Process JSON Files
-        for filename in os.listdir(project_path):
-            if not filename.endswith('.json'): continue
+                raw_ver = str(row.get("Version Number", "1"))
+                try: ver_num = str(int(float(raw_ver))) if raw_ver else "1"
+                except: ver_num = raw_ver or "1"
+
+                # Extract attributes
+                attrs = {k: get_mapped_val(row, k) for k in COL_MAP.keys()}
                 
-            case_num, ver_num = "0", "1"
-            match = re.match(r'^(.+)-(.+)\.json$', filename)
-            if match: case_num, ver_num = match.groups()
-                
-            file_path = os.path.join(project_path, filename)
-            try:
-                with open(file_path, 'r', encoding='utf-8') as f:
-                    data = json.load(f)
-                
-                pages = json.dumps(data.get('pages', []))
-                meta = json.dumps(data.get('meta', {}))
-                
-                # Check for existing case to implement smart merge manually
-                cursor.execute('SELECT * FROM cases WHERE case_number = ? AND version_number = ?', (case_num, ver_num))
+                # Check for existing case in DB
+                cursor.execute("SELECT id FROM cases WHERE case_number = ? AND version_number = ?", (case_num, ver_num))
                 existing = cursor.fetchone()
-                
+
                 if existing:
-                    cursor.execute('''
-                        UPDATE cases SET pages = ?, meta = ?, annotate_filename = ?, updated_at = CURRENT_TIMESTAMP 
-                        WHERE id = ?
-                    ''', (pages, meta, filename, existing['id']))
-                    case_id = existing['id']
-                else:
-                    cursor.execute('''
-                        INSERT INTO cases (case_number, version_number, pages, meta, annotate_filename)
-                        VALUES (?, ?, ?, ?, ?)
-                    ''', (case_num, ver_num, pages, meta, filename))
-                    case_id = cursor.lastrowid
-
-                # Link project and case
-                cursor.execute('INSERT OR IGNORE INTO project_cases (project_id, case_id) VALUES (?, ?)', (project_id, case_id))
-
-                # Annotations
-                cursor.execute('DELETE FROM annotations WHERE case_id = ?', (case_id,))
-                for ann in data.get('annotations', []):
-                    note = str(ann.get('note', '')).strip().upper()
-                    user_id = admin_id
-                    for key, val in user_mapping.items():
-                        if key in note:
-                            user_id = val
-                            break
+                    # Update all metadata columns
+                    updates = []
+                    params = []
+                    for k, v in attrs.items():
+                        if v: # Only update if Excel has data
+                            updates.append(f"{k} = ?")
+                            params.append(v)
                     
-                    cursor.execute('''
-                        INSERT INTO annotations (case_id, user_id, label, start_offset, end_offset, text_content, note, relationships)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                    ''', (case_id, user_id, ann.get('label', 'UNKNOWN'), ann.get('textContext', {}).get('start', 0), ann.get('textContext', {}).get('end', 0), ann.get('textContext', {}).get('text', ''), ann.get('note', ''), json.dumps(ann.get('relationships', {}))))
+                    if updates:
+                        params.append(existing['id'])
+                        cursor.execute(f"UPDATE cases SET {', '.join(updates)} WHERE id = ?", params)
+                else:
+                    # Rare case: link missing case if narratives exist in history folder
+                    # (This script assumes projects are already mostly migrated)
+                    pass
 
-            except Exception as e:
-                print(f"  Error processing {filename}: {e}")
-
-        # Commit after each project to keep transactions manageable
-        conn.commit()
+            conn.commit()
+            print(f"Successfully backfilled metadata for {p_name}")
+        except Exception as e:
+            print(f"Error migrating {p_name}: {e}")
 
     conn.close()
-    print("--- Migration Complete ---")
 
 if __name__ == "__main__":
     migrate()

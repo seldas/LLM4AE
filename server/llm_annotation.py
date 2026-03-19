@@ -87,14 +87,14 @@ def run_llm_annotation(file_path=None, doc_id=None):
     """
     if doc_id:
         conn = get_db_connection()
-        doc = conn.execute('SELECT pages, meta FROM documents WHERE id = ?', (doc_id,)).fetchone()
+        doc = conn.execute('SELECT pages, meta FROM cases WHERE id = ?', (doc_id,)).fetchone()
         if not doc: return False, "Doc not found"
         pages = json.loads(doc['pages'])
         meta = json.loads(doc['meta']) if doc['meta'] else {}
         narrative = pages[0]
         
         # Determine AI user (Llama4)
-        ai_user_id = get_user_by_note('Llama4') or 6 # Fallback to Llama4's likely ID
+        ai_user_id = get_user_by_note('Llama4') or 6 # Fallback
     else:
         # Legacy file path logic (if still needed)
         with open(file_path, 'r', encoding='utf-8') as f:
@@ -124,13 +124,13 @@ def run_llm_annotation(file_path=None, doc_id=None):
         # Save annotations to DB
         for ann in llm_annotations:
             conn.execute('''
-                INSERT INTO annotations (document_id, user_id, label, start_offset, end_offset, text_content, note, relationships)
+                INSERT INTO annotations (case_id, user_id, label, start_offset, end_offset, text_content, note, relationships)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             ''', (doc_id, ann['user_id'], ann['label'], ann['start'], ann['end'], ann['text'], ann['note'], '{}'))
         
         meta["llm_processed"] = "Done"
         meta["llm_provider"] = AI_PROVIDER
-        conn.execute('UPDATE documents SET meta = ? WHERE id = ?', (json.dumps(meta), doc_id))
+        conn.execute('UPDATE cases SET meta = ? WHERE id = ?', (json.dumps(meta), doc_id))
         conn.commit()
         conn.close()
     else:

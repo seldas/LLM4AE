@@ -138,41 +138,43 @@ export default function HomePage() {
       }
   };
   
-  const handleProjectClick = async (fileName: string) => {
-      if (fileName === 'Playground') {
-        const res = await fetch('/api/history-files/Playground');
-        const json = await res.json();
-    
-        const fakeRecords = json.files.map((f: any) => ({
-          annotate_filename: f.filename,
-          folderName: 'Playground',
-          counts: f.counts,
-          narratives: '(Manual input from Playground)',
-        }));
-    
-        setLoadedProject({
-          folderName: 'Playground',
-          fileName: '',
-          records: fakeRecords,
-        });
-    
-        setDisplayRows(fakeRecords);
-        setShowUserInput(true);
-        return;
-      }
-    
+  const handleProjectClick = async (projectName: string) => {
       setLoading(true);
-      const selected = await readMetaFile(fileName); // ✅ load one project deeply
-    
-      setLoadedProject({
-        folderName: fileName,
-        fileName: '',
-        records: selected?.records || [],
-      });
-    
-      setDisplayRows(selected?.records || []);
-      setShowUserInput(false);
-      setLoading(false);
+      try {
+        const res = await fetch(`/api/show_project/${encodeURIComponent(projectName)}`);
+        const data = await res.json();
+        
+        if (!res.ok) throw new Error(data.error || 'Failed to load project');
+
+        const records = data.records.map((r: any) => {
+          const llm = r.counts?.LLM ?? 0;
+          const meta = r.meta || {};
+          let llmStatus = llm;
+          if (!meta.llm_processed) {
+            llmStatus = -2; 
+          } else if (meta.llm_processed === 'working') {
+            llmStatus = -1;
+          };
+          
+          return {
+            ...r,
+            folderName: projectName,
+            counts: { ...r.counts, LLM: llmStatus }
+          };
+        });
+
+        setLoadedProject({
+          folderName: projectName,
+          fileName: '',
+          records: records,
+        });
+        setDisplayRows(records);
+        setShowUserInput(projectName === 'Playground');
+      } catch (err: any) {
+        alert(`❌ Error: ${err.message}`);
+      } finally {
+        setLoading(false);
+      }
   };
     
   const handleDeleteProject = async (projectName: string) => {
@@ -303,75 +305,55 @@ export default function HomePage() {
     
   const refreshHistoryFiles = async (): Promise<any[]> => {
       if (!loadedProject?.folderName) return [];
-    
-      if (loadedProject.folderName === 'Playground') {
-        try {
-          const res = await fetch('/api/history-files/Playground');
-          const json = await res.json();
-    
-          const tmpRecords = json.files.map((f: any) => {
-              const llm = f.counts?.LLM ?? 0;
-              const meta = f.meta || {};
-              let llmStatus = llm;
-            
-              if (!meta.llm_processed) {
-                llmStatus = -2; 
-              } else if (meta.llm_processed === 'working') {
-                llmStatus = -1;
-              };
-            
-              return {
-                annotate_filename: f.filename,
-                folderName: 'Playground',
-                counts: { ...f.counts, LLM: llmStatus },
-                narratives: '(Manual input from Playground)',
-              };
-          });
-    
-          setLoadedProject({
-            folderName: 'Playground',
-            fileName: '',
-            records: tmpRecords,
-          });
-    
-          setDisplayRows(tmpRecords);
-          setShowUserInput(true);
-    
-          return tmpRecords; 
-        } catch (error) {
-          console.error("Failed to refresh Playground records:", error);
-          return [];
-        }
-      } else {
-        try {
-          const selected = await readMetaFile(loadedProject.folderName);
-          if (selected) {
-            setLoadedProject({
-                folderName: loadedProject.folderName,
-                fileName: '',
-                records: selected.records,
-            });  
-            setDisplayRows(selected.records);
-            return selected.records;
-          }
-        } catch (error) {
-          console.error("Failed to refresh project records:", error);
-        }
+      
+      setLoading(true);
+      try {
+        const res = await fetch(`/api/show_project/${encodeURIComponent(loadedProject.folderName)}`);
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Failed to refresh');
+
+        const records = data.records.map((r: any) => {
+          const llm = r.counts?.LLM ?? 0;
+          const meta = r.meta || {};
+          let llmStatus = llm;
+          if (!meta.llm_processed) {
+            llmStatus = -2; 
+          } else if (meta.llm_processed === 'working') {
+            llmStatus = -1;
+          };
+          
+          return {
+            ...r,
+            folderName: loadedProject.folderName,
+            counts: { ...r.counts, LLM: llmStatus }
+          };
+        });
+
+        setLoadedProject({
+          folderName: loadedProject.folderName,
+          fileName: '',
+          records: records,
+        });
+        setDisplayRows(records);
+        return records;
+      } catch (err: any) {
+        console.error("Refresh failed:", err);
+        return [];
+      } finally {
+        setLoading(false);
       }
-    
-      return [];
   };
 
   const fetchProjectList = async () => {
-      const res = await fetch('/api/meta-files');
-      const files = await res.json();
-      const cleaned = files.map((f: string) => f.replace(/_Meta\.xlsx$/i, ''));
-      setProjectFiles(['Playground', ...cleaned]);
+      const res = await fetch('/api/projects');
+      const projects = await res.json();
+      const otherProjects = projects.filter((p: string) => p.toLowerCase() !== 'playground');
+      setProjectFiles(['Playground', ...otherProjects]);
   };
     
   // Demographic fields to show in the table
   const demographicFields = [
-    "Case Number", "Version Number", "All Suspect Products", "PT Term Event 1", "MCN or CTU", "Latest FDA Received Date",
+    "Case Number", "Version Number", "All Suspect Products", "MCN or CTU", "Latest FDA Received Date",
     "Country Derived", "Patient ID", "Age in Years", "DOB", "Sex",
     "Weight In kg", "Health Professional",
   ];
@@ -431,73 +413,34 @@ export default function HomePage() {
     {
       accessorKey: 'counts.LLM',
       id: 'llm',
-      header: 'LLM',
+      header: 'LLM Status',
       cell: (info: CellContext<MetaRecord, number>) => {
         const row = info.row.original;
-        if (!row.counts) return null;  
-        let count = row.counts.LLM ?? 0;
-        const isGenerating = count === -1 ;
+        const meta = row.meta || {};
+        const llmStatus = meta.llm_processed || 'not_started';
         
-        let display = '';
-        let disabled = false;
-        const llmStatus = row.counts.LLM ?? -2;
-          
-        if (llmStatus === -1) {
-          display = 'Working...';
-          disabled = false;
-        } else if (llmStatus === -2) {
-          display = 'Generate';
-          count = 0;  
-        } else {
-          display = 'ReGenerate';
-        }
+        let display = 'Generate';
+        let isGenerating = llmStatus === 'working';
+        
+        if (llmStatus === 'working') display = 'Working...';
+        else if (llmStatus === 'Done') display = 'ReGenerate';
         
         return (
-          <div className="flex items-center gap-2">
-            <span className="text-purple-600 font-semibold">{count}</span>
-            <button
-              onClick={() => {
-                if (display === 'ReGenerate') {
-                  if (!window.confirm('Are you sure you want to regenerate the LLM annotation? This will overwrite the existing annotation.')) {
-                    return;
-                  }
-                }
-                handleGenerateLLMAnnotation(row, table);
-              }}
-              disabled={disabled || isGenerating}
-              className={`font-semibold text-xs px-2 py-1 rounded shadow ${
-                          disabled || isGenerating
-                            ? 'bg-gray-300 text-gray-500'
-                            : display === 'Generate'
-                            ? 'bg-yellow-100 hover:bg-yellow-200 text-yellow-900'
-                            : 'bg-orange-100 hover:bg-orange-200 text-orange-900'
-                        }`}
-            >
-              {isGenerating ? 'Working...' : display}
-            </button>
-          </div>
+          <button
+            onClick={() => handleGenerateLLMAnnotation(row, table)}
+            disabled={isGenerating}
+            className={`font-semibold text-xs px-2 py-1 rounded shadow ${
+                        isGenerating
+                          ? 'bg-gray-300 text-gray-500'
+                          : display === 'Generate'
+                          ? 'bg-yellow-100 hover:bg-yellow-200 text-yellow-900'
+                          : 'bg-orange-100 hover:bg-orange-200 text-orange-900'
+                      }`}
+          >
+            {display}
+          </button>
         );
       }
-    },
-    {
-      accessorKey: 'counts.SME1',
-      id: 'sme1',
-      header: 'SME1',
-      cell: (info: CellContext<MetaRecord, number>) => {
-        const row = info.row.original;
-        const count = row.counts?.SME1 ?? "N/A";
-        return <span className="text-green-600 font-semibold">{count}</span>;
-      },
-    },
-    {
-      accessorKey: 'counts.SME2',
-      id: 'sme2',
-      header: 'SME2',
-      cell: (info: CellContext<MetaRecord, number>) => {
-        const row = info.row.original;
-        const count = row.counts?.SME2 ?? "N/A";
-        return <span className="text-green-600 font-semibold">{count}</span>;
-      },
     },
     ...(loadedProject?.folderName === 'Playground' ? [  
       { accessorKey: 'annotate_filename', header: 'File' },
@@ -506,10 +449,7 @@ export default function HomePage() {
       header: '🗑️ Delete',
       cell: ({ row }: CellContext<MetaRecord, unknown>) => {
         const file = row.original.annotate_filename || '';
-    
-        // Only show delete button in Playground
         if (loadedProject?.folderName !== 'Playground') return null;
-    
         return (
           <button
             onClick={() => handleDeletePlaygroundFile(file)}
@@ -546,12 +486,7 @@ export default function HomePage() {
 
   useEffect(() => {
       if (!loadedProject?.folderName || loadedProject.folderName === 'Playground') return;
-    
-      const loadProject = async () => {
-        const selected = await readMetaFile(loadedProject.folderName);  
-        if (selected) setDisplayRows(selected.records);
-      };
-      loadProject();
+      refreshHistoryFiles();
   }, [loadedProject?.folderName]);
 
   const randomString = Math.random().toString(36).substring(2, 8); // generates 6-char string

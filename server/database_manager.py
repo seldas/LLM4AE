@@ -95,6 +95,8 @@ def init_db():
             FOREIGN KEY (case_id) REFERENCES cases (id) ON DELETE CASCADE
         )
     ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_project_cases_project ON project_cases(project_id)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_project_cases_case ON project_cases(case_id)')
 
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS annotations (
@@ -112,6 +114,7 @@ def init_db():
             FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
         )
     ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_annotations_case ON annotations(case_id)')
 
     roles = [('Admin',), ('Annotator',), ('Adjudicator',), ('AI',)]
     cursor.executemany('INSERT OR IGNORE INTO roles (name) VALUES (?)', roles)
