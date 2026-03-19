@@ -10,8 +10,8 @@ from history_management import history_blueprint
 from project_management import project_blueprint
 from text_processing import *  # noqa: F403
 from llm_annotation import run_llm_annotation, call_llm  # noqa: F401
-from database_manager import get_db_connection, get_project_by_name, get_document, upsert_document, get_annotations, get_user_by_note
-from ai_client import call_llm as ai_call
+from database_manager import get_db_connection, get_project_by_name, get_case, upsert_case, get_annotations, get_user_by_note
+from ai_client import call_ai as ai_call
 
 # -----------------------------------------------------------------------------
 # App + Logging
@@ -62,7 +62,7 @@ def trigger_llm_annotation():
         if not project:
             return jsonify({"error": f"Project not found: {folder}"}), 404
 
-        doc = get_document(project['id'], file_name)
+        doc = get_case(project_id=project['id'], filename=file_name)
         if not doc:
             return jsonify({"error": f"Document not found: {file_name}"}), 404
 
@@ -73,13 +73,13 @@ def trigger_llm_annotation():
             
             if ai_user_ids:
                 placeholders = ', '.join(['?'] * len(ai_user_ids))
-                conn.execute(f'DELETE FROM annotations WHERE document_id = ? AND user_id IN ({placeholders})', 
+                conn.execute(f'DELETE FROM annotations WHERE case_id = ? AND user_id IN ({placeholders})', 
                              [doc_id] + ai_user_ids)
 
-            doc_data = conn.execute('SELECT meta FROM documents WHERE id = ?', (doc_id,)).fetchone()
+            doc_data = conn.execute('SELECT meta FROM cases WHERE id = ?', (doc_id,)).fetchone()
             meta = json.loads(doc_data['meta']) if doc_data['meta'] else {}
             meta["llm_processed"] = "working"
-            conn.execute('UPDATE documents SET meta = ? WHERE id = ?', (json.dumps(meta), doc_id))
+            conn.execute('UPDATE cases SET meta = ? WHERE id = ?', (json.dumps(meta), doc_id))
             conn.commit()
             conn.close()
 
@@ -110,7 +110,7 @@ def save_assessment():
             file_name += ".json"
 
         project = get_project_by_name(folder)
-        doc = get_document(project['id'], file_name)
+        doc = get_case(project_id=project['id'], filename=file_name)
         if not doc:
             return jsonify({"error": "Document not found"}), 404
 
@@ -118,7 +118,7 @@ def save_assessment():
         meta["assessment"] = assessment
 
         conn = get_db_connection()
-        conn.execute('UPDATE documents SET meta = ? WHERE id = ?', (json.dumps(meta), doc['id']))
+        conn.execute('UPDATE cases SET meta = ? WHERE id = ?', (json.dumps(meta), doc['id']))
         conn.commit()
         conn.close()
 

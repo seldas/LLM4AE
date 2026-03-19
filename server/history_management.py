@@ -25,27 +25,41 @@ def list_history_files(folder_name=''):
         if not project: return jsonify({'files': []}), 200
 
         conn = get_db_connection()
-        docs = conn.execute('SELECT id, annotate_filename, meta FROM cases c JOIN project_cases pc ON c.id = pc.case_id WHERE pc.project_id = ?', (project['id'],)).fetchall()
+        # Optimized Query: Join cases with annotations and users to get counts in ONE go
+        query = '''
+            SELECT 
+                c.id, 
+                c.annotate_filename, 
+                c.meta,
+                COUNT(CASE WHEN u.username IN ('Llama4', 'BioBERT') OR u.migration_key = 'LLM' THEN a.id END) as count_llm,
+                COUNT(CASE WHEN u.username = 'MJ.L' OR u.migration_key = 'SME1' THEN a.id END) as count_sme1,
+                COUNT(CASE WHEN u.username = 'K.L' OR u.migration_key = 'SME2' THEN a.id END) as count_sme2,
+                COUNT(CASE WHEN u.username NOT IN ('Llama4', 'BioBERT', 'MJ.L', 'K.L') AND u.migration_key NOT IN ('LLM', 'SME1', 'SME2') THEN a.id END) as count_other
+            FROM cases c
+            JOIN project_cases pc ON c.id = pc.case_id
+            LEFT JOIN annotations a ON c.id = a.case_id
+            LEFT JOIN users u ON a.user_id = u.id
+            WHERE pc.project_id = ?
+            GROUP BY c.id
+        '''
+        rows = conn.execute(query, (project['id'],)).fetchall()
         
         json_files = []
-        for doc in docs:
-            counts = {'LLM': 0, 'SME1': 0, 'SME2': 0, 'Other': 0}
-            anns = get_annotations(doc['id'])
-            for ann in anns:
-                note = (ann['note'] or '').upper()
-                if 'LLM' in note or 'Llama' in note.capitalize() or 'BERT' in note.capitalize(): counts['LLM'] += 1
-                elif 'SME2' in note or 'K.L' in note: counts['SME2'] += 1
-                elif 'SME' in note or 'MJ.L' in note: counts['SME1'] += 1
-                else: counts['Other'] += 1
-
+        for row in rows:
             json_files.append({
-                'filename': doc['annotate_filename'],
-                'counts': counts,
-                'meta': json.loads(doc['meta']) if doc['meta'] else {}
+                'filename': row['annotate_filename'],
+                'counts': {
+                    'LLM': row['count_llm'],
+                    'SME1': row['count_sme1'],
+                    'SME2': row['count_sme2'],
+                    'Other': row['count_other']
+                },
+                'meta': json.loads(row['meta']) if row['meta'] else {}
             })
         conn.close()
         return jsonify({'files': json_files})
     except Exception as e:
+        logging.error(f"List error: {e}")
         return jsonify({'error': str(e)}), 500
 
 @history_blueprint.route('/api/history/<path:file_path>', methods=['GET', 'POST', 'DELETE'])
@@ -57,7 +71,6 @@ def history_file(file_path):
         else:
             project_name, filename = 'Playground', file_path
 
-        # filename here refers to annotate_filename
         project = get_project_by_name(project_name)
 
         if request.method in ['GET', 'POST']:
@@ -107,7 +120,6 @@ def save_file():
 
     try:
         project_id = create_project(folder)
-        # Check if already exists to get its case/ver
         existing = get_case(project_id=project_id, filename=fname)
         c_num, v_num = (existing['case_number'], existing['version_number']) if existing else ("0", "1")
 
