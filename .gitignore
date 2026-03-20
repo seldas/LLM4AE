@@ -35,3 +35,4 @@ development/train_data.header.xlsx
 
 # data folder
 /server/history
+/server/database/

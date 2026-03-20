@@ -1005,86 +1005,91 @@ export default function Annotate_Panel({ overrideFileName, overrideFolder}: Prop
                 </>
               ) : (
                 <>
-                  <div className="page-center-column">
-                    <div className="role-toolbar p-4 bg-white flex flex-col">
-                      {/* Top Row: Relationship Mode, Verification Banner, Save Controls */}
-                      <div className="flex flex-wrap items-center justify-between gap-4">
-                        {/* Relationship Mode Button */}
-                        <div className="flex items-center gap-3">
-                          <button
-                            className="bg-blue-100 hover:bg-blue-200 text-blue-800 px-4 py-1.5 rounded-full text-sm font-semibold disabled:opacity-50"
-                            onClick={() => handleBuildRelationship(false)}
-                            disabled={!isUserSet}
-                          >
-                            Enter Relationship Mode
-                          </button>
+                  <div className="page-center-column w-full">
+                    {/* Top Action Banner */}
+                    <div className="flex items-center justify-between px-6 py-3 bg-white border-b border-gray-200 shadow-sm">
+                      <div className="flex items-center gap-6">
+                        <div className="flex flex-col">
+                          <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">Project / File</span>
+                          <h2 className="text-lg font-bold text-gray-800 truncate max-w-lg">
+                            {overrideFolder} / {overrideFileName || doc.saveFileName}
+                          </h2>
                         </div>
-                    
-                        <div className="flex flex-wrap items-center gap-3">
-                          <input
-                            type="text"
-                            value={saveAsName || doc.saveFileName}
-                            onChange={(e) => setSaveAsName(e.target.value)}
-                            className="min-w-[180px] px-3 py-2 rounded-md border border-gray-300 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          />
+
+                        <button
+                          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-all duration-200 ${
+                            relationshipBuilderMode 
+                              ? 'bg-blue-600 text-white shadow-md' 
+                              : 'bg-white text-blue-600 border border-blue-200 hover:bg-blue-50'
+                          }`}
+                          onClick={() => handleBuildRelationship(relationshipBuilderMode)}
+                          disabled={!isUserSet}
+                        >
+                          {relationshipBuilderMode ? '✓ Relationship Mode' : '⛓ Relationship Mode'}
+                        </button>
+                      </div>
+
+                      <div className="flex items-center gap-3">
+                        <div className="flex items-center bg-gray-100 rounded-lg p-1 mr-2">
                           <button
                             onClick={() => handleSave(false)}
-                            className="bg-indigo-700 hover:bg-indigo-800 text-white px-4 py-2 rounded-md text-sm font-semibold transition"
+                            className="px-4 py-1.5 rounded-md text-sm font-bold text-gray-700 hover:bg-white hover:shadow-sm transition-all"
                           >
                             Save
                           </button>
                           <button
                             onClick={() => handleSave(true)}
-                            className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-md text-sm font-semibold transition"
+                            className="px-4 py-1.5 rounded-md text-sm font-bold text-indigo-700 hover:bg-white hover:shadow-sm transition-all"
                           >
                             Save & Close
                           </button>
-                          <div className="relative">
-                            <button
-                              onClick={() => setIsExportDropdownOpen(!isExportDropdownOpen)}
-                              className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-md text-sm font-semibold transition"
-                            >
-                              Export
-                            </button>
-                            {isExportDropdownOpen && (
-                              <div className="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg py-1 z-10">
-                                <button
-                                  onClick={handleDownloadJSON}
-                                  className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
-                                >
-                                  Download Raw File (JSON)
-                                </button>
-                                <button
-                                  onClick={handleExportExcel}
-                                  className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
-                                >
-                                  Download Annotations (Excel)
-                                </button>
-                                <button
-                                  onClick={handleExportAdjudication}
-                                  className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
-                                >
-                                  Export Adjudication Result (Excel)
-                                </button>
-                                
-                              </div>
-                            )}
-                          </div>
-                          <button
-                            onClick={() => window.close()}
-                            className="bg-red-800 hover:bg-red-900 text-white px-4 py-2 rounded-md text-sm font-semibold transition"
-                          >
-                            Close
-                          </button>
-                          {saveSuccess && <span className="text-green-600 text-sm">✅ File saved successfully</span>}
                         </div>
+
+                        <div className="relative">
+                          <button
+                            onClick={() => setIsExportDropdownOpen(!isExportDropdownOpen)}
+                            className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-sm transition-all"
+                          >
+                            Export ▾
+                          </button>
+                          {isExportDropdownOpen && (
+                            <div className="absolute right-0 mt-2 w-64 bg-white rounded-xl shadow-xl py-2 z-50 border border-gray-100 animate-in fade-in slide-in-from-top-2">
+                              <button
+                                onClick={handleDownloadJSON}
+                                className="block w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                              >
+                                📄 Download Raw JSON
+                              </button>
+                              <button
+                                onClick={handleExportExcel}
+                                className="block w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                              >
+                                📊 Export Annotations (Excel)
+                              </button>
+                              <button
+                                onClick={handleExportAdjudication}
+                                className="block w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                              >
+                                ⚖️ Export Adjudication (Excel)
+                              </button>
+                            </div>
+                          )}
+                        </div>
+
+                        <button
+                          onClick={() => window.close()}
+                          className="bg-gray-800 hover:bg-black text-white px-4 py-2 rounded-lg text-sm font-bold transition-all"
+                        >
+                          Exit
+                        </button>
                       </div>
                     </div>
-                    <div className="role-toolbar m-4 bg-white">
-                      {/* Annotation Filters & Add Type */}
+
+                    {/* Filter Bar */}
+                    <div className="px-6 py-2 bg-gray-50 border-b border-gray-200">
                       <div className="flex flex-wrap items-center justify-between gap-4">
-                        {/* Filters */}
-                        <div className="flex flex-wrap gap-3 items-center">
+                        <div className="flex flex-wrap gap-x-4 gap-y-2 items-center">
+                          <span className="text-xs font-bold text-gray-500 uppercase mr-2">Filters:</span>
                           {Object.entries(annotationOptions)
                             .sort(([a], [b]) => {
                               const indexA = defaultLabelOrder.indexOf(a.toUpperCase());
@@ -1094,22 +1099,11 @@ export default function Annotate_Panel({ overrideFileName, overrideFolder}: Prop
                               if (indexB === -1) return -1;
                               return indexA - indexB;
                             })
-                            .flatMap(([label, _]: [string, string], i: number) => {
-                              const elements: JSX.Element[] = [];
-
-                              // Insert line break before specific labels
-                              if (['AE', 'MEDICAL HISTORY'].includes(label.toUpperCase())) {
-                                elements.push(
-                                  <div key={`break-${label}`} className="w-full h-0" />
-                                );
-                              }
-
+                            .map(([label, _]: [string, string]) => {
                               const isChecked = activeLabelFilters.includes(label);
                               const color = optionColors[label] || 'lightgray';
-                              const normalizeLabel = labelNormalizer[label.toUpperCase()] || label.toUpperCase();  
-
-                              elements.push(
-                                <label key={label} className="flex items-center gap-1 text-sm font-medium">
+                              return (
+                                <label key={label} className="flex items-center gap-1.5 text-xs font-bold cursor-pointer group">
                                   <input
                                     type="checkbox"
                                     checked={isChecked}
@@ -1119,77 +1113,49 @@ export default function Annotate_Panel({ overrideFileName, overrideFolder}: Prop
                                         : [...activeLabelFilters, label];
                                       setActiveLabelFilters(updated);
                                     }}
-                                    className="accent-blue-600"
+                                    className="hidden"
                                   />
-                                  <span
-                                    className="w-4 h-4 inline-block rounded-sm"
-                                    style={{ backgroundColor: color }}
-                                  ></span>
-                                  {normalizeLabel}
+                                  <div 
+                                    className={`w-3.5 h-3.5 rounded-full border transition-all ${isChecked ? 'ring-2 ring-offset-1 ring-blue-400 scale-110' : 'opacity-40 group-hover:opacity-70'}`}
+                                    style={{ backgroundColor: color, borderColor: isChecked ? 'white' : 'rgba(0,0,0,0.1)' }}
+                                  ></div>
+                                  <span className={isChecked ? 'text-gray-900' : 'text-gray-400 group-hover:text-gray-600'}>
+                                    {labelNormalizer[label.toUpperCase()] || label.toUpperCase()}
+                                  </span>
                                 </label>
                               );
-
-                              // Force a new line after SEX
-                              if (label === 'SEX') {
-                                elements.push(<div key={`break-after-sex`} className="w-full h-0" />);
-                              }
-
-                              return elements;
                             })}
                         </div>
                     
-                        {/* Select/Unselect & Add Type */}
-                        <div className="flex flex-wrap items-center gap-3">
-                          {/* Select/Unselect All */}
+                        <div className="flex items-center gap-4">
                           <button
                             onClick={() => {
-                              const allSelected = Object.keys(annotationOptions).every(label =>
-                                activeLabelFilters.includes(label)
-                              );
+                              const allSelected = Object.keys(annotationOptions).every(label => activeLabelFilters.includes(label));
                               setActiveLabelFilters(allSelected ? [] : Object.keys(annotationOptions));
                             }}
-                            className="px-4 py-1.5 text-sm rounded-full bg-blue-100 hover:bg-blue-200 text-blue-800 font-semibold shadow-sm transition"
+                            className="text-[10px] uppercase font-black text-blue-600 hover:text-blue-800"
                           >
-                            {Object.keys(annotationOptions).every(label =>
-                              activeLabelFilters.includes(label))
-                              ? "Unselect All"
-                              : "Select All"}
+                            {Object.keys(annotationOptions).every(label => activeLabelFilters.includes(label)) ? "Clear All" : "Select All"}
                           </button>
                     
-                          {/* Add Type Input */}
-                          <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-full shadow-sm border border-gray-200">
-                            <span className="text-sm font-medium text-gray-600 whitespace-nowrap">+</span>
+                          <div className="flex items-center gap-2 bg-white px-2 py-1 rounded-md border border-gray-200">
                             <input
                               type="text"
                               value={newLabel}
                               onChange={(e) => setNewLabel(e.target.value)}
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter') handleAddNewLabel();
-                              }}
-                              placeholder="New Type"
-                              className="text-sm px-2 py-1 outline-none border-0 bg-transparent w-32"
+                              onKeyDown={(e) => e.key === 'Enter' && handleAddNewLabel()}
+                              placeholder="Add type..."
+                              className="text-[11px] font-bold outline-none bg-transparent w-20"
                             />
-                            <button
-                              onClick={handleAddNewLabel}
-                              className="px-2 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm font-bold"
-                            >
-                              Add
-                            </button>
+                            <button onClick={handleAddNewLabel} className="text-blue-600 font-bold text-xs">+</button>
                           </div>
 
-                          {selectedTermContext && selectedTermContext.text && (
-                            <div className="flex items-center gap-2 bg-yellow-50 px-3 py-1.5 rounded-full shadow-sm border border-yellow-300">
-                              <span className="text-sm font-semibold text-yellow-800">Selected Term:</span>
-                              <span className="text-sm text-yellow-700 font-mono">
+                          {selectedTermContext?.text && (
+                            <div className="flex items-center gap-2 bg-yellow-100 px-2 py-1 rounded border border-yellow-200">
+                              <span className="text-[10px] font-bold text-yellow-800 truncate max-w-[100px]">
                                 {selectedTermContext.text}
                               </span>
-                              <button
-                                onClick={() => setSelectedTermContext(null)}
-                                className="ml-1 text-yellow-600 hover:text-yellow-800 font-bold"
-                                title="Clear"
-                              >
-                                ✕
-                              </button>
+                              <button onClick={() => setSelectedTermContext(null)} className="text-yellow-600 font-bold text-xs">✕</button>
                             </div>
                           )}
                         </div>
