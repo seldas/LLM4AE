@@ -37,6 +37,7 @@ services:
     build:
       context: ./server
     container_name: docanno_backend_dev
+    # image: docanno_backend_dev
     working_dir: /app
     volumes:
       - ./server:/app
