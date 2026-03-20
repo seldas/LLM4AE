@@ -9,7 +9,7 @@ import {
   AnnotationRelationships,
   TextContext
 } from '../lib/interfaces';
-import { getHistoryFile, saveFile } from '../lib/api';
+import { getHistoryFile, saveAnnotationsToDb } from '../lib/api';
 import {  
   escapeRegExp,
   generateOptionColors
@@ -148,19 +148,30 @@ export default function Annotate_Panel({ overrideFileName, overrideFolder}: Prop
 
   // Function to save the current state
   const handleSave = async (shouldClose = false) => {
-      const isRenamed = saveAsName && saveAsName !== doc.saveFileName;
-      const fileName = isRenamed ? saveAsName : doc.saveFileName;
-      const folder = isRenamed ? 'Playground' : (overrideFolder ?? 'DefaultFolder');
+      const baseNameCandidate = saveAsName || doc.saveFileName || `case-${Date.now()}`;
+      const sanitizedBase = baseNameCandidate.trim().replace(/\.json$/i, '') || `case-${Date.now()}`;
+      const fileName = `${sanitizedBase}.json`;
+      const folder = overrideFolder ?? 'Playground';
 
-      const updatedMeta = doc.meta;
-    
-      await saveFile(fileName.replace(/\.json$/, ''), doc.pages, doc.annotations, folder, updatedMeta);
-    
-      if (shouldClose) {
-        window.close();
-      } else {
+      try {
+        await saveAnnotationsToDb({
+          fileName,
+          curr_folder: folder,
+          pages: doc.pages,
+          annotations: doc.annotations,
+          meta: doc.meta,
+        });
+
         setSaveSuccess(true);
         setTimeout(() => setSaveSuccess(false), 3000);
+        setSaveAsName('');
+
+        if (shouldClose) {
+          window.close();
+        }
+      } catch (error: any) {
+        const message = error?.message || 'Unknown error';
+        alert(`❌ Failed to save annotations: ${message}`);
       }
   };
 

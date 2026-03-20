@@ -12,20 +12,22 @@ from database_manager import (
     get_case, 
     upsert_case, 
     get_annotations, 
-    get_user_by_note
+    get_user_by_note,
+    link_case_to_project
 )
 
 history_blueprint = Blueprint('history', __name__)
+
 
 @history_blueprint.route('/api/history-files/<folder_name>', methods=['GET'])
 def list_history_files(folder_name=''):
     try:
         project_name = folder_name or 'Playground'
         project = get_project_by_name(project_name)
-        if not project: return jsonify({'files': []}), 200
+        if not project:
+            return jsonify({'files': []}), 200
 
         conn = get_db_connection()
-        # Optimized Query: Join cases with annotations and users to get counts in ONE go
         query = '''
             SELECT 
                 c.id, 
@@ -43,7 +45,7 @@ def list_history_files(folder_name=''):
             GROUP BY c.id
         '''
         rows = conn.execute(query, (project['id'],)).fetchall()
-        
+
         json_files = []
         for row in rows:
             json_files.append({
@@ -62,6 +64,66 @@ def list_history_files(folder_name=''):
         logging.error(f"List error: {e}")
         return jsonify({'error': str(e)}), 500
 
+
+def extract_case_identifiers(filename: str):
+    normalized = filename
+    if normalized.lower().endswith('.json'):
+        normalized = normalized[:-5]
+    match = re.match(r'^(.+)-(.+)$', normalized)
+    if match:
+        return match.group(1), match.group(2)
+    return "0", "1"
+
+
+def save_annotations_to_db(project_name: str, project, filename: str, data: dict):
+    pages = data.get('pages', []) or []
+    annotations = data.get('annotations', []) or []
+    meta = data.get('meta', {}) or {}
+    case_number, version_number = extract_case_identifiers(filename)
+
+    project_id = project['id'] if project else create_project(project_name)
+    case_id = upsert_case(case_number, version_number, {
+        'narrative': pages[0] if pages else '',
+        'pages': json.dumps(pages),
+        'meta': json.dumps(meta),
+        'annotate_filename': filename
+    })
+    link_case_to_project(project_id, case_id)
+
+    conn = get_db_connection()
+    conn.execute('DELETE FROM annotations WHERE case_id = ?', (case_id,))
+
+    insertion_rows = []
+    for ann in annotations:
+        context = ann.get('textContext', {})
+        start = context.get('start', 0)
+        end = context.get('end', 0)
+        text = context.get('text', '')
+        note = ann.get('note', '')
+        user_id = get_user_by_note(note) or 1
+        relationships = json.dumps(ann.get('relationships', {}))
+        insertion_rows.append((
+            case_id,
+            user_id,
+            ann.get('label', 'UNKNOWN'),
+            start,
+            end,
+            text,
+            note,
+            relationships
+        ))
+
+    if insertion_rows:
+        conn.executemany('''
+            INSERT INTO annotations (case_id, user_id, label, start_offset, end_offset, text_content, note, relationships)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ''', insertion_rows)
+
+    conn.commit()
+    conn.close()
+    return jsonify({'message': 'Saved to database', 'case_id': case_id}), 200
+
+
 @history_blueprint.route('/api/history/<path:file_path>', methods=['GET', 'POST', 'DELETE'])
 def history_file(file_path):
     try:
@@ -71,24 +133,37 @@ def history_file(file_path):
         else:
             project_name, filename = 'Playground', file_path
 
-        project = get_project_by_name(project_name)
+        if request.method == 'DELETE':
+            project = get_project_by_name(project_name)
+            if not project:
+                return jsonify({'error': 'No project'}), 404
+            conn = get_db_connection()
+            conn.execute('DELETE FROM project_cases WHERE project_id = ? AND case_id = (SELECT id FROM cases WHERE annotate_filename = ?)', (project['id'], filename))
+            conn.commit()
+            conn.close()
+            return jsonify({'message': 'Deleted'})
 
-        if request.method in ['GET', 'POST']:
-            doc = get_case(project_id=project['id'] if project else None, filename=filename)
+        if request.method == 'POST':
+            data = request.get_json(silent=True) or {}
+            if data.get('pages') is not None:
+                project = get_project_by_name(project_name)
+                return save_annotations_to_db(project_name, project, filename, data)
+
+            project = get_project_by_name(project_name)
+            project_id = project['id'] if project else create_project(project_name)
+            doc = get_case(project_id=project_id, filename=filename)
             if not doc:
-                data = request.get_json(silent=True) or {}
                 narrative = data.get('narrative', '')
                 if narrative:
-                    pid = project['id'] if project else create_project(project_name)
                     cid = upsert_case("0", "1", {
                         'narrative': narrative, 
                         'pages': json.dumps([narrative]), 
                         'annotate_filename': filename
                     })
-                    from database_manager import link_case_to_project
-                    link_case_to_project(pid, cid)
+                    link_case_to_project(project_id, cid)
                     doc = get_case(case_id=cid)
-                else: return jsonify({'error': 'Not found'}), 404
+                else:
+                    return jsonify({'error': 'Not found'}), 404
 
             return jsonify({
                 'pages': json.loads(doc['pages']),
@@ -101,14 +176,29 @@ def history_file(file_path):
                 'meta': json.loads(doc['meta']) if doc['meta'] else {}
             })
 
-        elif request.method == 'DELETE':
-            if not project: return jsonify({'error': 'No project'}), 404
-            conn = get_db_connection()
-            conn.execute('DELETE FROM project_cases WHERE project_id = ? AND case_id = (SELECT id FROM cases WHERE annotate_filename = ?)', (project['id'], filename))
-            conn.commit()
-            conn.close()
-            return jsonify({'message': 'Deleted'})
+        if request.method == 'GET':
+            project = get_project_by_name(project_name)
+            if not project:
+                return jsonify({'error': 'Project not found'}), 404
+
+            doc = get_case(project_id=project['id'], filename=filename)
+            if not doc:
+                return jsonify({'error': 'Not found'}), 404
+
+            return jsonify({
+                'pages': json.loads(doc['pages']),
+                'annotations': [{
+                    'label': a['label'],
+                    'textContext': {'start': a['start_offset'], 'end': a['end_offset'], 'text': a['text_content']},
+                    'note': a['note'],
+                    'relationships': json.loads(a['relationships']) if a['relationships'] else {}
+                } for a in get_annotations(doc['id'])],
+                'meta': json.loads(doc['meta']) if doc['meta'] else {}
+            })
+
+        return jsonify({'error': 'Unsupported method'}), 405
     except Exception as e:
+        logging.error(f"History endpoint error: {e}")
         return jsonify({'error': str(e)}), 500
 
 @history_blueprint.route('/api/save', methods=['POST'])
