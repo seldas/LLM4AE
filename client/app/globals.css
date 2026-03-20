@@ -236,7 +236,7 @@ body {
   background-color: #ffffff;
   border-left: 1px solid #ddd;
   box-shadow: -2px 0 6px rgba(0, 0, 0, 0.03);
-  width: 320px;
+  width: 450px;
   min-height: 100vh;
 }
 
@@ -498,6 +498,26 @@ body {
   font-weight: bold;
   background-color: rgba(239, 68, 68, 0.15); /* red tint */
   border-radius: 2px;
+}
+
+.line-row {
+  position: relative;
+}
+
+.line-row::before {
+  content: attr(data-line);
+  position: absolute;
+  left: -50px;
+  width: 40px;
+  text-align: right;
+  color: #a1a1aa; /* text-zinc-400 */
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 12px;
+  user-select: none;
+  pointer-events: none;
+  top: 0;
+  line-height: inherit;
+  font-weight: 500;
 }
 
 h4 {

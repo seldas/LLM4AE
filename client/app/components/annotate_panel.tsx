@@ -48,7 +48,8 @@ export default function Annotate_Panel({ overrideFileName, overrideFolder}: Prop
   
   // Layer Management
   const [activeLayers, setActiveLayers] = useState<string[]>(['SME1', 'AI']); // Default layers
-  const [userRole, setUserRole] = useState<"SME1" | "SME2" | "Adjudicator">("SME1");
+  const [userRole, setUserRole] = useState<"MJ.L" | "SME2" | "Adjudicator">("MJ.L");
+  const [isLoggedIn, setIsLoggedIn] = useState(true); // Assuming logged in for prototype
   const [metaView, setMetaView] = useState<'none' | 'demographic' | 'products' | 'outcomes'>('none');
 
   const [relationshipBuilderMode, setRelationshipBuilderMode] = useState(false);
@@ -58,6 +59,7 @@ export default function Annotate_Panel({ overrideFileName, overrideFolder}: Prop
   const [annotationOptions, setAnnotationOptions] = useState<AnnotationOptions>({});
   const [optionColors, setOptionColors] = useState<{ [key: string]: string }>({});
   const [activeLabelFilters, setActiveLabelFilters] = useState<string[]>([]);
+  const [showRejected, setShowRejected] = useState(false);
   
   const [unifiedContextMenu, setUnifiedContextMenu] = useState<{
           visible: boolean; x: number; y: number;
@@ -65,10 +67,14 @@ export default function Annotate_Panel({ overrideFileName, overrideFolder}: Prop
           options?: string[]; start?: number; end?: number;
         }>({ visible: false, x: 0, y: 0, type: 'annotation' });
 
-  const [llmPopup, setLlmPopup] = useState({ visible: false, x: 0, y: 0, text: '', start: 0, end: 0 });
   const [selectedPopupLabel, setSelectedPopupLabel] = useState('');
   const [selectedTermContext, setSelectedTermContext] = useState<{ text: string; start: number; end: number } | null>(null);
   const [saveSuccess, setSaveSuccess] = useState(false);
+  
+  const [llmPopup, setLlmPopup] = useState<{ 
+    visible: boolean; x: number; y: number; text: string; start: number; end: number; 
+    type?: 'AI' | 'SME' | 'NEW'; label?: string 
+  }>({ visible: false, x: 0, y: 0, text: '', start: 0, end: 0 });
 
   const currentPageData = doc.pages[doc.currentPageIndex] || null;
 
@@ -76,6 +82,9 @@ export default function Annotate_Panel({ overrideFileName, overrideFolder}: Prop
   const visibleAnnotations = useMemo(() => {
     return doc.annotations.filter(a => {
       const note = a.note.toUpperCase();
+      const isRejected = note.includes('REJECTED');
+      if (isRejected && !showRejected) return false;
+
       const isSme1 = (note.includes('SME1') || note.includes('MJ.L')) && activeLayers.includes('SME1');
       const isSme2 = (note.includes('SME2') || note.includes('K.L')) && activeLayers.includes('SME2');
       const isAI = (note.includes('LLM') || note.includes('llama') || note.includes('BERT')) && activeLayers.includes('AI');
@@ -86,7 +95,7 @@ export default function Annotate_Panel({ overrideFileName, overrideFolder}: Prop
       ...a,
       label: labelNormalizer[a.label.toUpperCase()] || a.label.toUpperCase()
     }));
-  }, [doc.annotations, activeLayers]);
+  }, [doc.annotations, activeLayers, showRejected]);
 
   const handleSave = async (shouldClose = false) => {
       try {
@@ -164,9 +173,50 @@ export default function Annotate_Panel({ overrideFileName, overrideFolder}: Prop
       setUnifiedContextMenu(prev => ({ ...prev, visible: false }));
   };
 
-  const handleLlmAddAnnotation = () => {
+  const handleVerifyAnnotation = (start: number, end: number, text: string, label: string, note: string) => {
+    // Find the existing annotation (usually AI) and mark it as verified by current user
+    // Account for label normalization when searching
+    const existing = doc.annotations.find(a => 
+      a.textContext.start === start && 
+      a.textContext.end === end && 
+      (a.label === label || (labelNormalizer[a.label.toUpperCase()] || a.label.toUpperCase()) === label)
+    );
+
+    if (existing) {
+      const updatedAnnotation = {
+        ...existing,
+        note: `${existing.note} | VERIFIED BY ${userRole}`
+      };
+      dispatch({ type: DocActionTypes.REMOVE_ANNOTATION, payload: { annotation: existing } });
+      dispatch({ type: DocActionTypes.ADD_ANNOTATION, payload: { annotation: updatedAnnotation } });
+    }
+  };
+
+  const handleRejectAnnotation = (start: number, end: number, label: string) => {
+    // Account for label normalization when searching
+    const existing = doc.annotations.find(a => 
+      a.textContext.start === start && 
+      a.textContext.end === end && 
+      (a.label === label || (labelNormalizer[a.label.toUpperCase()] || a.label.toUpperCase()) === label)
+    );
+    
+    if (existing) {
+      const updatedAnnotation = {
+        ...existing,
+        note: `${existing.note} | REJECTED BY ${userRole}`
+      };
+      dispatch({ type: DocActionTypes.UPDATE_ANNOTATION, payload: { annotation: updatedAnnotation } });
+      setLlmPopup(prev => ({ ...prev, visible: false }));
+      setSelectedTermContext(null); // Exit Focus Mode
+    } else {
+      console.warn("Could not find annotation to reject:", { start, end, label });
+    }
+  };
+
+  const handleLlmAddAnnotation = (labelOverride?: string) => {
+
     const { start, end, text } = llmPopup;
-    const label = selectedPopupLabel;
+    const label = labelOverride || selectedPopupLabel;
     
     const newAnnotation: Annotation = {
       textContext: {
@@ -177,7 +227,7 @@ export default function Annotate_Panel({ overrideFileName, overrideFolder}: Prop
         disputed: false,
       },
       label: label,
-      note: userRole, // Add as the current user
+      note: userRole,
       relationships: {
         latency: { text: '', page: 0 },
         date: { text: '', page: 0 },
@@ -189,6 +239,24 @@ export default function Annotate_Panel({ overrideFileName, overrideFolder}: Prop
   
     dispatch({ type: DocActionTypes.ADD_ANNOTATION, payload: { annotation: newAnnotation } });
     setLlmPopup((prev) => ({ ...prev, visible: false }));
+    setSelectedTermContext(null); // Exit Focus Mode
+  };
+
+  const onClickAnnotation = (text: string, start: number, end: number, x: number, y: number, note?: string, label?: string) => {
+    let type: 'AI' | 'SME' | 'NEW' = 'NEW';
+    if (note) {
+      const upperNote = note.toUpperCase();
+      if (upperNote.includes('LLM') || upperNote.includes('AI') || upperNote.includes('LLAMA') || upperNote.includes('BERT')) {
+        type = 'AI';
+      } else if (upperNote.includes('SME') || upperNote.includes('MJ.L')) {
+        type = 'SME';
+      }
+    }
+    
+    setLlmPopup({
+      visible: true, x, y, text, start, end, type, label
+    });
+    if (label) setSelectedPopupLabel(label);
   };
 
   useEffect(() => {
@@ -214,58 +282,88 @@ export default function Annotate_Panel({ overrideFileName, overrideFolder}: Prop
       
       {/* 🟢 NEW TOP BANNER */}
       <header className="bg-white border-b border-gray-200 px-6 py-3 flex items-center justify-between shadow-sm z-30">
-        <div className="flex items-center gap-8">
+        <div className="flex items-center gap-6">
           <div>
             <span className="text-[10px] font-black text-gray-400 uppercase tracking-tighter">Annotate</span>
-            <h1 className="text-sm font-bold text-gray-800 -mt-1 truncate max-w-xs">{overrideFileName}</h1>
+            <h1 className="text-sm font-bold text-gray-800 -mt-1 truncate max-w-[150px]">{overrideFileName}</h1>
+          </div>
+
+          {/* User Section in Header */}
+          <div className="flex items-center gap-2 border-l border-gray-200 pl-4">
+            {isLoggedIn ? (
+              <div className="flex items-center gap-2">
+                <div className="w-7 h-7 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-700 font-black text-[10px] border border-indigo-200 shadow-sm">
+                  {userRole.charAt(0)}
+                </div>
+                <div>
+                   <span className="text-[10px] font-black text-gray-800 block leading-none">{userRole}</span>
+                   <span className="text-[8px] font-bold text-gray-400 uppercase tracking-tighter">Active User</span>
+                </div>
+              </div>
+            ) : (
+              <button 
+                onClick={() => setIsLoggedIn(true)}
+                className="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1 rounded text-[10px] font-black uppercase shadow-sm transition-all"
+              >
+                Sign In
+              </button>
+            )}
           </div>
 
           {/* Layer Toggles */}
-          <div className="flex items-center bg-gray-100 rounded-xl p-1 gap-1">
-            {['SME1', 'SME2', 'AI', 'ADJ'].map(layer => (
-              <button
-                key={layer}
-                onClick={() => handleLayerToggle(layer)}
-                className={`px-3 py-1.5 rounded-lg text-[11px] font-black transition-all ${
-                  activeLayers.includes(layer) 
-                  ? 'bg-white text-blue-600 shadow-sm ring-1 ring-black/5' 
-                  : 'text-gray-400 hover:text-gray-600'
-                }`}
-              >
-                {layer}
-              </button>
-            ))}
+          <div className="flex items-center gap-2 border-l border-gray-200 pl-4">
+            <span className="text-[10px] font-bold text-gray-400 uppercase">Layers:</span>
+            <div className="flex items-center bg-gray-100 rounded-lg p-0.5 gap-1">
+              {['SME1', 'SME2', 'AI', 'ADJ'].map(layer => (
+                <button
+                  key={layer}
+                  onClick={() => handleLayerToggle(layer)}
+                  className={`px-2.5 py-1 rounded-md text-[10px] font-black transition-all ${
+                    activeLayers.includes(layer) 
+                    ? 'bg-white text-blue-600 shadow-sm ring-1 ring-black/5' 
+                    : 'text-gray-400 hover:text-gray-600'
+                  }`}
+                >
+                  {layer}
+                </button>
+              ))}
+            </div>
           </div>
 
           {/* Metadata Toggles */}
-          <div className="flex items-center gap-2 border-l border-gray-200 pl-6">
+          <div className="flex items-center gap-2 border-l border-gray-200 pl-4">
             <span className="text-[10px] font-bold text-gray-400 uppercase">View Data:</span>
-            {['Demographic', 'Products', 'Outcomes'].map(v => (
-              <button
-                key={v}
-                onClick={() => setMetaView(metaView === v.toLowerCase() ? 'none' : v.toLowerCase() as any)}
-                className={`px-2 py-1 rounded text-[10px] font-bold border transition-all ${
-                  metaView === v.toLowerCase() ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
-                }`}
-              >
-                {v}
-              </button>
-            ))}
+            <div className="flex gap-1">
+              {['Demographic', 'Products', 'Outcomes'].map(v => (
+                <button
+                  key={v}
+                  onClick={() => setMetaView(metaView === v.toLowerCase() ? 'none' : v.toLowerCase() as any)}
+                  className={`px-2 py-1 rounded text-[10px] font-bold border transition-all ${
+                    metaView === v.toLowerCase() ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
+                  }`}
+                >
+                  {v}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Rejected Toggle */}
+          <div className="flex items-center gap-2 border-l border-gray-200 pl-4">
+            <span className="text-[10px] font-bold text-gray-400 uppercase">Rejected:</span>
+            <button 
+              onClick={() => setShowRejected(!showRejected)}
+              className={`flex items-center gap-2 px-2 py-1 rounded-lg transition-all ${
+                showRejected ? 'bg-red-100 text-red-700 ring-1 ring-red-200' : 'bg-gray-100 text-gray-400'
+              }`}
+            >
+              <div className={`w-3 h-3 rounded-full transition-colors ${showRejected ? 'bg-red-500' : 'bg-gray-300'}`} />
+              <span className="text-[10px] font-black uppercase tracking-tighter">Show Rejected AI</span>
+            </button>
           </div>
         </div>
 
         <div className="flex items-center gap-3">
-          <button
-            onClick={() => setRelationshipBuilderMode(!relationshipBuilderMode)}
-            className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${
-              relationshipBuilderMode ? 'bg-orange-500 text-white shadow-lg' : 'bg-white border border-gray-200 text-gray-700 hover:bg-gray-50'
-            }`}
-          >
-            {relationshipBuilderMode ? '✕ Exit Link Mode' : '⛓ Link Mode'}
-          </button>
-          
-          <div className="h-8 w-px bg-gray-200 mx-2" />
-
           <button onClick={() => handleSave(false)} className="text-xs font-bold text-gray-600 hover:text-black">Save</button>
           <button onClick={() => handleSave(true)} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-xs font-bold shadow-md transition-all">
             Finish
@@ -274,8 +372,8 @@ export default function Annotate_Panel({ overrideFileName, overrideFolder}: Prop
       </header>
 
       <main className="flex-1 flex overflow-hidden">
-        {/* Left Side: Summary */}
-        <div className="w-80 flex-shrink-0">
+        {/* Left Side: Summary - Increased Width */}
+        <div className="w-[450px] flex-shrink-0 border-r border-gray-200 bg-white">
           <AnnotationPanel
             annotations={visibleAnnotations}
             annotationOptions={annotationOptions}
@@ -293,28 +391,37 @@ export default function Annotate_Panel({ overrideFileName, overrideFolder}: Prop
 
         {/* Center: Narrative */}
         <div className="flex-1 flex flex-col overflow-hidden bg-white">
-          <div className="flex-1 overflow-y-auto p-12">
-            <div className="max-w-4xl mx-auto relative">
+          
+          {/* Narrative Toolbar (NEW) */}
+          <div className="px-12 py-3 border-b border-gray-100 flex items-center justify-between bg-gray-50/30">
+            <div className="flex items-center gap-4">
+              <span className="text-[11px] font-black text-gray-500 uppercase tracking-widest">Narrative View</span>
               
-              {/* Role Switcher (Sticky Mini) */}
-              <div className="absolute -left-20 top-0 flex flex-col gap-2">
-                <span className="text-[9px] font-bold text-gray-400 uppercase text-center">My Role</span>
-                {['SME1', 'SME2', 'Adjudicator'].map(r => (
-                  <button
-                    key={r}
-                    onClick={() => {
-                      setUserRole(r as any);
-                      if (r === 'Adjudicator' && !activeLayers.includes('ADJ')) handleLayerToggle('ADJ');
-                    }}
-                    className={`w-12 h-12 rounded-full text-[10px] font-black border-2 transition-all flex items-center justify-center ${
-                      userRole === r ? 'bg-indigo-600 border-indigo-600 text-white shadow-lg scale-110' : 'bg-white border-gray-100 text-gray-400 hover:border-gray-300'
-                    }`}
-                  >
-                    {r === 'Adjudicator' ? 'ADJ' : r}
-                  </button>
-                ))}
+              {/* Display Toggle (Relationship Builder Mode) */}
+              <div className="flex items-center gap-3 bg-white border border-gray-200 rounded-full px-4 py-1.5 shadow-sm">
+                <span className={`text-[10px] font-bold transition-colors ${!relationshipBuilderMode ? 'text-blue-600' : 'text-gray-400'}`}>Standard</span>
+                <button 
+                  onClick={() => setRelationshipBuilderMode(!relationshipBuilderMode)}
+                  className={`relative w-10 h-5 rounded-full transition-colors duration-200 focus:outline-none ${
+                    relationshipBuilderMode ? 'bg-orange-500' : 'bg-gray-200'
+                  }`}
+                >
+                  <div className={`absolute top-1 left-1 bg-white w-3 h-3 rounded-full shadow-sm transform transition-transform duration-200 ${
+                    relationshipBuilderMode ? 'translate-x-5' : 'translate-x-0'
+                  }`} />
+                </button>
+                <span className={`text-[10px] font-bold transition-colors ${relationshipBuilderMode ? 'text-orange-600' : 'text-gray-400'}`}>Link Mode</span>
               </div>
+            </div>
 
+            <div className="text-[10px] font-medium text-gray-400">
+              Page {doc.currentPageIndex + 1} of {doc.pages.length}
+            </div>
+          </div>
+
+          <div className="flex-1 overflow-y-auto p-4 lg:p-8">
+            <div className="max-w-6xl mx-auto relative">
+              
               {relationshipBuilderMode ? (
                 <PageDisplayBuilder
                   annotations={visibleAnnotations}
@@ -328,7 +435,7 @@ export default function Annotate_Panel({ overrideFileName, overrideFolder}: Prop
               ) : (
                 <PageDisplay
                   annotations={visibleAnnotations}
-                  updateAnnotationNote={() => {}}
+                  updateAnnotationNote={handleVerifyAnnotation}
                   userRole={userRole as any}
                   currentPage={doc.currentPageIndex}
                   pageData={currentPageData}
@@ -337,7 +444,7 @@ export default function Annotate_Panel({ overrideFileName, overrideFolder}: Prop
                   activeLabelFilters={activeLabelFilters}
                   disableFilter={false}
                   annotationSet="SME"
-                  onClickAnnotation={(text, start, end, x, y) => setLlmPopup({ visible: true, x, y, text, start, end })}
+                  onClickAnnotation={onClickAnnotation}
                   selectedTermContext={selectedTermContext}
                   setSelectedTermContext={setSelectedTermContext}
                 />
@@ -393,10 +500,16 @@ export default function Annotate_Panel({ overrideFileName, overrideFolder}: Prop
       <LLMAnnotationPopup
         x={llmPopup.x} y={llmPopup.y} visible={llmPopup.visible} text={llmPopup.text}
         annotationOptions={annotationOptions}
-        selectedLabel={selectedPopupLabel}
-        onChangeLabel={setSelectedPopupLabel}
+        type={llmPopup.type}
+        userRole={userRole}
+        selectedLabel={llmPopup.label || ''}
         onAdd={handleLlmAddAnnotation}
-        onClose={() => setLlmPopup(prev => ({ ...prev, visible: false }))}
+        onReject={() => handleRejectAnnotation(llmPopup.start, llmPopup.end, llmPopup.label || '')}
+        onRemove={() => handleRejectAnnotation(llmPopup.start, llmPopup.end, llmPopup.label || '')}
+        onClose={() => {
+          setLlmPopup(prev => ({ ...prev, visible: false }));
+          setSelectedTermContext(null);
+        }}
       />
     </div>
   );

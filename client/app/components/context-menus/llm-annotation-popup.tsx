@@ -7,9 +7,12 @@ interface Props {
   visible: boolean;
   text: string;
   annotationOptions: AnnotationOptions;
+  type?: 'AI' | 'SME' | 'NEW';
+  userRole?: string;
   selectedLabel: string;
-  onChangeLabel: (label: string) => void;
-  onAdd: () => void;
+  onAdd: (label?: string) => void;
+  onReject?: () => void;
+  onRemove?: () => void;
   onClose: () => void;
 }
 
@@ -18,10 +21,12 @@ const LLMAnnotationPopup: React.FC<Props> = ({
   y,
   visible,
   text,
-  annotationOptions,
+  type = 'NEW',
+  userRole,
   selectedLabel,
-  onChangeLabel,
   onAdd,
+  onReject,
+  onRemove,
   onClose
 }) => {
   const menuRef = useRef<HTMLDivElement>(null);
@@ -45,39 +50,74 @@ const LLMAnnotationPopup: React.FC<Props> = ({
       document.removeEventListener('keydown', handleClickOutsideOrEscape);
     };
   }, [onClose]);
-  
-  useEffect(() => {
-    if (visible && !selectedLabel) {
-      const defaultLabel = Object.keys(annotationOptions)[0] || '';
-      onChangeLabel(defaultLabel); // set initial label if not set
-    }
-  }, [visible, annotationOptions, selectedLabel, onChangeLabel]);
 
   if (!visible) return null;
 
   return (
     <div
       ref={menuRef}
-      className="absolute z-50 bg-white border border-gray-300 shadow-xl rounded-lg p-4 text-sm text-gray-800
-                 backdrop-blur-sm ring-1 ring-black/5 transition-all animate-fadeIn"
-      style={{ top: y, left: x, minWidth: '220px' }}
+      className="absolute z-50 bg-white border border-gray-300 shadow-2xl rounded-xl p-4 text-sm text-gray-800
+                 backdrop-blur-sm ring-1 ring-black/5 transition-all animate-fadeIn w-[240px]"
+      style={{ top: y, left: x }}
     >
-      <div className="mb-1"><strong>{text}</strong></div>
+      {/* Header with Close Button */}
+      <div className="flex justify-between items-start mb-2">
+        <div className="pr-4 min-w-0">
+          <div className="flex items-center gap-2 mb-1">
+            <span className="text-[9px] font-black text-gray-400 uppercase tracking-widest whitespace-nowrap">
+              {type === 'AI' ? 'AI Suggestion' : type === 'SME' ? `Human Tag: ${userRole || ''}` : 'Quick Tag'}
+            </span>
+            {selectedLabel && (
+               <span className="bg-blue-50 text-blue-700 text-[9px] font-black px-1.5 py-0.5 rounded border border-blue-100 uppercase truncate">
+                {selectedLabel}
+              </span>
+            )}
+          </div>
+          <strong className="text-gray-900 leading-tight block truncate">"{text}"</strong>
+        </div>
+        <button 
+          onClick={onClose}
+          className="text-gray-400 hover:text-gray-600 p-1 -mr-2 -mt-1 transition-colors flex-shrink-0"
+        >
+          ✕
+        </button>
+      </div>
 
-      <label className="block mt-2 mb-1 text-xs text-gray-600">Annotation Label:</label>
-      <select
-        className="w-full border rounded px-2 py-1 text-sm"
-        value={selectedLabel}
-        onChange={(e) => onChangeLabel(e.target.value)}
-      >
-        {Object.keys(annotationOptions).map((label) => (
-          <option key={label} value={label}>{label}</option>
-        ))}
-      </select>
+      <div className="flex flex-col gap-2 mt-3 pt-3 border-t border-gray-100">
+        {type === 'AI' && (
+          <>
+            <button 
+              onClick={() => onAdd(selectedLabel)} 
+              className="w-full py-2 rounded-lg bg-emerald-600 text-white font-bold text-xs hover:bg-emerald-700 shadow-sm transition-all flex items-center justify-center gap-2"
+            >
+              <span>✓</span> Verify
+            </button>
+            <button 
+              onClick={onReject} 
+              className="w-full py-2 rounded-lg border border-red-200 text-red-600 font-bold text-xs hover:bg-red-50 transition-all"
+            >
+              Reject AI
+            </button>
+          </>
+        )}
 
-      <div className="flex justify-end gap-2 mt-4">
-        <button onClick={onClose} className="text-sm px-3 py-1 border rounded text-gray-700 hover:bg-gray-200">Cancel</button>
-        <button onClick={onAdd} className="text-sm px-3 py-1 border rounded bg-blue-600 text-white hover:bg-blue-700">Add</button>
+        {type === 'SME' && (
+          <button 
+            onClick={onRemove} 
+            className="w-full py-2 rounded-lg bg-red-50 text-red-600 font-bold text-xs hover:bg-red-100 transition-all"
+          >
+            Remove
+          </button>
+        )}
+
+        {type === 'NEW' && (
+          <button 
+            onClick={() => onAdd(selectedLabel)} 
+            className="w-full py-2 rounded-lg bg-blue-600 text-white font-bold text-xs hover:bg-blue-700 shadow-sm transition-all"
+          >
+            Tag as {selectedLabel || 'Annotation'}
+          </button>
+        )}
       </div>
     </div>
   );

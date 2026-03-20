@@ -100,6 +100,22 @@ function AssessmentOutcomeControls({
 
 export default function AssessPanel({ pages, meta, annotations, folder, fileName }: Props) {
   const firstPageText = pages?.[0] || '';
+  const textRef = useRef<HTMLPreElement>(null);
+  const [lineCount, setLineCount] = useState(0);
+
+  const updateLineCount = useCallback(() => {
+    const container = textRef.current;
+    if (!container) return;
+    const style = window.getComputedStyle(container);
+    const lh = parseFloat(style.lineHeight);
+    const height = container.offsetHeight; 
+    const paddingTop = parseFloat(style.paddingTop);
+    const paddingBottom = parseFloat(style.paddingBottom);
+    if (lh > 0) {
+      const visualLines = Math.round((height - paddingTop - paddingBottom) / lh);
+      setLineCount(visualLines);
+    }
+  }, []);
   const initialAssessment: StoredAssessment | undefined =
     (meta && (meta as any).assessment) || undefined;
 
@@ -256,6 +272,18 @@ export default function AssessPanel({ pages, meta, annotations, folder, fileName
     loadScores();
   }, [firstPageText, demographicHtml, productsHtml, outcomesHtml, scoreMap]);
 
+  React.useEffect(() => {
+    updateLineCount();
+  }, [updateLineCount, firstPageText]);
+
+  React.useEffect(() => {
+    const container = textRef.current;
+    if (!container) return;
+    const observer = new ResizeObserver(updateLineCount);
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, [updateLineCount]);
+
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-end sticky top-0 z-10 bg-white/80 backdrop-blur-sm pb-2">
@@ -274,8 +302,30 @@ export default function AssessPanel({ pages, meta, annotations, folder, fileName
       <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-4">
         <h2 className="text-lg font-semibold mb-3 text-gray-800">Annotated Narratives</h2>
         {firstPageText ? (
-          <div className="p-3 bg-gray-50 border border-gray-200 rounded-md text-sm leading-relaxed max-h-[320px] overflow-y-auto">
-            <p className="whitespace-pre-wrap text-gray-900">{firstPageText}</p>
+          <div className="bg-gray-50 border border-gray-200 rounded-md text-sm leading-relaxed max-h-[400px] overflow-y-auto flex">
+            {/* Visual Gutter */}
+            <div 
+              className="flex-shrink-0 text-right pr-4 text-gray-300 select-none font-mono text-xs border-r border-gray-200 bg-gray-100/50" 
+              style={{ 
+                width: '50px', 
+                lineHeight: '3.5', 
+                paddingTop: '14px'
+              }}
+            >
+              {Array.from({ length: lineCount }).map((_, i) => (
+                <div key={i}>{i + 1}</div>
+              ))}
+            </div>
+            
+            <div className="flex-1 min-w-0">
+              <pre 
+                ref={textRef}
+                className="whitespace-pre-wrap text-gray-900 p-3.5" 
+                style={{ fontFamily: "'Calibri', 'Segoe UI', sans-serif", lineHeight: '3.5', margin: 0 }}
+              >
+                {firstPageText}
+              </pre>
+            </div>
           </div>
         ) : (
           <div className="text-sm text-gray-500 italic">No narrative text available.</div>

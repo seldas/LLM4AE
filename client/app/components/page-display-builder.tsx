@@ -62,6 +62,21 @@ const PageDisplayBuilder = ({
   const [selectedBox, setSelectedBox] = useState<{ start: number; end: number } | null>(null);  
   const [highlightBoxes, setHighlightBoxes] = useState<any[]>([]);
   const [hoveredBox, setHoveredBox] = useState<null | { start: number; end: number }>(null);
+  const [lineCount, setLineCount] = useState(0);
+
+  const updateLineCount = useCallback(() => {
+    const container = textRef.current;
+    if (!container) return;
+    const style = window.getComputedStyle(container);
+    const lh = parseFloat(style.lineHeight);
+    const height = container.offsetHeight; 
+    const paddingTop = parseFloat(style.paddingTop);
+    const paddingBottom = parseFloat(style.paddingBottom);
+    if (lh > 0) {
+      const visualLines = Math.round((height - paddingTop - paddingBottom) / lh);
+      setLineCount(visualLines);
+    }
+  }, []);
     
   const computeHighlightBoxes = useCallback(() => {
       const container = textRef.current;
@@ -136,7 +151,8 @@ const PageDisplayBuilder = ({
   // Call once on mount and on updates
   useEffect(() => {
     computeHighlightBoxes();
-  }, [computeHighlightBoxes]);
+    updateLineCount();
+  }, [computeHighlightBoxes, updateLineCount, pageData]);
 
   // 🔁 Recompute when window resizes
   useEffect(() => {
@@ -145,28 +161,42 @@ const PageDisplayBuilder = ({
 
     const observer = new ResizeObserver(() => {
       computeHighlightBoxes();
+      updateLineCount();
     });
 
     observer.observe(container.parentElement); // monitor size changes to the parent
+    observer.observe(container);
 
     return () => {
       observer.disconnect();
     };
-  }, [computeHighlightBoxes]);
+  }, [computeHighlightBoxes, updateLineCount]);
 
   return (
-    <div
-      className="page relative"
-      style={{ margin: "20px auto", position: "relative" }}
-      onMouseUp={handleTextSelection}
-    >
-      <pre
-        className="text-block font-mono whitespace-pre-wrap"
-        ref={textRef}
-        style={{ padding: "14px", whiteSpace: "pre-wrap", wordWrap: "break-word", position: "relative", lineHeight: "3.5", zIndex: 1 }}
+    <div className="page flex" style={{ margin: "20px auto" }} onMouseUp={handleTextSelection}>
+      {/* Visual Gutter */}
+      <div 
+        className="flex-shrink-0 text-right pr-4 text-gray-300 select-none font-mono text-xs border-r border-gray-100" 
+        style={{ 
+          width: '50px', 
+          lineHeight: '3.5', 
+          paddingTop: '14px',
+          marginTop: '0px'
+        }}
       >
-        {pageData}
-      </pre>
+        {Array.from({ length: lineCount }).map((_, i) => (
+          <div key={i}>{i + 1}</div>
+        ))}
+      </div>
+
+      <div className="relative flex-1 min-w-0">
+        <pre
+          className="text-block font-mono whitespace-pre-wrap"
+          ref={textRef}
+          style={{ padding: "14px", whiteSpace: "pre-wrap", wordWrap: "break-word", position: "relative", lineHeight: "3.5", zIndex: 1, margin: 0 }}
+        >
+          {pageData || ""}
+        </pre>
 
       {highlightBoxes.map((box, i) => {
           const isHovered = hoveredBox?.start === box.start && hoveredBox?.end === box.end;

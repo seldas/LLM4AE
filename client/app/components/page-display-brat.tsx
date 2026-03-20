@@ -18,7 +18,7 @@ interface Props {
   disableFilter?: boolean;
   userRole: string;
   annotationSet: string;  
-  onClickAnnotation?: (text: string, start: number, end: number, x: number, y: number) => void;
+  onClickAnnotation?: (text: string, start: number, end: number, x: number, y: number, note?: string, label?: string) => void;
   selectedTermContext: { text: string; start: number; end: number } | null;
   setSelectedTermContext: (context: { text: string; start: number; end: number } | null) => void;
 }
@@ -79,7 +79,8 @@ function PageDisplay({
   const textRef = useRef<HTMLPreElement>(null);
   const [highlightBoxes, setHighlightBoxes] = useState<any[]>([]);
   const [hoveredBox, setHoveredBox] = useState<null | { start: number; end: number }>(null);
-  const isSME = ["SME1", "SME2"].includes(userRole);
+  const [lineCount, setLineCount] = useState(0);
+  const isSME = ["SME1", "SME2", "MJ.L"].includes(userRole);
   const [discrepancyPopup, setDiscrepancyPopup] = useState<null | {
     box: any;
     x: number;
@@ -88,6 +89,20 @@ function PageDisplay({
   
   const reasons = ["Exceed", "Incomplete", "Wrong Label Type", "Others"];
   const [selectedReason, setSelectedReason] = useState("");
+
+  const updateLineCount = useCallback(() => {
+    const container = textRef.current;
+    if (!container) return;
+    const style = window.getComputedStyle(container);
+    const lh = parseFloat(style.lineHeight);
+    const height = container.offsetHeight; 
+    const paddingTop = parseFloat(style.paddingTop);
+    const paddingBottom = parseFloat(style.paddingBottom);
+    if (lh > 0) {
+      const visualLines = Math.round((height - paddingTop - paddingBottom) / lh);
+      setLineCount(visualLines);
+    }
+  }, []);
         
   const compareAnnotations = useCallback((sme1Annotations: Annotation[], sme2Annotations: Annotation[]) => {
     const differences: { 
@@ -172,9 +187,31 @@ function PageDisplay({
       }
     });
 
+    const smeAnnotations = annotations.filter(a => {
+      const note = a.note.toUpperCase();
+      return note.includes('SME') && !note.includes('REJECTED');
+    });
+
     annotations.forEach((annotation) => {
       const { start, end, text } = annotation.textContext;
       if (start === undefined || end === undefined) return;
+
+      const note = annotation.note.toUpperCase();
+      const isRejected = note.includes('REJECTED');
+
+      // Skip AI annotations if there is an exact SME match (start/end)
+      const isAIAnnotation = note.includes('LLM') || 
+                            note.includes('AI') || 
+                            annotation.note.toLowerCase().includes('llama') || 
+                            annotation.note.toLowerCase().includes('bert');
+      
+      if (isAIAnnotation && !isRejected) {
+        const hasSmeMatch = smeAnnotations.some(sme => 
+          sme.textContext.start === start && sme.textContext.end === end
+        );
+        if (hasSmeMatch) return;
+      }
+
       if (!(disableFilter || activeLabelFilters.includes(annotation.label))) return;
       if (start === end) return;
   
@@ -359,17 +396,20 @@ function PageDisplay({
 
   useEffect(() => {
     computeHighlightBoxes();
-  }, [computeHighlightBoxes]);
+    updateLineCount();
+  }, [computeHighlightBoxes, updateLineCount, pageData]);
 
   useEffect(() => {
     const container = textRef.current;
     if (!container || !container.parentElement) return;
     const observer = new ResizeObserver(() => {
       computeHighlightBoxes();
+      updateLineCount();
     });
     observer.observe(container.parentElement);
+    observer.observe(container);
     return () => observer.disconnect();
-  }, [computeHighlightBoxes]);
+  }, [computeHighlightBoxes, updateLineCount]);
 
   useEffect(() => {
     if (userRole === "Adjudicator") {
@@ -381,22 +421,39 @@ function PageDisplay({
   }, [annotations, userRole, compareAnnotations]);
 
   return (
-    <div className="page relative" style={{ margin: "10px auto" }} onMouseUp={handleTextSelection}>
-      <pre
-        ref={textRef}
-        className="text-block whitespace-pre-wrap"
-        style={{
-          fontFamily: "'Calibri', 'Segoe UI', sans-serif",
-          padding: "14px",
-          whiteSpace: "pre-wrap",
-          wordWrap: "break-word",
-          position: "relative",
-          lineHeight: "3.5",
-          zIndex: 1,
+    <div className="page flex" style={{ margin: "10px auto" }} onMouseUp={handleTextSelection}>
+      {/* Visual Gutter */}
+      <div 
+        className="flex-shrink-0 text-right pr-4 text-gray-300 select-none font-mono text-xs border-r border-gray-100" 
+        style={{ 
+          width: '50px', 
+          lineHeight: '3.5', 
+          paddingTop: '14px',
+          marginTop: '0px'
         }}
       >
-        {pageData}
-      </pre>
+        {Array.from({ length: lineCount }).map((_, i) => (
+          <div key={i}>{i + 1}</div>
+        ))}
+      </div>
+
+      <div className="relative flex-1 min-w-0">
+        <pre
+          ref={textRef}
+          className="text-block whitespace-pre-wrap"
+          style={{
+            fontFamily: "'Calibri', 'Segoe UI', sans-serif",
+            padding: "14px",
+            whiteSpace: "pre-wrap",
+            wordWrap: "break-word",
+            position: "relative",
+            lineHeight: "3.5",
+            zIndex: 1,
+            margin: 0
+          }}
+        >
+          {pageData || ""}
+        </pre>
 
 
       {highlightBoxes.map((box, i) => {
@@ -404,7 +461,16 @@ function PageDisplay({
         const isSummarySelected = selectedTermContext?.start === box.start && selectedTermContext?.end === box.end && selectedTermContext?.text === box.text;
         const isMatchHighlight = box.isMatchHighlight;
         const isTextMatch = isSME && selectedTermContext?.text?.toLowerCase() === box.text?.toLowerCase();
+        
+        // Focus Mode: Dim anything that isn't the selected term or a match
+        const isDimmed = selectedTermContext && !isSelected && !isSummarySelected && !isMatchHighlight;
+
         const hasLabel = box.label && box.label !== "match";
+        
+        const isAI = box.note?.toUpperCase().includes('LLM') || box.note?.toUpperCase().includes('AI') || box.note?.toLowerCase().includes('llama') || box.note?.toLowerCase().includes('bert');
+        const isSmeNote = box.note?.toUpperCase().includes('SME');
+        const isRejected = box.note?.toUpperCase().includes('REJECTED');
+        const isVerified = box.isVerified || (isSmeNote && !isAI && !isRejected); // Human-made or explicit verified
         
         return (
           <div
@@ -415,7 +481,7 @@ function PageDisplay({
                 if ((box.isMatchHighlight || box.note === 'Keyword')) {
                   if (onClickAnnotation) {
                     setSelectedTermContext({ text: box.text, start: box.start, end: box.end });
-                    onClickAnnotation(box.text, box.start, box.end, e.pageX, e.pageY);
+                    onClickAnnotation(box.text, box.start, box.end, e.pageX, e.pageY, box.note, box.label);
                     return;
                   }  
                 }
@@ -425,9 +491,8 @@ function PageDisplay({
                   setSelectedTermContext(null);
                 } else {
                   setSelectedTermContext({ text: box.text, start: box.start, end: box.end });
-                  const canAnnotate = !hasLabel || annotationSet !== 'SME';
-                  if (canAnnotate && onClickAnnotation) {
-                    onClickAnnotation(box.text, box.start, box.end, e.pageX, e.pageY);
+                  if (onClickAnnotation) {
+                    onClickAnnotation(box.text, box.start, box.end, e.pageX, e.pageY, box.note, box.label);
                   }
                 }
 
@@ -444,67 +509,70 @@ function PageDisplay({
               left: (box.left ?? 0) - 2,
               width: (box.width ?? 0) + 4,
               height: (box.height ?? 0) + 4,
-              opacity: 1,
-              backgroundColor: box.isRelation || box.isMatchHighlight
+              opacity: isDimmed ? 0.1 : (isRejected ? 0.4 : 1),
+              backgroundColor: isDimmed 
                 ? 'transparent'
-                : `${box.color.replace('hsl', 'hsla').replace(')', ', 0.2)')}`,
+                : isMatchHighlight
+                  ? 'transparent'
+                  : isRejected
+                    ? 'rgba(156, 163, 175, 0.1)'
+                    : isVerified 
+                      ? `${box.color.replace('hsl', 'hsla').replace(')', ', 0.15)')}`
+                      : 'transparent',
               zIndex: isSelected ? 10 : 2,
-              pointerEvents: "auto",
-              borderRadius: "6px",
-              padding: "2px",
-              border: box.isVerified 
-                ? '2px solid green' 
-                : box.isWarned 
-                ? '2px solid red'
+              pointerEvents: isDimmed ? "none" : "auto",
+              borderRadius: "4px",
+              borderBottom: isDimmed
+                ? 'none'
                 : isSelected || isSummarySelected
-                ? '2px solid #ff0000'
-                : isMatchHighlight || isTextMatch
-                ? '2px dashed #ff0000'
-                : box.isRelation
-                ? `2px solid ${darkenHSLColor(box.color)}`
-                : 'none',
+                  ? '3px solid #ff0000'
+                  : isMatchHighlight 
+                    ? '2px dashed #ff0000'
+                    : isRejected
+                      ? '2px dotted #9ca3af'
+                      : isAI && !isVerified
+                        ? `2px dashed ${darkenHSLColor(box.color)}`
+                        : `2px solid ${darkenHSLColor(box.color)}`,
               boxShadow: box.isDiscrepancy ? '0 0 6px 3px rgba(255,0,0,0.4)' : "none",
-              cursor: "pointer",
-              transition: "all 0.2s ease-in-out",
+              cursor: isDimmed ? "default" : "pointer",
+              transition: "all 0.1s ease-in-out",
             }}
           >
-            {(userRole !== "Adjudicator" && (box.label || box.note)) && (
+            {(userRole !== "Adjudicator" && (box.label || box.note) && !isDimmed) && (
               <div
                 style={{
                   position: "absolute",
-                  top: "-2.2em",
+                  top: isAI && !isSmeNote ? "-1.8em" : "-2.2em",
                   left: 0,
                   display: "flex",
                   alignItems: "center",
-                  flexWrap: "wrap",
-                  backgroundColor: box.isWarned 
-                  ? 'red'
-                  : isMatchHighlight
-                  ? "#ff0"
-                  : "#ffffff",
-                  color: box.isWarned 
-                  ? '#fff'
-                  : darkenHSLColor(box.color),
-                  fontSize: isSummarySelected || isSelected ? "1.1em" : "0.6em",
-                  fontWeight: 700,
-                  padding: "4px 10px",
-                  borderRadius: "10px",
+                  backgroundColor: isRejected 
+                    ? "#9ca3af" 
+                    : isAI && !isVerified 
+                      ? "white" 
+                      : darkenHSLColor(box.color),
+                  color: isRejected
+                    ? "white"
+                    : isAI && !isVerified 
+                      ? darkenHSLColor(box.color) 
+                      : "white",
+                  fontSize: "9px",
+                  fontWeight: 800,
+                  padding: "2px 6px",
+                  borderRadius: "4px",
                   whiteSpace: "nowrap",
-                  border: box.isWarned 
-                  ? 'transparent'
-                  : `1px solid ${darkenHSLColor(box.color)}`,
-                  boxShadow: "0 4px 8px rgba(0, 0, 0, 0.25)",
-                  gap: "0.3em",
-                  letterSpacing: "0.5px",
-                  textTransform: "uppercase",
+                  border: isRejected
+                    ? "1px solid #9ca3af"
+                    : `1px solid ${darkenHSLColor(box.color)}`,
+                  boxShadow: "0 2px 4px rgba(0, 0, 0, 0.1)",
+                  gap: "4px",
                   zIndex: 10,
+                  textDecoration: isRejected ? 'line-through' : 'none'
                 }}
               >
-                <span>
-                  {box.isVerified ? "[V] " : ""}
-                  {box.isWarned ? "[R!] " : ""}
-                  {box.label}
-                </span>
+                <span>{isRejected ? '🚫' : isAI ? '🤖' : '👤'}</span>
+                <span>{box.label}</span>
+                {isVerified && <span style={{ marginLeft: '2px' }}>✓</span>}
               </div>
             )}
             {box.isDiscrepancy && userRole === "Adjudicator" && (
@@ -691,6 +759,7 @@ function PageDisplay({
         );
       })()}
 
+      </div>
     </div>
   );
 }

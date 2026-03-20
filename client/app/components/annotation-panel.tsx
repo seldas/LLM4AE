@@ -113,35 +113,49 @@ const AnnotationPanel = (props: Props) => {
                             </span>
                           </div>
                           
-                          <div className="grid grid-cols-1 gap-1 ml-1">
-                            {instances.sort((a,b) => (a.textContext.start||0) - (b.textContext.start||0)).map((ann, idx) => (
-                              <div 
-                                key={idx}
-                                onClick={() => props.setSelectedTermContext({
-                                  text: ann.textContext.text,
-                                  start: ann.textContext.start ?? 0,
-                                  end: ann.textContext.end ?? 0,
-                                })}
-                                className={`group flex items-center justify-between p-1.5 rounded-md cursor-pointer transition-all ${
-                                  props.selectedTermContext?.start === ann.textContext.start ? 'bg-blue-50 ring-1 ring-blue-200' : 'hover:bg-gray-50'
-                                }`}
-                              >
-                                <span className="text-[10px] font-mono text-gray-400">
-                                  pos: {ann.textContext.start}
-                                </span>
-                                <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <div className="flex flex-wrap gap-1.5 ml-1">
+                            {instances.sort((a,b) => (a.textContext.start||0) - (b.textContext.start||0)).map((ann, idx) => {
+                              const isAI = ann.note.toUpperCase().includes('AI') || ann.note.toUpperCase().includes('LLM') || ann.note.toLowerCase().includes('llama') || ann.note.toLowerCase().includes('bert');
+                              const isSME = ann.note.toUpperCase().includes('SME');
+                              const isVerified = ann.note.toUpperCase().includes('VERIFIED');
+                              const isSelected = props.selectedTermContext?.start === ann.textContext.start;
+
+                              let pillClass = isSelected 
+                                ? 'bg-blue-600 border-blue-600 text-white shadow-md' 
+                                : isVerified 
+                                  ? 'bg-emerald-50 border-emerald-200 text-emerald-700 hover:border-emerald-400' 
+                                  : isAI 
+                                    ? 'bg-orange-50 border-orange-200 text-orange-700 hover:border-orange-400' 
+                                    : 'bg-indigo-50 border-indigo-200 text-indigo-700 hover:border-indigo-400';
+
+                              return (
+                                <div 
+                                  key={idx}
+                                  onClick={() => props.setSelectedTermContext({
+                                    text: ann.textContext.text,
+                                    start: ann.textContext.start ?? 0,
+                                    end: ann.textContext.end ?? 0,
+                                  })}
+                                  className={`group relative flex items-center gap-1.5 px-2 py-1 rounded-full border cursor-pointer transition-all ${pillClass}`}
+                                >
+                                  <span className={`text-[9px] font-bold ${isSelected ? 'text-blue-100' : 'opacity-60'}`}>
+                                    {isAI ? '🤖' : isVerified ? '👤✓' : '👤'} #{ann.textContext.start}
+                                  </span>
+                                  
                                   <button
                                     onClick={(e) => {
                                       e.stopPropagation();
                                       props.handleRemoveAnnotation(ann);
                                     }}
-                                    className="text-red-400 hover:text-red-600"
+                                    className={`text-[10px] opacity-0 group-hover:opacity-100 transition-opacity ${
+                                      isSelected ? 'text-white' : 'text-red-400 hover:text-red-600'
+                                    }`}
                                   >
-                                    🗑️
+                                    ✕
                                   </button>
                                 </div>
-                              </div>
-                            ))}
+                              );
+                            })}
                           </div>
                         </div>
                       ))}
