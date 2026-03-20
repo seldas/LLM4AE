@@ -124,10 +124,9 @@ export default function Annotate_Panel({ overrideFileName, overrideFolder}: Prop
   const handleTextSelection = () => {
       const selection = window.getSelection();
       if (!selection || !selection.toString().trim()) return;
-    
-      const text = selection.toString().trim();
-      const range = selection.getRangeAt(0);
-      const startNode = range.startContainer;
+
+      const text = selection.toString().trim().replace(/\u00A0/g, ' ');
+      const range = selection.getRangeAt(0);      const startNode = range.startContainer;
       const container = document.querySelector('.page .text-block');
       
       if (!container?.contains(startNode)) return;

@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState, useCallback } from "react";
+import React, { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { Annotation } from "../lib/interfaces";
 
 interface Props {
@@ -89,6 +89,32 @@ function PageDisplay({
   
   const reasons = ["Exceed", "Incomplete", "Wrong Label Type", "Others"];
   const [selectedReason, setSelectedReason] = useState("");
+
+  const processedPageData = useMemo(() => {
+    if (!pageData) return "";
+    const chars = Array.from(pageData);
+    const inAnnotation = new Array(chars.length).fill(false);
+
+    annotations.forEach((annotation) => {
+      const start = annotation.textContext?.start;
+      const end = annotation.textContext?.end;
+      if (typeof start === 'number' && typeof end === 'number') {
+        for (let i = start; i < end; i++) {
+          if (i >= 0 && i < inAnnotation.length) {
+            inAnnotation[i] = true;
+          }
+        }
+      }
+    });
+
+    for (let i = 0; i < chars.length; i++) {
+      if (inAnnotation[i] && chars[i] === ' ') {
+        chars[i] = '\u00A0';
+      }
+    }
+
+    return chars.join('');
+  }, [pageData, annotations]);
 
   const updateLineCount = useCallback(() => {
     const container = textRef.current;
@@ -265,7 +291,7 @@ function PageDisplay({
     if (selectedTermContext?.text &&
       selectedTermContext.text.length > 0
     ) {
-      const plainText = container.innerText || "";
+      const plainText = (container.innerText || "").replace(/\u00A0/g, ' ');
       const term = selectedTermContext.text.toLowerCase();
       let match;
       const regex = new RegExp(`\\b${escapeRegExp(term)}\\b`, "gi");
@@ -321,7 +347,7 @@ function PageDisplay({
       selectedTermContext.start !== undefined &&
       selectedTermContext.end !== undefined
     ) {
-        const plainText = container.innerText || "";
+        const plainText = (container.innerText || "").replace(/\u00A0/g, ' ');
         const selectedTerm = selectedTermContext.text.toLowerCase();
         let match;
         const regex = new RegExp(`\\b${escapeRegExp(selectedTerm)}\\b`, "gi");
@@ -452,7 +478,7 @@ function PageDisplay({
             margin: 0
           }}
         >
-          {pageData || ""}
+          {processedPageData}
         </pre>
 
 

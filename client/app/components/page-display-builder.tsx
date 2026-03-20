@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState, useCallback } from "react";
+import React, { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { Annotation, TextContext } from "../lib/interfaces";
 
 interface Props {
@@ -63,6 +63,32 @@ const PageDisplayBuilder = ({
   const [highlightBoxes, setHighlightBoxes] = useState<any[]>([]);
   const [hoveredBox, setHoveredBox] = useState<null | { start: number; end: number }>(null);
   const [lineCount, setLineCount] = useState(0);
+
+  const processedPageData = useMemo(() => {
+    if (!pageData) return "";
+    const chars = Array.from(pageData);
+    const inAnnotation = new Array(chars.length).fill(false);
+
+    annotations.forEach((annotation) => {
+      const start = annotation.textContext?.start;
+      const end = annotation.textContext?.end;
+      if (typeof start === 'number' && typeof end === 'number') {
+        for (let i = start; i < end; i++) {
+          if (i >= 0 && i < inAnnotation.length) {
+            inAnnotation[i] = true;
+          }
+        }
+      }
+    });
+
+    for (let i = 0; i < chars.length; i++) {
+      if (inAnnotation[i] && chars[i] === ' ') {
+        chars[i] = '\u00A0';
+      }
+    }
+
+    return chars.join('');
+  }, [pageData, annotations]);
 
   const updateLineCount = useCallback(() => {
     const container = textRef.current;
@@ -195,7 +221,7 @@ const PageDisplayBuilder = ({
           ref={textRef}
           style={{ padding: "14px", whiteSpace: "pre-wrap", wordWrap: "break-word", position: "relative", lineHeight: "3.5rem", zIndex: 1, margin: 0 }}
         >
-          {pageData || ""}
+          {processedPageData}
         </pre>
 
       {highlightBoxes.map((box, i) => {
