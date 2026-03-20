@@ -1,9 +1,5 @@
-import { useState, useEffect, useRef } from "react";
-import Image from 'next/image';
+import { useState, useEffect, useRef, useMemo } from "react";
 import { Annotation, AnnotationOptions } from "../lib/interfaces";
-import { termMapper } from "../lib/terms";
-import ToggleHighlightIcon from '../highlight_all.svg';
-import removeIcon from '../remove2.svg';
 
 interface Props {
   annotations: Annotation[];
@@ -21,186 +17,144 @@ interface Props {
 
 const AnnotationPanel = (props: Props) => {
   const [filterKeyword, setFilterKeyword] = useState('');
-  const [newLabel, setNewLabel] = useState('');
   const termRefs = useRef<Record<string, HTMLLIElement | null>>({});
   const [collapsedTerms, setCollapsedTerms] = useState<Record<string, boolean>>({});
 
-  const filteredAnnotations = props.annotations.filter(annotation => {
-    const matchesLabel = props.activeLabelFilters
-      .map((l) => l.toLowerCase())
-      .includes(annotation.label.toLowerCase());
-    const matchesKeyword = filterKeyword
-      ? annotation.textContext.text.toLowerCase().includes(filterKeyword.toLowerCase())
-      : true;
-    return matchesLabel && matchesKeyword;
-  });
+  // Grouping Logic: Text -> Label -> Occurrences
+  const groupedData = useMemo(() => {
+    const filtered = props.annotations.filter(annotation => {
+      const matchesLabel = props.activeLabelFilters
+        .map((l) => l.toLowerCase())
+        .includes(annotation.label.toLowerCase());
+      const matchesKeyword = filterKeyword
+        ? annotation.textContext.text.toLowerCase().includes(filterKeyword.toLowerCase())
+        : true;
+      return matchesLabel && matchesKeyword;
+    });
 
-  const handleAddNewLabel = () => {
-    const trimmed = newLabel.trim();
-    if (!trimmed || props.annotationOptions[trimmed]) return;
-
-    const updatedOptions = { ...props.annotationOptions, [trimmed]: trimmed };
-    const updatedColors = { ...props.optionColors, [trimmed]: `hsl(${Math.floor(Math.random() * 360)}, 50%, 85%)` };
-
-    props.setAnnotationOptions(updatedOptions);
-    props.setOptionColors(updatedColors);
-    props.setActiveLabelFilters([...props.activeLabelFilters, trimmed]);
-    setNewLabel('');
-  };
-
-  const grouped = filteredAnnotations.reduce((acc, ann) => {
-      const key = ann.textContext.text.toLowerCase();
-      if (!acc[key]) acc[key] = [];
-      acc[key].push(ann);
-      return acc;
-  }, {} as Record<string, Annotation[]>);
+    const groups: Record<string, Record<string, Annotation[]>> = {};
     
-  useEffect(() => {
-      const allLabels = Object.keys(props.annotationOptions);
-      props.setActiveLabelFilters(allLabels);
-  }, [props.annotationOptions]);
+    filtered.forEach(ann => {
+      const textKey = ann.textContext.text.toLowerCase();
+      const labelKey = ann.label;
+      if (!groups[textKey]) groups[textKey] = {};
+      if (!groups[textKey][labelKey]) groups[textKey][labelKey] = [];
+      groups[textKey][labelKey].push(ann);
+    });
+
+    return groups;
+  }, [props.annotations, props.activeLabelFilters, filterKeyword]);
 
   useEffect(() => {
     const selectedTerm = props.selectedTermContext?.text.toLowerCase();
     if (selectedTerm && termRefs.current[selectedTerm]) {
-        termRefs.current[selectedTerm]?.scrollIntoView({
-            behavior: 'smooth',
-            block: 'start',
-        });
+        termRefs.current[selectedTerm]?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
   }, [props.selectedTermContext]);
     
   return (
-    <div className="annotation-panel">
-      <h2 className="panel-title">📌 Annotations Summary</h2>
-
-      {/* Unified Filter Panel */}
-      <div className="filter-panel">
-        
-        {/* Keyword Filter */}
-        <div className="filter-row">
-          <label htmlFor="keyword" className="filter-label">Keyword:</label>
+    <div className="annotation-panel flex flex-col h-full bg-gray-50 border-r border-gray-200">
+      <div className="p-4 border-b border-gray-200 bg-white">
+        <h2 className="text-sm font-black text-gray-800 uppercase tracking-widest mb-3 flex items-center gap-2">
+          <span className="text-lg">📋</span> Summary
+        </h2>
+        <div className="relative">
           <input
-            id="keyword"
             type="text"
             value={filterKeyword}
             onChange={(e) => setFilterKeyword(e.target.value)}
-            placeholder="Search by keyword"
-            className="filter-input"
+            placeholder="Search annotations..."
+            className="w-full pl-8 pr-3 py-2 text-xs border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-400 focus:border-transparent outline-none transition-all"
           />
+          <span className="absolute left-2.5 top-2 text-gray-400">🔍</span>
         </div>
       </div>
 
-      {/* Annotation List */}
-      <div className="annotation-summary-panel">
-        {props.annotations.length > 0 ? (
-          <ul className="annotation-list" style={{ maxWidth: '320px', margin: '0 auto' }}>
-              {Object.entries(grouped)
-                .sort(([termA], [termB]) => termA.localeCompare(termB))
-                .map(([term, annotations]) => {
-                  const isSelectedGroup =
-                    props.selectedTermContext?.text.toLowerCase() === term;
-                  const isCollapsed = collapsedTerms[term] ?? false;
-
-                  if (!termRefs.current[term]) {
-                    termRefs.current[term] = null;
-                  }
-            
-                  return (
-                    <li
-                      key={term}
-                      ref={(el) => {
-                        termRefs.current[term] = el;
-                      }}
-                      className={`rounded-lg px-3 py-2 mb-4 shadow-sm ${isSelectedGroup ? 'bg-yellow-100' : 'bg-white'}`}
+      <div className="flex-1 overflow-y-auto p-3 space-y-3">
+        {Object.keys(groupedData).length > 0 ? (
+          Object.entries(groupedData)
+            .sort(([a], [b]) => a.localeCompare(b))
+            .map(([text, labels]) => {
+              const isCollapsed = collapsedTerms[text] ?? true;
+              return (
+                <div key={text} className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+                  {/* Term Header */}
+                  <div className="flex items-center justify-between p-2.5 bg-gray-50/50">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <button 
+                        onClick={() => setCollapsedTerms(prev => ({ ...prev, [text]: !isCollapsed }))}
+                        className="text-[10px] text-gray-400 hover:text-gray-600 transition-colors"
+                      >
+                        {isCollapsed ? '▶' : '▼'}
+                      </button>
+                      <span className="font-bold text-xs text-gray-700 truncate" title={text}>
+                        {text}
+                      </span>
+                    </div>
+                    <button
+                      onClick={() => props.handleExtendMatch(Object.values(labels)[0][0])}
+                      className="text-[10px] font-black text-blue-600 hover:bg-blue-50 px-2 py-1 rounded-md transition-colors whitespace-nowrap"
                     >
-                      <div className="flex items-center justify-between border-b border-gray-200 pb-1 mb-1">
-                        <div className="flex items-center gap-2">
-                          <button
-                            onClick={() =>
-                              setCollapsedTerms((prev) => ({
-                                ...prev,
-                                [term]: !prev[term],
-                              }))
-                            }
-                            className="text-xs text-gray-600 hover:text-black"
-                            title={isCollapsed ? "Expand" : "Collapse"}
-                          >
-                            {isCollapsed ? '▶' : '▼'}
-                          </button>
+                      TAG ALL
+                    </button>
+                  </div>
 
-                          <span
-                            className="font-semibold text-sm bg-gray-100 px-2 py-1 rounded shadow-inner max-w-[100px] truncate text-gray-800"
-                            title={term}
-                          >
-                            {term}
-                          </span>
-                        </div>
-
-                        <button
-                          onClick={() => props.handleExtendMatch(annotations[0])}
-                          className="text-xs text-sky-700 font-medium bg-sky-100 hover:bg-sky-200 px-2 py-1 rounded shadow"
-                          title="Annotate all occurrences of this term"
-                        >
-                          🔎Tag All
-                        </button>
-                      </div>
-
-                      {!isCollapsed && (
-                        <ul className="ml-3 space-y-1 text-xs">
-                          {annotations
-                            .sort((a, b) => (a.textContext.start ?? 0) - (b.textContext.start ?? 0))
-                            .map((a, i) => {
-                              const isSelected =
-                                props.selectedTermContext?.start === a.textContext.start &&
-                                props.selectedTermContext?.end === a.textContext.end &&
-                                props.selectedTermContext?.text.toLowerCase() === a.textContext.text.toLowerCase();
-
-                              return (
-                                <li
-                                  key={i}
-                                  className={`flex items-center justify-between rounded-md px-2 py-1 cursor-pointer ${isSelected ? 'bg-blue-100' : 'hover:bg-gray-50'}`}
-                                  onClick={() =>
-                                    props.setSelectedTermContext({
-                                      text: a.textContext.text,
-                                      start: a.textContext.start ?? 0,
-                                      end: a.textContext.end ?? 0,
-                                    })
-                                  }
-                                >
-                                  <span
-                                    className="text-[11px] font-medium px-1.5 py-0.5 rounded text-white"
-                                    style={{ backgroundColor: props.optionColors[a.label] }}
-                                  >
-                                    {a.note?.toLowerCase().includes("verified") ? "[V] " : ""}
-                                    {a.note.split(',')[0]} | {a.label}
-                                  </span>
-
-                                  <span className="text-[11px] text-gray-500 px-1">
-                                    ({a.textContext.start}, {a.textContext.end})
-                                  </span>
-
+                  {/* Labels and Occurrences */}
+                  {!isCollapsed && (
+                    <div className="p-2 space-y-2">
+                      {Object.entries(labels).map(([label, instances]) => (
+                        <div key={label} className="space-y-1">
+                          <div className="flex items-center justify-between">
+                            <span 
+                              className="text-[10px] font-black px-2 py-0.5 rounded text-white shadow-sm"
+                              style={{ backgroundColor: props.optionColors[label] || '#999' }}
+                            >
+                              {label} <span className="ml-1 opacity-70">×{instances.length}</span>
+                            </span>
+                          </div>
+                          
+                          <div className="grid grid-cols-1 gap-1 ml-1">
+                            {instances.sort((a,b) => (a.textContext.start||0) - (b.textContext.start||0)).map((ann, idx) => (
+                              <div 
+                                key={idx}
+                                onClick={() => props.setSelectedTermContext({
+                                  text: ann.textContext.text,
+                                  start: ann.textContext.start ?? 0,
+                                  end: ann.textContext.end ?? 0,
+                                })}
+                                className={`group flex items-center justify-between p-1.5 rounded-md cursor-pointer transition-all ${
+                                  props.selectedTermContext?.start === ann.textContext.start ? 'bg-blue-50 ring-1 ring-blue-200' : 'hover:bg-gray-50'
+                                }`}
+                              >
+                                <span className="text-[10px] font-mono text-gray-400">
+                                  pos: {ann.textContext.start}
+                                </span>
+                                <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                                   <button
                                     onClick={(e) => {
                                       e.stopPropagation();
-                                      props.handleRemoveAnnotation(a);
+                                      props.handleRemoveAnnotation(ann);
                                     }}
-                                    className="text-gray-400 hover:text-red-600 text-sm"
-                                    title="Remove"
+                                    className="text-red-400 hover:text-red-600"
                                   >
                                     🗑️
                                   </button>
-                                </li>
-                              );
-                            })}
-                        </ul>
-                      )}
-                    </li>
-                  );
-                })}
-          </ul>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })
         ) : (
-          <p>No annotations yet.</p>
+          <div className="text-center py-10">
+            <span className="text-3xl grayscale opacity-30">🔍</span>
+            <p className="text-xs text-gray-400 mt-2">No matching annotations</p>
+          </div>
         )}
       </div>
     </div>
