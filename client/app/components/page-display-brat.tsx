@@ -427,7 +427,7 @@ function PageDisplay({
         className="flex-shrink-0 text-right pr-4 text-gray-300 select-none font-mono text-xs border-r border-gray-100" 
         style={{ 
           width: '50px', 
-          lineHeight: '3.5', 
+          lineHeight: '3.5rem', 
           paddingTop: '14px',
           marginTop: '0px'
         }}
@@ -447,7 +447,7 @@ function PageDisplay({
             whiteSpace: "pre-wrap",
             wordWrap: "break-word",
             position: "relative",
-            lineHeight: "3.5",
+            lineHeight: "3.5rem",
             zIndex: 1,
             margin: 0
           }}

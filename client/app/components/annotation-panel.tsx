@@ -17,7 +17,7 @@ interface Props {
 
 const AnnotationPanel = (props: Props) => {
   const [filterKeyword, setFilterKeyword] = useState('');
-  const termRefs = useRef<Record<string, HTMLLIElement | null>>({});
+  const termRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const [collapsedTerms, setCollapsedTerms] = useState<Record<string, boolean>>({});
 
   // Grouping Logic: Text -> Label -> Occurrences
@@ -77,7 +77,11 @@ const AnnotationPanel = (props: Props) => {
             .map(([text, labels]) => {
               const isCollapsed = collapsedTerms[text] ?? true;
               return (
-                <div key={text} className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+                <div 
+                  key={text} 
+                  ref={(el) => (termRefs.current[text] = el)}
+                  className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden"
+                >
                   {/* Term Header */}
                   <div className="flex items-center justify-between p-2.5 bg-gray-50/50">
                     <div className="flex items-center gap-2 min-w-0">

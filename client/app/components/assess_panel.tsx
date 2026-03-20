@@ -1,7 +1,7 @@
 // assess_panel.tsx
 'use client';
 
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useRef, useCallback, useEffect } from 'react';
 import type { Annotation } from '../lib/interfaces';
 
 interface Props {
@@ -308,7 +308,7 @@ export default function AssessPanel({ pages, meta, annotations, folder, fileName
               className="flex-shrink-0 text-right pr-4 text-gray-300 select-none font-mono text-xs border-r border-gray-200 bg-gray-100/50" 
               style={{ 
                 width: '50px', 
-                lineHeight: '3.5', 
+                lineHeight: '3.5rem', 
                 paddingTop: '14px'
               }}
             >
@@ -321,7 +321,7 @@ export default function AssessPanel({ pages, meta, annotations, folder, fileName
               <pre 
                 ref={textRef}
                 className="whitespace-pre-wrap text-gray-900 p-3.5" 
-                style={{ fontFamily: "'Calibri', 'Segoe UI', sans-serif", lineHeight: '3.5', margin: 0 }}
+                style={{ fontFamily: "'Calibri', 'Segoe UI', sans-serif", lineHeight: '3.5rem', margin: 0 }}
               >
                 {firstPageText}
               </pre>
