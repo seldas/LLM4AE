@@ -198,4 +198,4 @@ def llm_assess_explanation():
         return jsonify({"header": {"judgment": judgment}, "summary": str(e), "reasons": []}), 200
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    app.run(host="0.0.0.0", port=8862, debug=True)
