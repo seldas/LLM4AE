@@ -79,7 +79,7 @@ const AnnotationPanel = (props: Props) => {
               return (
                 <div 
                   key={text} 
-                  ref={(el) => (termRefs.current[text] = el)}
+                  ref={(el) => {if (el) termRefs.current[text] = el;}}
                   className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden"
                 >
                   {/* Term Header */}

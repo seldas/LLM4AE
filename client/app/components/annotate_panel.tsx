@@ -425,7 +425,7 @@ export default function Annotate_Panel({ overrideFileName, overrideFolder}: Prop
                 <PageDisplayBuilder
                   annotations={visibleAnnotations}
                   currentPage={doc.currentPageIndex}
-                  pageData={currentPageData}
+                  pageData={currentPageData || ''}
                   currentAnnotationRelation={currentAnnotationRelation}
                   optionColors={optionColors}
                   handleTextSelection={handleTextSelection}
@@ -437,7 +437,7 @@ export default function Annotate_Panel({ overrideFileName, overrideFolder}: Prop
                   updateAnnotationNote={handleVerifyAnnotation}
                   userRole={userRole as any}
                   currentPage={doc.currentPageIndex}
-                  pageData={currentPageData}
+                  pageData={currentPageData || ''}
                   optionColors={optionColors}
                   handleTextSelection={handleTextSelection}
                   activeLabelFilters={activeLabelFilters}

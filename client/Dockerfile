@@ -5,8 +5,13 @@ FROM node:22 AS builder
 
 WORKDIR /app
 
-COPY package*.json ./
-RUN npm install --legacy-peer-deps
+ENV NODE_ENV=development
+ENV NPM_CONFIG_PRODUCTION=false
+
+COPY package.json ./
+COPY package-lock.json ./
+
+RUN npm ci --legacy-peer-deps
 
 COPY . .
 RUN npm run build

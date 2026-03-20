@@ -57,7 +57,7 @@ export interface ContextMenu {
 export interface FileData {
     pages: string[],
     annotations: Annotation[],
-    meta?: any;
+    meta: Record<string, any>;
 }
 
 export interface AnnotationRelationships {

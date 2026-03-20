@@ -16,6 +16,7 @@ services:
   docanno_frontend_dev:
     build:
       context: ./client
+      dockerfile: Dockerfile
     container_name: docanno_frontend_dev
     working_dir: /app
     volumes:
