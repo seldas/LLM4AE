@@ -1,7 +1,6 @@
 'use client';
 
 import React, { useEffect, useState, useMemo, useRef, } from 'react';
-import { useRouter } from 'next/navigation';
 import {
   useReactTable,
   getCoreRowModel,
@@ -12,7 +11,6 @@ import {
   SortingState,   
   CellContext,  
 } from '@tanstack/react-table';
-import { readMetaFile } from './lib/projectUtils';
 import type { ProjectEntry, MetaRecord } from './lib/interfaces';
 
 const NewProjectUploader = ({
@@ -124,19 +122,6 @@ export default function HomePage() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);  
   const [deletionEnabled, setDeletionEnabled] = useState(false);
   
-  const router = useRouter();
-    
-  const ensureJsonExists = async (projectFolder: string, fileName: string, narrative: string) => {
-      const url = `/api/history/${projectFolder}___${fileName}`;
-        const res = await fetch(url, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ narrative }),
-      });
-      if (!res.ok) {
-        console.warn(`Failed to ensure file exists: ${fileName} (${res.status})`);
-      }
-  };
   
   const handleProjectClick = async (projectName: string) => {
       setLoading(true);
@@ -195,47 +180,47 @@ export default function HomePage() {
       }
   };
 
-  const openAssessPopup = async (folder: string, file: string, narrative: string) => {
-      // Ensure the underlying JSON exists, same as for annotate
-      await ensureJsonExists(folder, file, narrative);
-
+  const openAssessPopup = (folder: string, file: string) => {
       const url = `/assess?project=${encodeURIComponent(folder)}&file=${encodeURIComponent(file)}`;
       window.open(url, '_blank');
   };
 
-  const openAnnotationPopup = async (folder: string, file: string, narrative: string) => {
-      // Check and create JSON file if missing
-      await ensureJsonExists(folder, file, narrative);
-    
-      // Now open the annotation tool in a new tab/window
+  const openAnnotationPopup = (folder: string, file: string) => {
       const url = `/annotate?project=${encodeURIComponent(folder)}&file=${encodeURIComponent(file)}`;
       window.open(url, '_blank');
   };
 
-  const handlePlaygroundSubmit = (defaultFilename: string) => {
-    if (playgroundText.trim()) {
-      const text = playgroundText.trim();
-      const finalBaseName = customFilename.trim() || defaultFilename;
-      const filename = `${finalBaseName }.json`;
-  
-      const blob = new Blob([
-        JSON.stringify({ pages: [text], annotations: [] })
-      ], { type: 'application/json' });
-  
-      const file = new File([blob], filename, { type: 'application/json' });
-      const formData = new FormData();
-      formData.append("file", file);
-      formData.append("curr_folder", "Playground");
-  
-      fetch('/api/upload-history', {
+  const handlePlaygroundSubmit = async (defaultFilename: string) => {
+    if (!playgroundText.trim()) return;
+
+    const text = playgroundText.trim();
+    const finalBaseName = (customFilename.trim() || defaultFilename).replace(/\.json$/i, '');
+
+    try {
+      const response = await fetch('/api/save', {
         method: 'POST',
-        body: formData,
-      }).then(() => {
-        const url = `/annotate?project=Playground&file=${encodeURIComponent(filename)}`;
-        window.open(url, '_blank', 'width=1280,height=800');
-        setPlaygroundText('');
-        setCustomFilename('');
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fileName: finalBaseName,
+          curr_folder: 'Playground',
+          pages: [text],
+          annotations: [],
+          meta: {},
+        }),
       });
+
+      if (!response.ok) {
+        throw new Error('Failed to save playground entry');
+      }
+
+      const filename = `${finalBaseName}.json`;
+      const url = `/annotate?project=Playground&file=${encodeURIComponent(filename)}`;
+      window.open(url, '_blank', 'width=1280,height=800');
+      setPlaygroundText('');
+      setCustomFilename('');
+      await refreshHistoryFiles();
+    } catch (err: any) {
+      alert(`❌ Failed to create playground file: ${err.message}`);
     }
   };
   
@@ -245,10 +230,7 @@ export default function HomePage() {
   
     const file = row.annotate_filename;
     const folder = loadedProject?.folderName;
-    const narrative = row.narrative || '';
     if (!file || !folder) return;
-  
-    await ensureJsonExists(folder, file, narrative);
   
     try {
       // Start the LLM annotation process
@@ -289,14 +271,7 @@ export default function HomePage() {
           throw new Error(result.error || 'Unknown error');
         }
     
-        // Refresh Playground files
-        const res = await fetch('/api/history-files/Playground');
-        const json = await res.json();
-        const updated = json.files.map((f: any) => ({
-          annotate_filename: f.filename,
-          counts: f.counts,
-        }));
-        setDisplayRows(updated);
+        await refreshHistoryFiles();
       } catch (err: any) {
         console.error("Delete failed:", err);
         alert(`❌ Failed to delete file: ${err.message}`);
@@ -378,12 +353,11 @@ export default function HomePage() {
       cell: ({ row }: CellContext<MetaRecord, unknown>) => {
         const fileName = row.original.annotate_filename || '';
         const folderName = row.original.folderName || loadedProject?.folderName || 'Playground'; // fallback
-        const narrative = row.original.narrative || ''; // assuming 'narrative' column contains the text
     
         return (
           <button
             onClick={() =>
-              openAnnotationPopup(folderName, fileName, narrative)
+              openAnnotationPopup(folderName, fileName)
             }
             className="bg-sky-600 hover:bg-sky-700 text-white text-xs font-medium px-4 py-1.5 rounded-full shadow-sm transition-all duration-200"
           >
@@ -398,11 +372,10 @@ export default function HomePage() {
       cell: ({ row }: CellContext<MetaRecord, unknown>) => {
         const fileName = row.original.annotate_filename || '';
         const folderName = row.original.folderName || loadedProject?.folderName || 'Playground';
-        const narrative = row.original.narrative || '';
 
         return (
           <button
-            onClick={() => openAssessPopup(folderName, fileName, narrative)}
+            onClick={() => openAssessPopup(folderName, fileName)}
             className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-medium px-4 py-1.5 rounded-full shadow-sm transition-all duration-200"
           >
             ✅Assess
