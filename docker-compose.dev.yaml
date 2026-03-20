@@ -17,7 +17,6 @@ services:
     build:
       context: ./client
     container_name: docanno_frontend_dev
-    # image: docanno_frontend_dev
     working_dir: /app
     volumes:
       - ./client:/app
@@ -28,6 +27,8 @@ services:
       - NODE_ENV=development
       - HOME=/tmp
       - npm_config_cache=/tmp/.npm
+      # Force Next.js to use polling for file changes on Windows
+      - WATCHPACK_POLLING=true
     command: sh -c "[ -d /app/node_modules/next ] || npm install --legacy-peer-deps; npx next dev -p 3000 -H 0.0.0.0"
     networks:
       - internal
@@ -36,17 +37,19 @@ services:
     build:
       context: ./server
     container_name: docanno_backend_dev
-    # image: docanno_backend_dev
     working_dir: /app
     volumes:
       - ./server:/app
     expose:
       - "5000"
     environment:
-      FLASK_ENV: development
-      HOME: /tmp
-      PIP_DISABLE_PIP_VERSION_CHECK: "1"
-    command: python -u app.py
+      - FLASK_APP=app.py
+      - FLASK_ENV=development
+      - FLASK_DEBUG=1
+      - HOME=/tmp
+      - PIP_DISABLE_PIP_VERSION_CHECK=1
+    # Use flask run for better reloading support
+    command: flask run --host=0.0.0.0 --port=5000
     networks:
       - internal
 
