@@ -54,9 +54,9 @@ export default function Annotate_Panel({ overrideFileName, overrideFolder}: Prop
   }; 
   
   // Layer Management
-  const [activeLayers, setActiveLayers] = useState<string[]>(['SME1', 'AI']); // Default layers
+  const [activeLayers, setActiveLayers] = useState<string[]>(['Human', 'AI']); // Simplified layers
   const [currentUser, setCurrentUser] = useState<any>(null);
-  const [userRole, setUserRole] = useState<string>("MJ.L");
+  const [userRole, setUserRole] = useState<string>("Anonymous");
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [isReadOnly, setIsReadOnly] = useState(false);
   const [metaView, setMetaView] = useState<'none' | 'demographic' | 'products' | 'outcomes'>('none');
@@ -69,11 +69,9 @@ export default function Annotate_Panel({ overrideFileName, overrideFolder}: Prop
       setIsLoggedIn(true);
       const isGuest = u.username === 'guest';
       setIsReadOnly(isGuest);
-      const role = u.migration_key || u.username;
-      setUserRole(role);
-      
-      if (role === 'SME2') setActiveLayers(['SME2', 'AI']);
-      else if (role === 'ADJUDICATOR') setActiveLayers(['SME1', 'SME2', 'AI', 'ADJ']);
+      // Use real name or username for new annotations, not migration key
+      const displayName = u.full_name || u.username;
+      setUserRole(displayName);
     }
   }, []);
 
@@ -101,24 +99,27 @@ export default function Annotate_Panel({ overrideFileName, overrideFolder}: Prop
   
   const [llmPopup, setLlmPopup] = useState<{ 
     visible: boolean; x: number; y: number; text: string; start: number; end: number; 
-    type?: 'AI' | 'SME' | 'NEW'; label?: string; isVerified?: boolean
+    type?: 'AI' | 'SME' | 'NEW'; label?: string; isVerified?: boolean;
+    note?: string;
   }>({ visible: false, x: 0, y: 0, text: '', start: 0, end: 0 });
 
   const currentPageData = doc.pages[doc.currentPageIndex] || null;
 
-  // Filter Annotations for Display (No forced normalization here anymore)
+  // Filter Annotations for Display
   const visibleAnnotations = useMemo(() => {
     return doc.annotations.filter(a => {
       const note = a.note.toUpperCase();
       const isRejected = note.includes('REJECTED');
       if (isRejected && !showRejected) return false;
 
-      const isSme1 = (note.includes('SME1') || note.includes('MJ.L')) && activeLayers.includes('SME1');
-      const isSme2 = (note.includes('SME2') || note.includes('K.L')) && activeLayers.includes('SME2');
-      const isAI = (note.includes('LLM') || note.includes('llama') || note.includes('BERT')) && activeLayers.includes('AI');
-      const isAdj = note.includes('ADJUDICATOR') && activeLayers.includes('ADJ');
+      // Logic: AI is anything with LLM, llama, bert, or AI in note (and NOT verified)
+      const isPureAI = (note.includes('LLM') || note.includes('LLAMA') || note.includes('BERT') || note.includes('AI')) && !note.includes('VERIFIED');
+      const isHuman = !isPureAI; // Verified AI or anything else is Human layer
+
+      if (isPureAI && activeLayers.includes('AI')) return true;
+      if (isHuman && activeLayers.includes('Human')) return true;
       
-      return isSme1 || isSme2 || isAI || isAdj;
+      return false;
     });
   }, [doc.annotations, activeLayers, showRejected]);
 
@@ -127,7 +128,8 @@ export default function Annotate_Panel({ overrideFileName, overrideFolder}: Prop
     return visibleAnnotations.filter(a => {
       const label = a.label.toUpperCase();
       const note = a.note.toUpperCase();
-      const isHuman = note.includes('SME') || note.includes('MJ.L') || note.includes('K.L') || note.includes('ADJUDICATOR');
+      const isPureAI = (note.includes('LLM') || note.includes('LLAMA') || note.includes('BERT') || note.includes('AI')) && !note.includes('VERIFIED');
+      const isHuman = !isPureAI;
       const isAEDrug = ['AE', 'SYMPTOM', 'SIGN', 'DRUG', 'SDRUG', 'CDRUG'].includes(label);
       return isHuman && isAEDrug;
     });
@@ -438,18 +440,17 @@ export default function Annotate_Panel({ overrideFileName, overrideFolder}: Prop
     if (note) {
       const upperNote = note.toUpperCase();
       const isAI = upperNote.includes('LLM') || upperNote.includes('AI') || upperNote.includes('LLAMA') || upperNote.includes('BERT');
-      const isHuman = upperNote.includes('SME') || upperNote.includes('MJ.L') || upperNote.includes('K.L') || upperNote.includes('ADJUDICATOR');
-
+      // Any annotation that isn't purely AI is treated as SME (Human)
       if (isAI) {
         type = 'AI';
         isVerified = upperNote.includes('VERIFIED');
-      } else if (isHuman) {
+      } else {
         type = 'SME';
       }
     }
     
     setLlmPopup({
-      visible: true, x, y, text, start, end, type, label, isVerified
+      visible: true, x, y, text, start, end, type, label, isVerified, note
     });
     if (label) setSelectedPopupLabel(label);
   };
@@ -543,7 +544,7 @@ export default function Annotate_Panel({ overrideFileName, overrideFolder}: Prop
           <div className="flex items-center gap-2 border-l border-gray-200 pl-4">
             <span className="text-[10px] font-bold text-gray-400 uppercase">Layers:</span>
             <div className="flex items-center bg-gray-100 rounded-lg p-0.5 gap-1">
-              {['SME1', 'SME2', 'AI', 'ADJ'].map(layer => (
+              {['Human', 'AI'].map(layer => (
                 <button
                   key={layer}
                   onClick={() => handleLayerToggle(layer)}
@@ -851,7 +852,12 @@ export default function Annotate_Panel({ overrideFileName, overrideFolder}: Prop
         x={llmPopup.x} y={llmPopup.y} visible={llmPopup.visible && !isReadOnly} text={llmPopup.text}
         annotationOptions={annotationOptions}
         type={llmPopup.type}
-        userRole={userRole}
+        userRole={(() => {
+          if (!llmPopup.note) return userRole;
+          const note = llmPopup.note.toUpperCase();
+          if (['SME1', 'SME2', 'ADJUDICATOR'].includes(note)) return 'DevUser';
+          return llmPopup.note;
+        })()}
         selectedLabel={llmPopup.label || ''}
         isVerified={llmPopup.isVerified}
         onAdd={handleLlmAddAnnotation}
@@ -862,6 +868,7 @@ export default function Annotate_Panel({ overrideFileName, overrideFolder}: Prop
           setLlmPopup(prev => ({ ...prev, visible: false }));
           setSelectedTermContext(null);
         }}
+        isReadOnly={isReadOnly}
       />
     </div>
   );
