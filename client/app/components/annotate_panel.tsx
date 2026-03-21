@@ -141,6 +141,46 @@ export default function Annotate_Panel({ overrideFileName, overrideFolder}: Prop
     );
   };
 
+  const handleExport = async () => {
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet('Annotations');
+
+    worksheet.columns = [
+      { header: 'Text', key: 'text', width: 40 },
+      { header: 'Label', key: 'label', width: 20 },
+      { header: 'Start', key: 'start', width: 10 },
+      { header: 'End', key: 'end', width: 10 },
+      { header: 'Page', key: 'page', width: 10 },
+      { header: 'Provenance', key: 'note', width: 30 },
+    ];
+
+    doc.annotations.forEach(anno => {
+      worksheet.addRow({
+        text: anno.textContext.text,
+        label: anno.label,
+        start: anno.textContext.start,
+        end: anno.textContext.end,
+        page: anno.textContext.page + 1,
+        note: anno.note
+      });
+    });
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const url = window.URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    
+    // Construct dynamic filename
+    const caseNumber = doc.meta.case_number || doc.meta.caseNumber || overrideFileName?.split('.')[0] || 'Unknown';
+    const version = doc.meta.version || 'v1';
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    
+    anchor.download = `Annotation_${caseNumber}_${version}_${timestamp}.xlsx`;
+    anchor.click();
+    window.URL.revokeObjectURL(url);
+  };
+
   // Selection Logic
   const handleTextSelection = () => {
       const selection = window.getSelection();
@@ -391,8 +431,13 @@ export default function Annotate_Panel({ overrideFileName, overrideFolder}: Prop
       <header className="bg-white border-b border-gray-200 px-6 py-3 flex items-center justify-between shadow-sm z-30">
         <div className="flex items-center gap-6">
           <div>
-            <span className="text-[10px] font-black text-gray-400 uppercase tracking-tighter">Annotate</span>
-            <h1 className="text-sm font-bold text-gray-800 -mt-1 truncate max-w-[150px]">{overrideFileName}</h1>
+            <button 
+              onClick={handleExport}
+              className="group flex items-center gap-2 px-3 py-1.5 bg-gray-50 hover:bg-emerald-50 border border-gray-200 hover:border-emerald-200 rounded-lg transition-all"
+            >
+              <span className="text-emerald-600 text-sm">📊</span>
+              <span className="text-[10px] font-black text-gray-500 group-hover:text-emerald-700 uppercase tracking-widest">Export Excel</span>
+            </button>
           </div>
 
           {/* User Section in Header */}
