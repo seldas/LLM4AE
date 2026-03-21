@@ -194,21 +194,7 @@ export default function Annotate_Panel({ overrideFileName, overrideFolder}: Prop
   };
 
   const handleVerifyAnnotation = (start: number, end: number, text: string, label: string, note: string) => {
-    // 1. Create the human annotation
-    const newHumanAnnotation: Annotation = {
-      textContext: {
-        text,
-        start,
-        end,
-        page: doc.currentPageIndex,
-        disputed: false,
-      },
-      label: label, // Keep original label
-      note: userRole,
-      relationships: { latency: {text:'',page:0}, date: {text:'',page:0}, time: {text:'',page:0}, frequency: {text:'',page:0}, temporal_sequence: {text:'',page:0} },
-    };
-
-    // 2. Find and update the existing AI annotation
+    // 1. Find and update the existing AI annotation
     const existingAI = doc.annotations.find(a => 
       a.textContext.start === start && 
       a.textContext.end === end && 
@@ -222,16 +208,25 @@ export default function Annotate_Panel({ overrideFileName, overrideFolder}: Prop
         note: `${existingAI.note} | VERIFIED BY ${userRole}`
       };
       
-      dispatch({ 
-        type: DocActionTypes.ADD_ANNOTATION, 
-        payload: { 
-          annotation: newHumanAnnotation, 
-          historyType: 'verify',
-          prevAnnotation: existingAI
-        } 
-      });
+      // Dispatch UPDATE for AI with 'verify' historyType
+      dispatch({ type: DocActionTypes.UPDATE_ANNOTATION, payload: { annotation: updatedAI, historyType: 'verify' } });
 
-      dispatch({ type: DocActionTypes.UPDATE_ANNOTATION, payload: { annotation: updatedAI } });
+      // 2. Create and add the human annotation
+      const newHumanAnnotation: Annotation = {
+        textContext: {
+          text,
+          start,
+          end,
+          page: doc.currentPageIndex,
+          disputed: false,
+        },
+        label: label,
+        note: userRole,
+        relationships: { latency: {text:'',page:0}, date: {text:'',page:0}, time: {text:'',page:0}, frequency: {text:'',page:0}, temporal_sequence: {text:'',page:0} },
+      };
+
+      // Dispatch ADD for human with 'add' historyType
+      dispatch({ type: DocActionTypes.ADD_ANNOTATION, payload: { annotation: newHumanAnnotation, historyType: 'add' } });
     }
   };
 
@@ -290,16 +285,11 @@ export default function Annotate_Panel({ overrideFileName, overrideFolder}: Prop
           note: `${existingAI.note} | VERIFIED BY ${userRole}`
         };
         
-        dispatch({ 
-          type: DocActionTypes.ADD_ANNOTATION, 
-          payload: { 
-            annotation: newAnnotation, 
-            historyType: 'verify',
-            prevAnnotation: existingAI
-          } 
-        });
+        // Separate history entry 1: Verify AI
+        dispatch({ type: DocActionTypes.UPDATE_ANNOTATION, payload: { annotation: updatedAI, historyType: 'verify' } });
 
-        dispatch({ type: DocActionTypes.UPDATE_ANNOTATION, payload: { annotation: updatedAI } });
+        // Separate history entry 2: Add Human
+        dispatch({ type: DocActionTypes.ADD_ANNOTATION, payload: { annotation: newAnnotation, historyType: 'add' } });
       }
     } else {
       dispatch({ type: DocActionTypes.ADD_ANNOTATION, payload: { annotation: newAnnotation, historyType: 'add' } });

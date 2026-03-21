@@ -408,35 +408,14 @@ export function docReducer(state: DocState, action: DocActions ) {
             } else if (actionToUndo.type === 'remove') {
                 // Add back the removed annotation
                 newAnnotations.push(actionToUndo.annotation);
-            } else if (actionToUndo.type === 'reject') {
+            } else if (actionToUndo.type === 'reject' || actionToUndo.type === 'verify') {
                 // Restore the previous state of the annotation
                 if (actionToUndo.prevAnnotation) {
                     newAnnotations = newAnnotations.map(a => 
                         (a.textContext.start === actionToUndo.annotation.textContext.start &&
                          a.textContext.end === actionToUndo.annotation.textContext.end &&
-                         a.label === actionToUndo.annotation.label) 
-                         ? actionToUndo.prevAnnotation! : a
-                    );
-                }
-            } else if (actionToUndo.type === 'verify') {
-                // Verification involves adding a user annotation AND updating the AI one
-                // Undo both: remove user annotation and restore AI one
-                
-                // 1. Remove user annotation (the one in actionToUndo.annotation)
-                newAnnotations = newAnnotations.filter(a => 
-                    !(a.textContext.start === actionToUndo.annotation.textContext.start &&
-                      a.textContext.end === actionToUndo.annotation.textContext.end &&
-                      a.label === actionToUndo.annotation.label &&
-                      a.note === actionToUndo.annotation.note)
-                );
-
-                // 2. Restore prev AI annotation if exists
-                if (actionToUndo.prevAnnotation) {
-                    newAnnotations = newAnnotations.map(a => 
-                        (a.textContext.start === actionToUndo.annotation.textContext.start &&
-                         a.textContext.end === actionToUndo.annotation.textContext.end &&
                          a.label === actionToUndo.annotation.label &&
-                         a.note === actionToUndo.prevAnnotation?.note) 
+                         a.note === actionToUndo.annotation.note) 
                          ? actionToUndo.prevAnnotation! : a
                     );
                 }
