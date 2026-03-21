@@ -366,55 +366,6 @@ export default function HomePage() {
         );
       },
     },
-    {
-      id: 'assess',
-      header: 'Assess',
-      cell: ({ row }: CellContext<MetaRecord, unknown>) => {
-        const fileName = row.original.annotate_filename || '';
-        const folderName = row.original.folderName || loadedProject?.folderName || 'Playground';
-
-        return (
-          <button
-            onClick={() => openAssessPopup(folderName, fileName)}
-            className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-medium px-4 py-1.5 rounded-full shadow-sm transition-all duration-200"
-          >
-            ✅Assess
-          </button>
-        );
-      },
-    },
-    {
-      accessorKey: 'counts.LLM',
-      id: 'llm',
-      header: 'LLM Status',
-      cell: (info: CellContext<MetaRecord, number>) => {
-        const row = info.row.original;
-        const meta = row.meta || {};
-        const llmStatus = meta.llm_processed || 'not_started';
-        
-        let display = 'Generate';
-        let isGenerating = llmStatus === 'working';
-        
-        if (llmStatus === 'working') display = 'Working...';
-        else if (llmStatus === 'Done') display = 'ReGenerate';
-        
-        return (
-          <button
-            onClick={() => handleGenerateLLMAnnotation(row, table)}
-            disabled={isGenerating}
-            className={`font-semibold text-xs px-2 py-1 rounded shadow ${
-                        isGenerating
-                          ? 'bg-gray-300 text-gray-500'
-                          : display === 'Generate'
-                          ? 'bg-yellow-100 hover:bg-yellow-200 text-yellow-900'
-                          : 'bg-orange-100 hover:bg-orange-200 text-orange-900'
-                      }`}
-          >
-            {display}
-          </button>
-        );
-      }
-    },
     ...(loadedProject?.folderName === 'Playground' ? [  
       { accessorKey: 'annotate_filename', header: 'File' },
       {
