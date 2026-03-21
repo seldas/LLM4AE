@@ -22,6 +22,7 @@ def init_db():
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             username TEXT UNIQUE NOT NULL,
+            password TEXT,
             full_name TEXT,
             role_id INTEGER NOT NULL,
             migration_key TEXT,
@@ -123,16 +124,17 @@ def init_db():
     rmap = {n: i for i, n in cursor.fetchall()}
     
     users = [
-        ('Admin', 'System Administrator', rmap['Admin'], None),
-        ('MJ.L', 'MJ.L', rmap['Annotator'], 'SME1'),
-        ('K.L', 'K.L', rmap['Annotator'], 'SME2'),
-        ('L.W', 'L.W', rmap['Adjudicator'], None),
-        ('O.D', 'O.D', rmap['Adjudicator'], None),
-        ('Llama4', 'Meta Llama 4', rmap['AI'], 'LLM'),
-        ('BioBERT', 'BioBERT Foundation', rmap['AI'], 'BERT'),
-        ('Elsa', 'Elsa AI Agent', rmap['AI'], None)
+        ('Admin', 'admin123', 'System Administrator', rmap['Admin'], None),
+        ('MJ.L', 'password123', 'MJ.L', rmap['Annotator'], 'SME1'),
+        ('K.L', 'password123', 'K.L', rmap['Annotator'], 'SME2'),
+        ('L.W', 'password123', 'L.W', rmap['Adjudicator'], None),
+        ('O.D', 'password123', 'O.D', rmap['Adjudicator'], None),
+        ('Llama4', None, 'Meta Llama 4', rmap['AI'], 'LLM'),
+        ('BioBERT', None, 'BioBERT Foundation', rmap['AI'], 'BERT'),
+        ('Elsa', None, 'Elsa AI Agent', rmap['AI'], None),
+        ('guest', 'guest', 'Guest User', rmap['Annotator'], 'GUEST')
     ]
-    cursor.executemany('INSERT OR IGNORE INTO users (username, full_name, role_id, migration_key) VALUES (?, ?, ?, ?)', users)
+    cursor.executemany('INSERT OR IGNORE INTO users (username, password, full_name, role_id, migration_key) VALUES (?, ?, ?, ?, ?)', users)
     
     conn.commit()
     conn.close()
@@ -218,6 +220,15 @@ def get_user_by_note(note):
         n = str(note).strip().upper()
         res = conn.execute('SELECT id FROM users WHERE UPPER(username) = ? OR UPPER(migration_key) = ?', (n, n)).fetchone()
         return res['id'] if res else None
+    finally: conn.close()
+
+def authenticate_user(username, password):
+    conn = get_db_connection()
+    try:
+        res = conn.execute('SELECT * FROM users WHERE username = ? AND password = ?', (username, password)).fetchone()
+        if res:
+            return dict(res)
+        return None
     finally: conn.close()
 
 if __name__ == "__main__":

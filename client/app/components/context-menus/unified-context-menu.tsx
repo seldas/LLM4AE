@@ -8,6 +8,7 @@ interface Props {
   addAnnotation: (label: string) => void;
   handleAddRelationship: (label: string) => void;
   closeContextMenu: () => void;
+  isReadOnly?: boolean;
 }
 
 const UnifiedContextMenuDisplay = ({
@@ -17,6 +18,7 @@ const UnifiedContextMenuDisplay = ({
   addAnnotation,
   handleAddRelationship,
   closeContextMenu,
+  isReadOnly
 }: Props) => {
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -39,6 +41,8 @@ const UnifiedContextMenuDisplay = ({
       document.removeEventListener('keydown', handleClickOutsideOrEscape);
     };
   }, [closeContextMenu]);
+
+  if (isReadOnly) return null;
 
   return (
     <div

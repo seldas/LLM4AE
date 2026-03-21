@@ -21,6 +21,7 @@ interface Props {
   onClickAnnotation?: (text: string, start: number, end: number, x: number, y: number, note?: string, label?: string) => void;
   selectedTermContext: { text: string; start: number; end: number } | null;
   setSelectedTermContext: (context: { text: string; start: number; end: number } | null) => void;
+  isReadOnly?: boolean;
 }
 
 function escapeRegExp(text: string): string {
@@ -74,7 +75,8 @@ function PageDisplay({
   annotationSet,
   onClickAnnotation,
   selectedTermContext,
-  setSelectedTermContext
+  setSelectedTermContext,
+  isReadOnly
 }: Props) {
   const textRef = useRef<HTMLPreElement>(null);
   const [highlightBoxes, setHighlightBoxes] = useState<any[]>([]);
@@ -448,7 +450,7 @@ function PageDisplay({
   }, [annotations, userRole, compareAnnotations]);
 
   return (
-    <div className="page flex" style={{ margin: "10px auto" }} onMouseUp={handleTextSelection}>
+    <div className="page flex" style={{ margin: "10px auto" }} onMouseUp={() => !isReadOnly && handleTextSelection()}>
       {/* Visual Gutter */}
       <div 
         className="flex-shrink-0 text-right pr-4 text-gray-300 select-none font-mono text-xs border-r border-gray-100" 

@@ -1,13 +1,14 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useSearchParams, useRouter } from 'next/navigation';
 import AssessPanel from '../components/assess_panel';
 import { getHistoryFile } from '../lib/api';
 import type { FileData } from '../lib/interfaces';
 
 export default function AssessClient() {
   const searchParams = useSearchParams();
+  const router = useRouter();
   const folder = searchParams.get('project');
   const file = searchParams.get('file');
 
@@ -15,6 +16,12 @@ export default function AssessClient() {
   const [fileData, setFileData] = useState<FileData | null>(null);
 
   useEffect(() => {
+    const storedUser = localStorage.getItem('user');
+    if (!storedUser) {
+      router.push('/login');
+      return;
+    }
+
     const load = async () => {
       if (!folder || !file) return;
       setLoading(true);
@@ -23,7 +30,7 @@ export default function AssessClient() {
       setLoading(false);
     };
     load();
-  }, [folder, file]);
+  }, [folder, file, router]);
 
   if (!folder || !file) {
     return <div className="p-6 text-sm text-red-700">Missing project or file parameters.</div>;

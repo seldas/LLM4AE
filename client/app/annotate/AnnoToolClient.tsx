@@ -1,11 +1,12 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useSearchParams, useRouter } from 'next/navigation';
 import Annotate_Panel from '../components/annotate_panel';
 
 export default function AnnoToolClient() {
   const searchParams = useSearchParams();
+  const router = useRouter();
   const folder = searchParams.get('project');
   const file = searchParams.get('file');
 
@@ -14,11 +15,17 @@ export default function AnnoToolClient() {
   const [currFolder, setCurrFolder] = useState('');
 
   useEffect(() => {
+    const storedUser = localStorage.getItem('user');
+    if (!storedUser) {
+      router.push('/login');
+      return;
+    }
+    
     if (!folder || !file) return;
     setOverrideFile(file);
     setCurrFolder(folder);
     setReady(true);
-  }, [folder, file]);
+  }, [folder, file, router]);
 
   if (!ready) return <div className="p-6">Loading annotation tool...</div>;
 

@@ -10,7 +10,7 @@ from history_management import history_blueprint
 from project_management import project_blueprint
 from text_processing import *  # noqa: F403
 from llm_annotation import run_llm_annotation, call_llm  # noqa: F401
-from database_manager import get_db_connection, get_project_by_name, get_case, upsert_case, get_annotations, get_user_by_note
+from database_manager import get_db_connection, get_project_by_name, get_case, upsert_case, get_annotations, get_user_by_note, authenticate_user
 from ai_client import call_ai as ai_call
 
 # -----------------------------------------------------------------------------
@@ -24,6 +24,29 @@ app.register_blueprint(project_blueprint)
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 HISTORY_FOLDER = os.path.join(BASE_DIR, "history")
+
+# -----------------------------------------------------------------------------
+# Auth
+# -----------------------------------------------------------------------------
+@app.route("/api/login", methods=["POST"])
+@cross_origin()
+def login():
+    data = request.get_json()
+    username = data.get("username")
+    password = data.get("password")
+    
+    user = authenticate_user(username, password)
+    if user:
+        # For simple implementation, return user info. 
+        # In real app, use JWT or sessions.
+        return jsonify({
+            "id": user["id"],
+            "username": user["username"],
+            "full_name": user["full_name"],
+            "migration_key": user["migration_key"]
+        }), 200
+    else:
+        return jsonify({"error": "Invalid username or password"}), 401
 
 # -----------------------------------------------------------------------------
 # Helpers

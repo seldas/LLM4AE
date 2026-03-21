@@ -16,6 +16,7 @@ interface Props {
   onReject?: () => void;
   onRemove?: () => void;
   onClose: () => void;
+  isReadOnly?: boolean;
 }
 
 const LLMAnnotationPopup: React.FC<Props> = ({
@@ -31,7 +32,8 @@ const LLMAnnotationPopup: React.FC<Props> = ({
   onUnverify,
   onReject,
   onRemove,
-  onClose
+  onClose,
+  isReadOnly
 }) => {
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -87,46 +89,48 @@ const LLMAnnotationPopup: React.FC<Props> = ({
         </button>
       </div>
 
-      <div className="flex flex-col gap-2 mt-3 pt-3 border-t border-gray-100">
-        {type === 'AI' && (
-          <>
-            <button 
-              onClick={() => isVerified ? onUnverify?.() : onAdd(selectedLabel)} 
-              className={`w-full py-2 rounded-lg font-bold text-xs shadow-sm transition-all flex items-center justify-center gap-2 ${
-                isVerified 
-                ? "bg-amber-500 hover:bg-amber-600 text-white" 
-                : "bg-emerald-600 hover:bg-emerald-700 text-white"
-              }`}
-            >
-              <span>{isVerified ? '↺' : '✓'}</span> {isVerified ? 'Unverify' : 'Verify'}
-            </button>
-            <button 
-              onClick={onReject} 
-              className="w-full py-2 rounded-lg border border-red-200 text-red-600 font-bold text-xs hover:bg-red-50 transition-all"
-            >
-              Reject AI
-            </button>
-          </>
-        )}
+      {!isReadOnly && (
+        <div className="flex flex-col gap-2 mt-3 pt-3 border-t border-gray-100">
+          {type === 'AI' && (
+            <>
+              <button 
+                onClick={() => isVerified ? onUnverify?.() : onAdd(selectedLabel)} 
+                className={`w-full py-2 rounded-lg font-bold text-xs shadow-sm transition-all flex items-center justify-center gap-2 ${
+                  isVerified 
+                  ? "bg-amber-500 hover:bg-amber-600 text-white" 
+                  : "bg-emerald-600 hover:bg-emerald-700 text-white"
+                }`}
+              >
+                <span>{isVerified ? '↺' : '✓'}</span> {isVerified ? 'Unverify' : 'Verify'}
+              </button>
+              <button 
+                onClick={onReject} 
+                className="w-full py-2 rounded-lg border border-red-200 text-red-600 font-bold text-xs hover:bg-red-50 transition-all"
+              >
+                Reject AI
+              </button>
+            </>
+          )}
 
-        {type === 'SME' && (
-          <button 
-            onClick={onRemove} 
-            className="w-full py-2 rounded-lg bg-red-50 text-red-600 font-bold text-xs hover:bg-red-100 transition-all"
-          >
-            Remove
-          </button>
-        )}
+          {type === 'SME' && (
+            <button 
+              onClick={onRemove} 
+              className="w-full py-2 rounded-lg bg-red-50 text-red-600 font-bold text-xs hover:bg-red-100 transition-all"
+            >
+              Remove
+            </button>
+          )}
 
-        {type === 'NEW' && (
-          <button 
-            onClick={() => onAdd(selectedLabel)} 
-            className="w-full py-2 rounded-lg bg-blue-600 text-white font-bold text-xs hover:bg-blue-700 shadow-sm transition-all"
-          >
-            Tag as {selectedLabel || 'Annotation'}
-          </button>
-        )}
-      </div>
+          {type === 'NEW' && (
+            <button 
+              onClick={() => onAdd(selectedLabel)} 
+              className="w-full py-2 rounded-lg bg-blue-600 text-white font-bold text-xs hover:bg-blue-700 shadow-sm transition-all"
+            >
+              Tag as {selectedLabel || 'Annotation'}
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 };

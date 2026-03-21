@@ -13,6 +13,7 @@ interface Props {
   selectedTermContext: { text: string; start: number; end: number } | null;  
   setSelectedTermContext: (context: { text: string; start: number; end: number } | null) => void;  
   handleExtendMatch: (annotation: Annotation) => void;  
+  isReadOnly?: boolean;
 }
 
 const AnnotationPanel = (props: Props) => {
@@ -141,15 +142,17 @@ const AnnotationPanel = (props: Props) => {
                                   </span>
                                 </button>
                                 <div className="pr-2">
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      props.handleExtendMatch(Object.values(labels)[0][0]);
-                                    }}
-                                    className="text-[10px] font-black text-blue-600 hover:bg-blue-100 px-2 py-1 rounded-md transition-colors whitespace-nowrap"
-                                  >
-                                    TAG ALL
-                                  </button>
+                                  {!props.isReadOnly && (
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        props.handleExtendMatch(Object.values(labels)[0][0]);
+                                      }}
+                                      className="text-[10px] font-black text-blue-600 hover:bg-blue-100 px-2 py-1 rounded-md transition-colors whitespace-nowrap"
+                                    >
+                                      TAG ALL
+                                    </button>
+                                  )}
                                 </div>
                               </div>
 
@@ -196,17 +199,19 @@ const AnnotationPanel = (props: Props) => {
                                                 {isAI ? '🤖' : isVerified ? '👤✓' : '👤'} #{ann.textContext.start}
                                               </span>
                                               
-                                              <button
-                                                onClick={(e) => {
-                                                  e.stopPropagation();
-                                                  props.handleRemoveAnnotation(ann);
-                                                }}
-                                                className={`text-[10px] opacity-0 group-hover:opacity-100 transition-opacity ${
-                                                  isSelected ? 'text-white' : 'text-red-400 hover:text-red-600'
-                                                }`}
-                                              >
-                                                ✕
-                                              </button>
+                                              {!props.isReadOnly && (
+                                                <button
+                                                  onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    props.handleRemoveAnnotation(ann);
+                                                  }}
+                                                  className={`text-[10px] opacity-0 group-hover:opacity-100 transition-opacity ${
+                                                    isSelected ? 'text-white' : 'text-red-400 hover:text-red-600'
+                                                  }`}
+                                                >
+                                                  ✕
+                                                </button>
+                                              )}
                                             </div>
                                           );
                                         })}

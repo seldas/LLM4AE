@@ -55,9 +55,27 @@ export default function Annotate_Panel({ overrideFileName, overrideFolder}: Prop
   
   // Layer Management
   const [activeLayers, setActiveLayers] = useState<string[]>(['SME1', 'AI']); // Default layers
-  const [userRole, setUserRole] = useState<"MJ.L" | "SME2" | "Adjudicator">("MJ.L");
-  const [isLoggedIn, setIsLoggedIn] = useState(true); // Assuming logged in for prototype
+  const [currentUser, setCurrentUser] = useState<any>(null);
+  const [userRole, setUserRole] = useState<string>("MJ.L");
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [isReadOnly, setIsReadOnly] = useState(false);
   const [metaView, setMetaView] = useState<'none' | 'demographic' | 'products' | 'outcomes'>('none');
+
+  useEffect(() => {
+    const storedUser = localStorage.getItem('user');
+    if (storedUser) {
+      const u = JSON.parse(storedUser);
+      setCurrentUser(u);
+      setIsLoggedIn(true);
+      const isGuest = u.username === 'guest';
+      setIsReadOnly(isGuest);
+      const role = u.migration_key || u.username;
+      setUserRole(role);
+      
+      if (role === 'SME2') setActiveLayers(['SME2', 'AI']);
+      else if (role === 'ADJUDICATOR') setActiveLayers(['SME1', 'SME2', 'AI', 'ADJ']);
+    }
+  }, []);
 
   const [relationshipBuilderMode, setRelationshipBuilderMode] = useState(false);
   const [currentAnnotationRelation, setCurrentAnnotationRelation] = useState<Annotation | null>(null);
@@ -109,6 +127,7 @@ export default function Annotate_Panel({ overrideFileName, overrideFolder}: Prop
   }, [doc.actionHistory.length]);
 
   const handleSave = async (shouldClose = false) => {
+      if (isReadOnly) return;
       try {
         await saveAnnotationsToDb({
           fileName: overrideFileName || doc.saveFileName,
@@ -183,6 +202,7 @@ export default function Annotate_Panel({ overrideFileName, overrideFolder}: Prop
 
   // Selection Logic
   const handleTextSelection = () => {
+      if (isReadOnly) return;
       const selection = window.getSelection();
       if (!selection || !selection.toString().trim()) return;
 
@@ -217,6 +237,7 @@ export default function Annotate_Panel({ overrideFileName, overrideFolder}: Prop
   };
 
   const handleAddAnnotation = (label: string) => {
+      if (isReadOnly) return;
       const newAnnotation: Annotation = {
         textContext: {
           text: selectedText,
@@ -234,6 +255,7 @@ export default function Annotate_Panel({ overrideFileName, overrideFolder}: Prop
   };
 
   const handleVerifyAnnotation = (start: number, end: number, text: string, label: string, note: string) => {
+    if (isReadOnly) return;
     // 1. Find and update the existing AI annotation
     const existingAI = doc.annotations.find(a => 
       a.textContext.start === start && 
@@ -271,6 +293,7 @@ export default function Annotate_Panel({ overrideFileName, overrideFolder}: Prop
   };
 
   const handleRejectAnnotation = (start: number, end: number, label: string) => {
+    if (isReadOnly) return;
     const existing = doc.annotations.find(a => 
       a.textContext.start === start && 
       a.textContext.end === end && 
@@ -289,6 +312,7 @@ export default function Annotate_Panel({ overrideFileName, overrideFolder}: Prop
   };
 
   const handleLlmAddAnnotation = (labelOverride?: string) => {
+    if (isReadOnly) return;
     const { start, end, text, type } = llmPopup;
     const label = labelOverride || selectedPopupLabel;
     
@@ -340,6 +364,7 @@ export default function Annotate_Panel({ overrideFileName, overrideFolder}: Prop
   };
 
   const handleUnverifyAnnotation = (start: number, end: number, label: number | string) => {
+    if (isReadOnly) return;
     const labelStr = String(label);
     
     const humanAnno = doc.annotations.find(a => 
@@ -442,14 +467,18 @@ export default function Annotate_Panel({ overrideFileName, overrideFolder}: Prop
 
           {/* User Section in Header */}
           <div className="flex items-center gap-2 border-l border-gray-200 pl-4">
-            {isLoggedIn ? (
+            {isLoggedIn && currentUser ? (
               <div className="flex items-center gap-2">
-                <div className="w-7 h-7 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-700 font-black text-[10px] border border-indigo-200 shadow-sm">
-                  {userRole.charAt(0)}
+                <div className="w-7 h-7 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-700 font-black text-[10px] border border-indigo-200 shadow-sm uppercase">
+                  {(currentUser.full_name || currentUser.username).charAt(0)}
                 </div>
                 <div>
-                   <span className="text-[10px] font-black text-gray-800 block leading-none">{userRole}</span>
-                   <span className="text-[8px] font-bold text-gray-400 uppercase tracking-tighter">Active User</span>
+                   <span className="text-[10px] font-black text-gray-800 block leading-none">
+                     {currentUser.username === 'guest' ? 'Anonymous' : (currentUser.full_name || currentUser.username)}
+                   </span>
+                   <span className="text-[8px] font-bold text-gray-400 uppercase tracking-tighter">
+                     {currentUser.username === 'guest' ? 'Guest Access' : 'Active User'}
+                   </span>
                 </div>
               </div>
             ) : (
@@ -516,9 +545,9 @@ export default function Annotate_Panel({ overrideFileName, overrideFolder}: Prop
         </div>
 
         <div className="flex items-center gap-3">
-          <button onClick={() => handleSave(false)} className="text-xs font-bold text-gray-600 hover:text-black">Save</button>
+          {!isReadOnly && <button onClick={() => handleSave(false)} className="text-xs font-bold text-gray-600 hover:text-black">Save</button>}
           <button onClick={handleFinish} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-xs font-bold shadow-md transition-all">
-            Finish
+            {isReadOnly ? 'Close' : 'Finish'}
           </button>
         </div>
       </header>
@@ -573,12 +602,13 @@ export default function Annotate_Panel({ overrideFileName, overrideFolder}: Prop
               setAnnotationOptions={setAnnotationOptions}
               optionColors={optionColors}
               setOptionColors={setOptionColors}
-              handleRemoveAnnotation={(a) => dispatch({ type: DocActionTypes.REMOVE_ANNOTATION, payload: { annotation: a } })}
+              handleRemoveAnnotation={(a) => !isReadOnly && dispatch({ type: DocActionTypes.REMOVE_ANNOTATION, payload: { annotation: a } })}
               activeLabelFilters={activeLabelFilters}
               setActiveLabelFilters={setActiveLabelFilters}
               selectedTermContext={selectedTermContext}
               setSelectedTermContext={setSelectedTermContext}
               handleExtendMatch={() => {}}
+              isReadOnly={isReadOnly}
             />
           </div>
           
@@ -587,7 +617,7 @@ export default function Annotate_Panel({ overrideFileName, overrideFolder}: Prop
             <ActionHistoryPanel 
               history={doc.actionHistory}
               optionColors={optionColors}
-              onUndo={(id) => dispatch({ type: DocActionTypes.UNDO_ACTION, payload: { actionId: id } })}
+              onUndo={(id) => !isReadOnly && dispatch({ type: DocActionTypes.UNDO_ACTION, payload: { actionId: id } })}
             />
           </div>
         </div>
@@ -634,6 +664,7 @@ export default function Annotate_Panel({ overrideFileName, overrideFolder}: Prop
                   optionColors={optionColors}
                   handleTextSelection={handleTextSelection}
                   userRole={userRole as any}
+                  isReadOnly={isReadOnly}
                 />
               ) : (
                 <PageDisplay
@@ -650,6 +681,7 @@ export default function Annotate_Panel({ overrideFileName, overrideFolder}: Prop
                   onClickAnnotation={onClickAnnotation}
                   selectedTermContext={selectedTermContext}
                   setSelectedTermContext={setSelectedTermContext}
+                  isReadOnly={isReadOnly}
                 />
               )}
             </div>
@@ -676,17 +708,19 @@ export default function Annotate_Panel({ overrideFileName, overrideFolder}: Prop
              <RelationshipBuilderPanel
                 annotations={visibleAnnotations}
                 handleSelectCell={(a, type) => {
+                  if (isReadOnly) return;
                   setCurrentAnnotationRelation(a);
                   setCurrentRelationType(type);
                 }}
                 currentAnnotation={currentAnnotationRelation}
                 currentRelationshipType={currentRelationType}
+                isReadOnly={isReadOnly}
               />
           </div>
         )}
       </main>
 
-      {unifiedContextMenu.visible && (
+      {unifiedContextMenu.visible && !isReadOnly && (
         <UnifiedContextMenuDisplay
           contextMenu={unifiedContextMenu}
           annotationOptions={annotationOptions}
@@ -701,7 +735,7 @@ export default function Annotate_Panel({ overrideFileName, overrideFolder}: Prop
       )}
 
       <LLMAnnotationPopup
-        x={llmPopup.x} y={llmPopup.y} visible={llmPopup.visible} text={llmPopup.text}
+        x={llmPopup.x} y={llmPopup.y} visible={llmPopup.visible && !isReadOnly} text={llmPopup.text}
         annotationOptions={annotationOptions}
         type={llmPopup.type}
         userRole={userRole}

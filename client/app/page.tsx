@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useState, useMemo, useRef, } from 'react';
+import { useRouter } from 'next/navigation';
 import {
   useReactTable,
   getCoreRowModel,
@@ -107,6 +108,9 @@ const NewProjectUploader = ({
 };
 
 export default function HomePage() {
+  const [user, setUser] = useState<any>(null);
+  const router = useRouter();
+
   const [projectFiles, setProjectFiles] = useState<string[]>([]);
   const [loadedProject, setLoadedProject] = useState<ProjectEntry | null>(null);
   const [loading, setLoading] = useState(false);
@@ -122,7 +126,21 @@ export default function HomePage() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);  
   const [deletionEnabled, setDeletionEnabled] = useState(false);
   
-  
+  useEffect(() => {
+    const storedUser = localStorage.getItem('user');
+    if (!storedUser) {
+      router.push('/login');
+    } else {
+      setUser(JSON.parse(storedUser));
+      fetchProjectList();
+    }
+  }, []);
+
+  const handleLogout = () => {
+    localStorage.removeItem('user');
+    router.push('/login');
+  };
+
   const handleProjectClick = async (projectName: string) => {
       setLoading(true);
       try {
@@ -430,21 +448,26 @@ export default function HomePage() {
     onGlobalFilterChange: setGlobalFilter,
   });
     
-  useEffect(() => {
-    fetchProjectList();
-  }, []);
-
-  useEffect(() => {
-      if (!loadedProject?.folderName || loadedProject.folderName === 'Playground') return;
-      refreshHistoryFiles();
-  }, [loadedProject?.folderName]);
+  if (!user) return null;
 
   const randomString = Math.random().toString(36).substring(2, 8); // generates 6-char string
   const defaultFilename = `playground_${randomString}`;
   
   return (
     <div className="p-6">
-      <h1 className="text-2xl font-bold mb-4">📁 <a href="">Annotation Projects</a></h1>
+      <div className="flex justify-between items-center mb-4">
+        <h1 className="text-2xl font-bold">📁 <a href="">Annotation Projects</a></h1>
+        <div className="flex items-center gap-4">
+          <span className="text-sm font-medium text-gray-700">👤 {user.full_name || user.username}</span>
+          <button 
+            onClick={handleLogout}
+            className="text-xs font-semibold text-red-600 hover:text-red-800 transition-colors"
+          >
+            Logout
+          </button>
+        </div>
+      </div>
+      
       <button
           disabled
           onClick={() => setDeletionEnabled(!deletionEnabled)}
