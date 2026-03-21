@@ -45,26 +45,52 @@ export const getCurrentDateString = (): string => {
     return `${month}${day}${year}`;
 };
 
+const labelCategoryMap: { [key: string]: string } = {
+    'R/O': 'DIAGNOSTIC',
+    'BSYM': 'MEDICAL HISTORY',
+    'SYMPTOM': 'AE',
+    'SIGN': 'AE',
+    'COD': 'CAUSE OF DEATH',
+    'AGE': 'DEMOGRAPHIC',
+    'SEX': 'DEMOGRAPHIC',
+    'GENDER': 'DEMOGRAPHIC',
+    'RACE': 'DEMOGRAPHIC',
+    'ETHNICITY': 'DEMOGRAPHIC',
+    'BIRTH': 'DEMOGRAPHIC',
+    'TEMPO': 'TEMPORAL',
+    'DATE': 'TEMPORAL',
+    'TIME': 'TEMPORAL',
+    'DURATION': 'TEMPORAL',
+    'RELATIVE': 'TEMPORAL',
+    'LATENCY': 'TEMPORAL',
+    'FREQUENCY': 'TEMPORAL',
+    'TEMPORAL SEQUENCE': 'TEMPORAL',
+    'SDRUG': 'DRUG',
+    'CDRUG': 'DRUG',
+    'DOSE': 'DRUG',
+    'ROUTE': 'DRUG',
+};
+
 const defaultLabelHues: { [key: string]: number } = {
-    AE: 0,
-    MAE: 10,
+    'AE': 0,
+    'MAE': 10,
     'CAUSE OF DEATH': 40,
-    DIAGNOSTIC: 50,
-    STATUS: 70,
+    'DIAGNOSTIC': 50,
+    'STATUS': 70,
     'MEDICAL HISTORY': 90,
-    IND: 110,
+    'IND': 110,
     'FAMILY HISTORY': 100,
-    TEMPORAL: 200,
-    AGE: 210,
-    SEX: 210,
-    DRUG: 250,
-    SDRUG: 250,
-    CDRUG: 280,
-    DOSE:290,
-    LAB :290,
-    TREATMENT: 280,
-    DISPOSITION: 285,
-  };
+    'TEMPORAL': 200,
+    'DEMOGRAPHIC': 210,
+    'AGE': 210,
+    'SEX': 210,
+    'DRUG': 250,
+    'LAB': 290,
+    'TREATMENT': 280,
+    'DISPOSITION': 285,
+    'PROCEDURE': 320,
+    'DEVICE': 340,
+};
   
 export const generateOptionColors = (options: string[]): {
     [key: string]: string;
@@ -75,11 +101,22 @@ export const generateOptionColors = (options: string[]): {
   
     options.forEach((option) => {
       const label = option.toUpperCase();
-      if (defaultLabelHues[label] !== undefined) {
+      const category = labelCategoryMap[label] || label;
+      
+      if (defaultLabelHues[category] !== undefined) {
+        const hue = defaultLabelHues[category];
+        colors[option] = `hsl(${hue}, ${saturation}%, ${lightness}%)`;
+      } else if (defaultLabelHues[label] !== undefined) {
         const hue = defaultLabelHues[label];
-        colors[label] = `hsl(${hue}, ${saturation}%, ${lightness}%)`;
+        colors[option] = `hsl(${hue}, ${saturation}%, ${lightness}%)`;
       } else {
-        colors[label] = `hsl(0, 0%, 80%)`; // light gray for custom types
+        // Generate a deterministic hue based on the label string
+        let hash = 0;
+        for (let i = 0; i < label.length; i++) {
+          hash = label.charCodeAt(i) + ((hash << 5) - hash);
+        }
+        const hue = Math.abs(hash) % 360;
+        colors[option] = `hsl(${hue}, ${saturation}%, ${lightness}%)`;
       }
     });
   

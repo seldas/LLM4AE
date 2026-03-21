@@ -45,6 +45,12 @@ export default function Annotate_Panel({ overrideFileName, overrideFolder}: Prop
     'RELATIVE': 'TEMPORAL',
     'LATENCY': 'TEMPORAL',
     'TEMPORAL SEQUENCE': 'TEMPORAL',
+    'COD': 'CAUSE OF DEATH',
+    'SYMPTOM': 'AE',
+    'SIGN': 'AE',
+    'AGE': 'AGE',
+    'SEX': 'SEX',
+    'GENDER': 'SEX',
   }; 
   
   // Layer Management
@@ -81,7 +87,7 @@ export default function Annotate_Panel({ overrideFileName, overrideFolder}: Prop
 
   const currentPageData = doc.pages[doc.currentPageIndex] || null;
 
-  // Filter and Normalize Annotations for Display
+  // Filter Annotations for Display (No forced normalization here anymore)
   const visibleAnnotations = useMemo(() => {
     return doc.annotations.filter(a => {
       const note = a.note.toUpperCase();
@@ -94,10 +100,7 @@ export default function Annotate_Panel({ overrideFileName, overrideFolder}: Prop
       const isAdj = note.includes('ADJUDICATOR') && activeLayers.includes('ADJ');
       
       return isSme1 || isSme2 || isAI || isAdj;
-    }).map(a => ({
-      ...a,
-      label: labelNormalizer[a.label.toUpperCase()] || a.label.toUpperCase()
-    }));
+    });
   }, [doc.annotations, activeLayers, showRejected]);
 
   // Track unsaved changes
@@ -182,7 +185,7 @@ export default function Annotate_Panel({ overrideFileName, overrideFolder}: Prop
           end: unifiedContextMenu.end as number,
           disputed: false,
         },
-        label,
+        label: label, // Keep original label
         note: userRole,
         relationships: { latency: {text:'',page:0}, date: {text:'',page:0}, time: {text:'',page:0}, frequency: {text:'',page:0}, temporal_sequence: {text:'',page:0} },
       };
@@ -200,7 +203,7 @@ export default function Annotate_Panel({ overrideFileName, overrideFolder}: Prop
         page: doc.currentPageIndex,
         disputed: false,
       },
-      label: label,
+      label: label, // Keep original label
       note: userRole,
       relationships: { latency: {text:'',page:0}, date: {text:'',page:0}, time: {text:'',page:0}, frequency: {text:'',page:0}, temporal_sequence: {text:'',page:0} },
     };
@@ -209,7 +212,7 @@ export default function Annotate_Panel({ overrideFileName, overrideFolder}: Prop
     const existingAI = doc.annotations.find(a => 
       a.textContext.start === start && 
       a.textContext.end === end && 
-      (a.label === label || (labelNormalizer[a.label.toUpperCase()] || a.label.toUpperCase()) === label) &&
+      (a.label.toUpperCase() === label.toUpperCase() || (labelNormalizer[a.label.toUpperCase()] || a.label.toUpperCase()) === label.toUpperCase()) &&
       (a.note.toUpperCase().includes('LLM') || a.note.toUpperCase().includes('AI') || a.note.toLowerCase().includes('llama') || a.note.toLowerCase().includes('bert'))
     );
 
@@ -219,7 +222,6 @@ export default function Annotate_Panel({ overrideFileName, overrideFolder}: Prop
         note: `${existingAI.note} | VERIFIED BY ${userRole}`
       };
       
-      // Dispatch ADD for human with 'verify' history type and pass the AI one as prevAnnotation
       dispatch({ 
         type: DocActionTypes.ADD_ANNOTATION, 
         payload: { 
@@ -229,17 +231,15 @@ export default function Annotate_Panel({ overrideFileName, overrideFolder}: Prop
         } 
       });
 
-      // Dispatch UPDATE for AI silently (no historyType)
       dispatch({ type: DocActionTypes.UPDATE_ANNOTATION, payload: { annotation: updatedAI } });
     }
   };
 
   const handleRejectAnnotation = (start: number, end: number, label: string) => {
-    // Account for label normalization when searching
     const existing = doc.annotations.find(a => 
       a.textContext.start === start && 
       a.textContext.end === end && 
-      (a.label === label || (labelNormalizer[a.label.toUpperCase()] || a.label.toUpperCase()) === label)
+      (a.label.toUpperCase() === label.toUpperCase() || (labelNormalizer[a.label.toUpperCase()] || a.label.toUpperCase()) === label.toUpperCase())
     );
     
     if (existing) {
@@ -249,9 +249,7 @@ export default function Annotate_Panel({ overrideFileName, overrideFolder}: Prop
       };
       dispatch({ type: DocActionTypes.UPDATE_ANNOTATION, payload: { annotation: updatedAnnotation, historyType: 'reject' } });
       setLlmPopup(prev => ({ ...prev, visible: false }));
-      setSelectedTermContext(null); // Exit Focus Mode
-    } else {
-      console.warn("Could not find annotation to reject:", { start, end, label });
+      setSelectedTermContext(null);
     }
   };
 
@@ -278,12 +276,11 @@ export default function Annotate_Panel({ overrideFileName, overrideFolder}: Prop
       },
     };
   
-    // If verifying an AI suggestion
     if (type === 'AI') {
       const existingAI = doc.annotations.find(a => 
         a.textContext.start === start && 
         a.textContext.end === end && 
-        (a.label === label || (labelNormalizer[a.label.toUpperCase()] || a.label.toUpperCase()) === label) &&
+        (a.label.toUpperCase() === label.toUpperCase() || (labelNormalizer[a.label.toUpperCase()] || a.label.toUpperCase()) === label.toUpperCase()) &&
         (a.note.toUpperCase().includes('LLM') || a.note.toUpperCase().includes('AI') || a.note.toLowerCase().includes('llama') || a.note.toLowerCase().includes('bert'))
       );
 
@@ -293,7 +290,6 @@ export default function Annotate_Panel({ overrideFileName, overrideFolder}: Prop
           note: `${existingAI.note} | VERIFIED BY ${userRole}`
         };
         
-        // Single history entry: ADD with 'verify' type and the old AI as prevAnnotation
         dispatch({ 
           type: DocActionTypes.ADD_ANNOTATION, 
           payload: { 
@@ -303,47 +299,38 @@ export default function Annotate_Panel({ overrideFileName, overrideFolder}: Prop
           } 
         });
 
-        // Silent update
         dispatch({ type: DocActionTypes.UPDATE_ANNOTATION, payload: { annotation: updatedAI } });
       }
     } else {
-      // Normal add
       dispatch({ type: DocActionTypes.ADD_ANNOTATION, payload: { annotation: newAnnotation, historyType: 'add' } });
     }
 
     setLlmPopup((prev) => ({ ...prev, visible: false }));
-    setSelectedTermContext(null); // Exit Focus Mode
+    setSelectedTermContext(null);
   };
 
   const handleUnverifyAnnotation = (start: number, end: number, label: number | string) => {
     const labelStr = String(label);
     
-    // 1. Find the human annotation that was created during verification
     const humanAnno = doc.annotations.find(a => 
       a.textContext.start === start && 
       a.textContext.end === end && 
-      (a.label === labelStr || (labelNormalizer[a.label.toUpperCase()] || a.label.toUpperCase()) === labelStr) &&
-      (a.note.toUpperCase().includes('SME') || a.note.toUpperCase().includes('MJ.L'))
+      (a.label.toUpperCase() === labelStr.toUpperCase() || (labelNormalizer[a.label.toUpperCase()] || a.label.toUpperCase()) === labelStr.toUpperCase()) &&
+      (a.note.toUpperCase().includes('SME') || a.note.toUpperCase().includes('MJ.L') || a.note.toUpperCase().includes('K.L') || a.note.toUpperCase().includes('ADJUDICATOR'))
     );
 
-    // 2. Find the AI annotation that was marked as verified
     const aiAnno = doc.annotations.find(a => 
       a.textContext.start === start && 
       a.textContext.end === end && 
-      (a.label === labelStr || (labelNormalizer[a.label.toUpperCase()] || a.label.toUpperCase()) === labelStr) &&
+      (a.label.toUpperCase() === labelStr.toUpperCase() || (labelNormalizer[a.label.toUpperCase()] || a.label.toUpperCase()) === labelStr.toUpperCase()) &&
       (a.note.toUpperCase().includes('LLM') || a.note.toUpperCase().includes('AI') || a.note.toLowerCase().includes('llama') || a.note.toLowerCase().includes('bert')) &&
       a.note.toUpperCase().includes('VERIFIED')
     );
 
     if (aiAnno) {
-      // Revert AI note by removing the verified part
       const revertedAiNote = aiAnno.note.split(' | VERIFIED BY')[0];
       const revertedAi = { ...aiAnno, note: revertedAiNote };
-      
-      // Dispatch UPDATE for the AI one
       dispatch({ type: DocActionTypes.UPDATE_ANNOTATION, payload: { annotation: revertedAi } });
-      
-      // If the human annotation exists, remove it
       if (humanAnno) {
         dispatch({ type: DocActionTypes.REMOVE_ANNOTATION, payload: { annotation: humanAnno } });
       }
@@ -359,12 +346,13 @@ export default function Annotate_Panel({ overrideFileName, overrideFolder}: Prop
 
     if (note) {
       const upperNote = note.toUpperCase();
-      if (upperNote.includes('LLM') || upperNote.includes('AI') || upperNote.includes('LLAMA') || upperNote.includes('BERT')) {
+      const isAI = upperNote.includes('LLM') || upperNote.includes('AI') || upperNote.includes('LLAMA') || upperNote.includes('BERT');
+      const isHuman = upperNote.includes('SME') || upperNote.includes('MJ.L') || upperNote.includes('K.L') || upperNote.includes('ADJUDICATOR');
+
+      if (isAI) {
         type = 'AI';
-        // Check if THIS specific AI suggestion is already verified
-        // (Either by checking the passed note or searching the doc)
         isVerified = upperNote.includes('VERIFIED');
-      } else if (upperNote.includes('SME') || upperNote.includes('MJ.L')) {
+      } else if (isHuman) {
         type = 'SME';
       }
     }
@@ -385,12 +373,25 @@ export default function Annotate_Panel({ overrideFileName, overrideFolder}: Prop
   }, [overrideFileName, overrideFolder]);
 
   useEffect(() => {
-    const labels = new Set(['DRUG', 'AE', 'MEDICAL HISTORY', 'LAB', 'TEMPORAL']);
+    const labels = new Set(['DRUG', 'AE', 'MEDICAL HISTORY', 'LAB', 'TEMPORAL', 'AGE', 'SEX', 'COD', 'DIAGNOSTIC']);
     doc.annotations.forEach(a => labels.add(a.label.toUpperCase()));
+    
     const arr = Array.from(labels).sort();
     setAnnotationOptions(Object.fromEntries(arr.map(l => [l, l])));
     setOptionColors(generateOptionColors(arr));
-    if (activeLabelFilters.length === 0) setActiveLabelFilters(arr);
+    
+    // Auto-enable new labels in filter
+    setActiveLabelFilters(prev => {
+      const newFilters = [...prev];
+      let changed = false;
+      arr.forEach(l => {
+        if (!newFilters.includes(l)) {
+          newFilters.push(l);
+          changed = true;
+        }
+      });
+      return changed ? newFilters : prev;
+    });
   }, [doc.annotations]);
 
   return (
@@ -527,10 +528,10 @@ export default function Annotate_Panel({ overrideFileName, overrideFolder}: Prop
       )}
 
       <main className="flex-1 flex overflow-hidden">
-        {/* Left Side Sidebars */}
-        <div className="flex flex-shrink-0 h-full border-r border-gray-200">
-          {/* Main Annotation Panel */}
-          <div className="w-[450px] bg-white border-r border-gray-200">
+        {/* Left Sidebar (Stacked Panels) */}
+        <div className="w-[450px] flex flex-col flex-shrink-0 h-full border-r border-gray-200 bg-white overflow-hidden">
+          {/* Top Part: Annotation Summary */}
+          <div className="flex-[3] border-b border-gray-200 overflow-hidden">
             <AnnotationPanel
               annotations={visibleAnnotations}
               annotationOptions={annotationOptions}
@@ -546,12 +547,14 @@ export default function Annotate_Panel({ overrideFileName, overrideFolder}: Prop
             />
           </div>
           
-          {/* Action History Panel */}
-          <ActionHistoryPanel 
-            history={doc.actionHistory}
-            optionColors={optionColors}
-            onUndo={(id) => dispatch({ type: DocActionTypes.UNDO_ACTION, payload: { actionId: id } })}
-          />
+          {/* Bottom Part: Action History */}
+          <div className="flex-[2] overflow-hidden">
+            <ActionHistoryPanel 
+              history={doc.actionHistory}
+              optionColors={optionColors}
+              onUndo={(id) => dispatch({ type: DocActionTypes.UNDO_ACTION, payload: { actionId: id } })}
+            />
+          </div>
         </div>
 
         {/* Center: Narrative */}

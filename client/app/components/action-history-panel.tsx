@@ -9,8 +9,8 @@ interface Props {
 
 const ActionHistoryPanel: React.FC<Props> = ({ history, onUndo, optionColors }) => {
   return (
-    <div className="flex flex-col h-full bg-gray-50 border-l border-gray-200 w-[300px]">
-      <div className="p-4 border-b border-gray-200 bg-white">
+    <div className="flex flex-col h-full bg-gray-50 overflow-hidden">
+      <div className="p-4 border-b border-gray-200 bg-white shadow-sm flex-shrink-0">
         <h2 className="text-xs font-black text-gray-800 uppercase tracking-widest">Recent Actions</h2>
       </div>
       

@@ -365,7 +365,7 @@ export function docReducer(state: DocState, action: DocActions ) {
             updatedAnnotations[index] = newAnnotation;
             return {
                 ...state,
-                updatedAnnotations
+                annotations: updatedAnnotations
             }
         };
 
