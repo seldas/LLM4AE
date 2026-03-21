@@ -65,6 +65,97 @@ def clean_html(html_text: str) -> str:
         return html_text or ""
 
 # -----------------------------------------------------------------------------
+# User Management (Admin only recommended)
+# -----------------------------------------------------------------------------
+@app.route("/api/users", methods=["GET"])
+@cross_origin()
+def list_users():
+    conn = get_db_connection()
+    users = conn.execute('''
+        SELECT u.id, u.username, u.full_name, u.role_id, u.migration_key, r.name as role_name 
+        FROM users u 
+        JOIN roles r ON u.role_id = r.id
+    ''').fetchall()
+    conn.close()
+    return jsonify([dict(u) for u in users]), 200
+
+@app.route("/api/users", methods=["POST"])
+@cross_origin()
+def create_user():
+    data = request.get_json()
+    username = data.get("username")
+    password = data.get("password")
+    full_name = data.get("full_name")
+    role_id = data.get("role_id")
+    migration_key = data.get("migration_key")
+    
+    if not username or not password or not role_id:
+        return jsonify({"error": "Missing required fields"}), 400
+        
+    conn = get_db_connection()
+    try:
+        conn.execute('''
+            INSERT INTO users (username, password, full_name, role_id, migration_key) 
+            VALUES (?, ?, ?, ?, ?)
+        ''', (username, password, full_name, role_id, migration_key))
+        conn.commit()
+        return jsonify({"message": "User created"}), 201
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        conn.close()
+
+@app.route("/api/users/<int:user_id>", methods=["PUT"])
+@cross_origin()
+def update_user(user_id):
+    data = request.get_json()
+    username = data.get("username")
+    password = data.get("password")
+    full_name = data.get("full_name")
+    role_id = data.get("role_id")
+    migration_key = data.get("migration_key")
+    
+    conn = get_db_connection()
+    try:
+        if password:
+            conn.execute('''
+                UPDATE users SET username = ?, password = ?, full_name = ?, role_id = ?, migration_key = ?
+                WHERE id = ?
+            ''', (username, password, full_name, role_id, migration_key, user_id))
+        else:
+            conn.execute('''
+                UPDATE users SET username = ?, full_name = ?, role_id = ?, migration_key = ?
+                WHERE id = ?
+            ''', (username, full_name, role_id, migration_key, user_id))
+        conn.commit()
+        return jsonify({"message": "User updated"}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        conn.close()
+
+@app.route("/api/users/<int:user_id>", methods=["DELETE"])
+@cross_origin()
+def delete_user(user_id):
+    conn = get_db_connection()
+    try:
+        conn.execute('DELETE FROM users WHERE id = ?', (user_id,))
+        conn.commit()
+        return jsonify({"message": "User deleted"}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        conn.close()
+
+@app.route("/api/roles", methods=["GET"])
+@cross_origin()
+def list_roles():
+    conn = get_db_connection()
+    roles = conn.execute('SELECT * FROM roles').fetchall()
+    conn.close()
+    return jsonify([dict(r) for r in roles]), 200
+
+# -----------------------------------------------------------------------------
 # API: Trigger LLM annotation (background)
 # -----------------------------------------------------------------------------
 @app.route("/api/llm-annotate", methods=["POST"])

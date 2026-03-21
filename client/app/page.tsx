@@ -458,6 +458,14 @@ export default function HomePage() {
       <div className="flex justify-between items-center mb-4">
         <h1 className="text-2xl font-bold">📁 <a href="">Annotation Projects</a></h1>
         <div className="flex items-center gap-4">
+          {user.username === 'admin' && (
+            <button 
+              onClick={() => router.push('/admin/users')}
+              className="text-xs font-bold text-blue-600 hover:text-blue-800 border border-blue-200 px-3 py-1 rounded-full bg-blue-50 transition-all"
+            >
+              ⚙️ User Management
+            </button>
+          )}
           <span className="text-sm font-medium text-gray-700">👤 {user.full_name || user.username}</span>
           <button 
             onClick={handleLogout}

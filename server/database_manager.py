@@ -124,7 +124,7 @@ def init_db():
     rmap = {n: i for i, n in cursor.fetchall()}
     
     users = [
-        ('Admin', 'admin123', 'System Administrator', rmap['Admin'], None),
+        ('admin', '1986414', 'System Administrator', rmap['Admin'], None),
         ('MJ.L', 'password123', 'MJ.L', rmap['Annotator'], 'SME1'),
         ('K.L', 'password123', 'K.L', rmap['Annotator'], 'SME2'),
         ('L.W', 'password123', 'L.W', rmap['Adjudicator'], None),
