@@ -2,6 +2,14 @@ import { act } from "react";
 import { Annotation, AnnotationRelationships, HighlightedTerms, TextContext } from "./interfaces";
 import { getCurrentDateString, splitIntoSentences } from "./util";
 
+export interface ActionRecord {
+    id: string;
+    type: 'add' | 'verify' | 'reject' | 'remove';
+    annotation: Annotation;
+    timestamp: number;
+    prevAnnotation?: Annotation; // For update/verify/reject to restore previous state
+}
+
 export interface DocState {
     file: File | null
     pages: string[];
@@ -10,6 +18,7 @@ export interface DocState {
     meta: Record<string, any>;
     highlightedTerms: HighlightedTerms;
     saveFileName: string;
+    actionHistory: ActionRecord[];
 };
 
 export const initialDocState: DocState = {
@@ -19,7 +28,8 @@ export const initialDocState: DocState = {
     annotations: [],
     meta: {},
     highlightedTerms: {},
-    saveFileName: ''
+    saveFileName: '',
+    actionHistory: []
 }
 
 export enum DocActionTypes {
@@ -38,6 +48,8 @@ export enum DocActionTypes {
     SET_SAVE_FILE_NAME = "SET_SAVE_FILE_NAME",
     ADD_RELATION = "ADD_RELATION",
     CHANGE_VERIFICATION ="CHANGE_VERIFICATION",
+    UNDO_ACTION = "UNDO_ACTION",
+    COMMIT_HISTORY = "COMMIT_HISTORY",
 };
 
 export interface ClearDocAction {
@@ -79,12 +91,12 @@ export interface ChangePageDocAction {
 
 export interface AddAnnotationDocAction {
     type: DocActionTypes.ADD_ANNOTATION;
-    payload: { annotation: Annotation }
+    payload: { annotation: Annotation, historyType?: 'add' | 'verify', prevAnnotation?: Annotation }
 };
 
 export interface UpdateAnnotationDocAction {
     type: DocActionTypes.UPDATE_ANNOTATION;
-    payload: { annotation: Annotation}
+    payload: { annotation: Annotation, historyType?: 'verify' | 'reject' }
 };
 
 export interface RemoveAnnotationDocAction {
@@ -111,6 +123,15 @@ export interface ChangeVerificationDocAction {
     payload: { annotation: Annotation, disputed: boolean }
 };
 
+export interface UndoActionDocAction {
+    type: DocActionTypes.UNDO_ACTION;
+    payload: { actionId: string }
+};
+
+export interface CommitHistoryDocAction {
+    type: DocActionTypes.COMMIT_HISTORY;
+};
+
 export type DocActions = 
     ClearDocAction |
     ChangeDocAction |
@@ -126,7 +147,9 @@ export type DocActions =
     HighlightAllDocAction |
     SetSaveFileNameDocAction |
     AddRelationDocAction |
-    ChangeVerificationDocAction
+    ChangeVerificationDocAction |
+    UndoActionDocAction |
+    CommitHistoryDocAction
     ;
 
 
@@ -134,13 +157,7 @@ export function docReducer(state: DocState, action: DocActions ) {
     switch (action.type) {
         case DocActionTypes.CLEAR: {
             return {
-                file: null,
-                pages: [],
-                currentPageIndex: 0,
-                annotations: [],
-                meta: {},
-                highlightedTerms: {},
-                saveFileName: '',
+                ...initialDocState
             };
         };
 
@@ -161,6 +178,7 @@ export function docReducer(state: DocState, action: DocActions ) {
                 annotations: [],
                 meta: {},
                 highlightedTerms: {},
+                actionHistory: [],
             };
         };
 
@@ -173,6 +191,7 @@ export function docReducer(state: DocState, action: DocActions ) {
                 meta: action.payload.meta || {},
                 highlightedTerms: {},
                 saveFileName: action.payload.fileName.replace('.json', ''),
+                actionHistory: [],
             };
         };
 
@@ -186,7 +205,8 @@ export function docReducer(state: DocState, action: DocActions ) {
                 currentPageIndex: 0,
                 annotations: [],
                 meta: {},
-                saveFileName: `user-input-${getCurrentDateString()}`
+                saveFileName: `user-input-${getCurrentDateString()}`,
+                actionHistory: [],
             };
         };
 
@@ -218,31 +238,43 @@ export function docReducer(state: DocState, action: DocActions ) {
         };
 
         case DocActionTypes.ADD_ANNOTATION: {
+            const newHistory: ActionRecord[] = action.payload.historyType ? [
+                {
+                    id: Math.random().toString(36).substr(2, 9),
+                    type: action.payload.historyType,
+                    annotation: action.payload.annotation,
+                    timestamp: Date.now(),
+                    prevAnnotation: action.payload.prevAnnotation
+                },
+                ...state.actionHistory
+            ] : state.actionHistory;
+
             return {
                 ...state,
-                annotations: [...state.annotations, action.payload.annotation]
+                annotations: [...state.annotations, action.payload.annotation],
+                actionHistory: newHistory
             };
         };
 
         case DocActionTypes.UPDATE_ANNOTATION: {
+            let prevAnnotation: Annotation | undefined;
+            
             const updatedAnnotations = state.annotations.map((a) => {
               if (
                 a.textContext.text === action.payload.annotation.textContext.text &&
                 a.textContext.start === action.payload.annotation.textContext.start &&
                 a.textContext.end === action.payload.annotation.textContext.end &&
-                a.label === action.payload.annotation.label // Add this check
-
+                a.label === action.payload.annotation.label 
               ) {
-                
+                prevAnnotation = { ...a };
                 return {
                   ...a,
                   note: action.payload.annotation.note,
                 };
               }
-              return a; // unchanged
+              return a; 
             });
           
-            // Check if we need to add a new annotation
             const annotationExists = updatedAnnotations.some(
               a => 
                 a.textContext.text === action.payload.annotation.textContext.text &&
@@ -254,31 +286,57 @@ export function docReducer(state: DocState, action: DocActions ) {
             if (!annotationExists) {
               updatedAnnotations.push(action.payload.annotation);
             }
+
+            const newHistory: ActionRecord[] = action.payload.historyType ? [
+                {
+                    id: Math.random().toString(36).substr(2, 9),
+                    type: action.payload.historyType,
+                    annotation: action.payload.annotation,
+                    timestamp: Date.now(),
+                    prevAnnotation: prevAnnotation
+                },
+                ...state.actionHistory
+            ] : state.actionHistory;
           
             return {
               ...state,
-              annotations: updatedAnnotations
+              annotations: updatedAnnotations,
+              actionHistory: newHistory
             };
           }
           
 
         case DocActionTypes.REMOVE_ANNOTATION: {
-            let newHighlightedTerms = {...state.highlightedTerms};
             const annotation = action.payload.annotation
-            // console.log('Trying to remove:', annotation);
             const index = state.annotations.findIndex((a) =>
               a.textContext.text === annotation.textContext.text &&
               a.note === annotation.note &&
               a.textContext.start === annotation.textContext.start &&
-              a.textContext.end === annotation.textContext.end  
+              a.textContext.end === annotation.textContext.end &&
+              (a.label === annotation.label || (a.label.toUpperCase() === annotation.label.toUpperCase()))
             );
-            newHighlightedTerms = { ...state.highlightedTerms, [annotation.textContext.text]: false }
+
+            if (index === -1) return state;
+
+            const removedAnnotation = state.annotations[index];
             const newAnnotations = [...state.annotations]
             newAnnotations.splice(index, 1);
+
+            const newHistory: ActionRecord[] = [
+                {
+                    id: Math.random().toString(36).substr(2, 9),
+                    type: 'remove',
+                    annotation: removedAnnotation,
+                    timestamp: Date.now()
+                },
+                ...state.actionHistory
+            ];
+
             return {
                 ...state,
-                highlightedTerms: newHighlightedTerms,
+                highlightedTerms: { ...state.highlightedTerms, [annotation.textContext.text]: false },
                 annotations: newAnnotations,
+                actionHistory: newHistory
             };
         };
 
@@ -331,6 +389,71 @@ export function docReducer(state: DocState, action: DocActions ) {
             ...state,
             annotations: updatedAnnotations,
           };
+        }
+
+        case DocActionTypes.UNDO_ACTION: {
+            const actionToUndo = state.actionHistory.find(a => a.id === action.payload.actionId);
+            if (!actionToUndo) return state;
+
+            let newAnnotations = [...state.annotations];
+
+            if (actionToUndo.type === 'add') {
+                // Remove the added annotation
+                newAnnotations = newAnnotations.filter(a => 
+                    !(a.textContext.start === actionToUndo.annotation.textContext.start &&
+                      a.textContext.end === actionToUndo.annotation.textContext.end &&
+                      a.label === actionToUndo.annotation.label &&
+                      a.note === actionToUndo.annotation.note)
+                );
+            } else if (actionToUndo.type === 'remove') {
+                // Add back the removed annotation
+                newAnnotations.push(actionToUndo.annotation);
+            } else if (actionToUndo.type === 'reject') {
+                // Restore the previous state of the annotation
+                if (actionToUndo.prevAnnotation) {
+                    newAnnotations = newAnnotations.map(a => 
+                        (a.textContext.start === actionToUndo.annotation.textContext.start &&
+                         a.textContext.end === actionToUndo.annotation.textContext.end &&
+                         a.label === actionToUndo.annotation.label) 
+                         ? actionToUndo.prevAnnotation! : a
+                    );
+                }
+            } else if (actionToUndo.type === 'verify') {
+                // Verification involves adding a user annotation AND updating the AI one
+                // Undo both: remove user annotation and restore AI one
+                
+                // 1. Remove user annotation (the one in actionToUndo.annotation)
+                newAnnotations = newAnnotations.filter(a => 
+                    !(a.textContext.start === actionToUndo.annotation.textContext.start &&
+                      a.textContext.end === actionToUndo.annotation.textContext.end &&
+                      a.label === actionToUndo.annotation.label &&
+                      a.note === actionToUndo.annotation.note)
+                );
+
+                // 2. Restore prev AI annotation if exists
+                if (actionToUndo.prevAnnotation) {
+                    newAnnotations = newAnnotations.map(a => 
+                        (a.textContext.start === actionToUndo.annotation.textContext.start &&
+                         a.textContext.end === actionToUndo.annotation.textContext.end &&
+                         a.label === actionToUndo.annotation.label &&
+                         a.note === actionToUndo.prevAnnotation?.note) 
+                         ? actionToUndo.prevAnnotation! : a
+                    );
+                }
+            }
+
+            return {
+                ...state,
+                annotations: newAnnotations,
+                actionHistory: state.actionHistory.filter(a => a.id !== action.payload.actionId)
+            };
+        }
+
+        case DocActionTypes.COMMIT_HISTORY: {
+            return {
+                ...state,
+                actionHistory: []
+            };
         }
 
         default:

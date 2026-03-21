@@ -10,7 +10,9 @@ interface Props {
   type?: 'AI' | 'SME' | 'NEW';
   userRole?: string;
   selectedLabel: string;
+  isVerified?: boolean;
   onAdd: (label?: string) => void;
+  onUnverify?: () => void;
   onReject?: () => void;
   onRemove?: () => void;
   onClose: () => void;
@@ -24,7 +26,9 @@ const LLMAnnotationPopup: React.FC<Props> = ({
   type = 'NEW',
   userRole,
   selectedLabel,
+  isVerified = false,
   onAdd,
+  onUnverify,
   onReject,
   onRemove,
   onClose
@@ -87,10 +91,14 @@ const LLMAnnotationPopup: React.FC<Props> = ({
         {type === 'AI' && (
           <>
             <button 
-              onClick={() => onAdd(selectedLabel)} 
-              className="w-full py-2 rounded-lg bg-emerald-600 text-white font-bold text-xs hover:bg-emerald-700 shadow-sm transition-all flex items-center justify-center gap-2"
+              onClick={() => isVerified ? onUnverify?.() : onAdd(selectedLabel)} 
+              className={`w-full py-2 rounded-lg font-bold text-xs shadow-sm transition-all flex items-center justify-center gap-2 ${
+                isVerified 
+                ? "bg-amber-500 hover:bg-amber-600 text-white" 
+                : "bg-emerald-600 hover:bg-emerald-700 text-white"
+              }`}
             >
-              <span>✓</span> Verify
+              <span>{isVerified ? '↺' : '✓'}</span> {isVerified ? 'Unverify' : 'Verify'}
             </button>
             <button 
               onClick={onReject} 

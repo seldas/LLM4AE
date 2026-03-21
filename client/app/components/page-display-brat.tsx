@@ -215,7 +215,8 @@ function PageDisplay({
 
     const smeAnnotations = annotations.filter(a => {
       const note = a.note.toUpperCase();
-      return note.includes('SME') && !note.includes('REJECTED');
+      const isAI = note.includes('LLM') || note.includes('AI') || a.note.toLowerCase().includes('llama') || a.note.toLowerCase().includes('bert');
+      return !isAI && !note.includes('REJECTED');
     });
 
     annotations.forEach((annotation) => {
@@ -493,10 +494,11 @@ function PageDisplay({
 
         const hasLabel = box.label && box.label !== "match";
         
-        const isAI = box.note?.toUpperCase().includes('LLM') || box.note?.toUpperCase().includes('AI') || box.note?.toLowerCase().includes('llama') || box.note?.toLowerCase().includes('bert');
-        const isSmeNote = box.note?.toUpperCase().includes('SME');
-        const isRejected = box.note?.toUpperCase().includes('REJECTED');
-        const isVerified = box.isVerified || (isSmeNote && !isAI && !isRejected); // Human-made or explicit verified
+        const noteUpper = box.note?.toUpperCase() || "";
+        const isAI = noteUpper.includes('LLM') || noteUpper.includes('AI') || noteUpper.includes('LLAMA') || noteUpper.includes('BERT');
+        const isHuman = noteUpper.includes('SME') || noteUpper.includes('MJ.L') || noteUpper.includes('K.L') || noteUpper.includes('ADJUDICATOR');
+        const isRejected = noteUpper.includes('REJECTED');
+        const isVerified = box.isVerified || (isHuman && !isAI && !isRejected); // Human-made or explicit verified
         
         return (
           <div
@@ -568,7 +570,7 @@ function PageDisplay({
               <div
                 style={{
                   position: "absolute",
-                  top: isAI && !isSmeNote ? "-1.8em" : "-2.2em",
+                  top: isAI && !isHuman ? "-1.8em" : "-2.2em",
                   left: 0,
                   display: "flex",
                   alignItems: "center",
@@ -596,7 +598,13 @@ function PageDisplay({
                   textDecoration: isRejected ? 'line-through' : 'none'
                 }}
               >
-                <span>{isRejected ? '🚫' : isAI ? '🤖' : '👤'}</span>
+                <span>
+                  {isRejected ? '🚫' : isAI && !isVerified ? (
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="10" rx="2"/><circle cx="12" cy="5" r="2"/><path d="M12 7v4"/><line x1="8" y1="16" x2="8" y2="16"/><line x1="16" y1="16" x2="16" y2="16"/></svg>
+                  ) : (
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                  )}
+                </span>
                 <span>{box.label}</span>
                 {isVerified && <span style={{ marginLeft: '2px' }}>✓</span>}
               </div>

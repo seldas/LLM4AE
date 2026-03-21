@@ -22,6 +22,7 @@ import PageDisplay from '../components/page-display-brat';
 import PageDisplayBuilder from '../components/page-display-builder';
 import RelationshipBuilderPanel from '../components/relationship-builder-panel';
 import LLMAnnotationPopup from '../components/context-menus/llm-annotation-popup';
+import ActionHistoryPanel from '../components/action-history-panel';
 
 import '../globals.css';
 
@@ -70,10 +71,12 @@ export default function Annotate_Panel({ overrideFileName, overrideFolder}: Prop
   const [selectedPopupLabel, setSelectedPopupLabel] = useState('');
   const [selectedTermContext, setSelectedTermContext] = useState<{ text: string; start: number; end: number } | null>(null);
   const [saveSuccess, setSaveSuccess] = useState(false);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [showFinishConfirm, setShowFinishConfirm] = useState(false);
   
   const [llmPopup, setLlmPopup] = useState<{ 
     visible: boolean; x: number; y: number; text: string; start: number; end: number; 
-    type?: 'AI' | 'SME' | 'NEW'; label?: string 
+    type?: 'AI' | 'SME' | 'NEW'; label?: string; isVerified?: boolean
   }>({ visible: false, x: 0, y: 0, text: '', start: 0, end: 0 });
 
   const currentPageData = doc.pages[doc.currentPageIndex] || null;
@@ -97,6 +100,11 @@ export default function Annotate_Panel({ overrideFileName, overrideFolder}: Prop
     }));
   }, [doc.annotations, activeLayers, showRejected]);
 
+  // Track unsaved changes
+  useEffect(() => {
+    setHasUnsavedChanges(doc.actionHistory.length > 0);
+  }, [doc.actionHistory.length]);
+
   const handleSave = async (shouldClose = false) => {
       try {
         await saveAnnotationsToDb({
@@ -107,11 +115,21 @@ export default function Annotate_Panel({ overrideFileName, overrideFolder}: Prop
           meta: doc.meta,
         });
         setSaveSuccess(true);
+        dispatch({ type: DocActionTypes.COMMIT_HISTORY });
+        setHasUnsavedChanges(false);
         setTimeout(() => setSaveSuccess(false), 2000);
         if (shouldClose) window.close();
       } catch (error: any) {
         alert(`❌ Failed to save: ${error.message}`);
       }
+  };
+
+  const handleFinish = () => {
+    if (hasUnsavedChanges) {
+      setShowFinishConfirm(true);
+    } else {
+      window.close();
+    }
   };
 
   const handleLayerToggle = (layer: string) => {
@@ -168,26 +186,51 @@ export default function Annotate_Panel({ overrideFileName, overrideFolder}: Prop
         note: userRole,
         relationships: { latency: {text:'',page:0}, date: {text:'',page:0}, time: {text:'',page:0}, frequency: {text:'',page:0}, temporal_sequence: {text:'',page:0} },
       };
-      dispatch({ type: DocActionTypes.ADD_ANNOTATION, payload: { annotation: newAnnotation } });
+      dispatch({ type: DocActionTypes.ADD_ANNOTATION, payload: { annotation: newAnnotation, historyType: 'add' } });
       setUnifiedContextMenu(prev => ({ ...prev, visible: false }));
   };
 
   const handleVerifyAnnotation = (start: number, end: number, text: string, label: string, note: string) => {
-    // Find the existing annotation (usually AI) and mark it as verified by current user
-    // Account for label normalization when searching
-    const existing = doc.annotations.find(a => 
+    // 1. Create the human annotation
+    const newHumanAnnotation: Annotation = {
+      textContext: {
+        text,
+        start,
+        end,
+        page: doc.currentPageIndex,
+        disputed: false,
+      },
+      label: label,
+      note: userRole,
+      relationships: { latency: {text:'',page:0}, date: {text:'',page:0}, time: {text:'',page:0}, frequency: {text:'',page:0}, temporal_sequence: {text:'',page:0} },
+    };
+
+    // 2. Find and update the existing AI annotation
+    const existingAI = doc.annotations.find(a => 
       a.textContext.start === start && 
       a.textContext.end === end && 
-      (a.label === label || (labelNormalizer[a.label.toUpperCase()] || a.label.toUpperCase()) === label)
+      (a.label === label || (labelNormalizer[a.label.toUpperCase()] || a.label.toUpperCase()) === label) &&
+      (a.note.toUpperCase().includes('LLM') || a.note.toUpperCase().includes('AI') || a.note.toLowerCase().includes('llama') || a.note.toLowerCase().includes('bert'))
     );
 
-    if (existing) {
-      const updatedAnnotation = {
-        ...existing,
-        note: `${existing.note} | VERIFIED BY ${userRole}`
+    if (existingAI) {
+      const updatedAI = {
+        ...existingAI,
+        note: `${existingAI.note} | VERIFIED BY ${userRole}`
       };
-      dispatch({ type: DocActionTypes.REMOVE_ANNOTATION, payload: { annotation: existing } });
-      dispatch({ type: DocActionTypes.ADD_ANNOTATION, payload: { annotation: updatedAnnotation } });
+      
+      // Dispatch ADD for human with 'verify' history type and pass the AI one as prevAnnotation
+      dispatch({ 
+        type: DocActionTypes.ADD_ANNOTATION, 
+        payload: { 
+          annotation: newHumanAnnotation, 
+          historyType: 'verify',
+          prevAnnotation: existingAI
+        } 
+      });
+
+      // Dispatch UPDATE for AI silently (no historyType)
+      dispatch({ type: DocActionTypes.UPDATE_ANNOTATION, payload: { annotation: updatedAI } });
     }
   };
 
@@ -204,7 +247,7 @@ export default function Annotate_Panel({ overrideFileName, overrideFolder}: Prop
         ...existing,
         note: `${existing.note} | REJECTED BY ${userRole}`
       };
-      dispatch({ type: DocActionTypes.UPDATE_ANNOTATION, payload: { annotation: updatedAnnotation } });
+      dispatch({ type: DocActionTypes.UPDATE_ANNOTATION, payload: { annotation: updatedAnnotation, historyType: 'reject' } });
       setLlmPopup(prev => ({ ...prev, visible: false }));
       setSelectedTermContext(null); // Exit Focus Mode
     } else {
@@ -213,8 +256,7 @@ export default function Annotate_Panel({ overrideFileName, overrideFolder}: Prop
   };
 
   const handleLlmAddAnnotation = (labelOverride?: string) => {
-
-    const { start, end, text } = llmPopup;
+    const { start, end, text, type } = llmPopup;
     const label = labelOverride || selectedPopupLabel;
     
     const newAnnotation: Annotation = {
@@ -236,24 +278,99 @@ export default function Annotate_Panel({ overrideFileName, overrideFolder}: Prop
       },
     };
   
-    dispatch({ type: DocActionTypes.ADD_ANNOTATION, payload: { annotation: newAnnotation } });
+    // If verifying an AI suggestion
+    if (type === 'AI') {
+      const existingAI = doc.annotations.find(a => 
+        a.textContext.start === start && 
+        a.textContext.end === end && 
+        (a.label === label || (labelNormalizer[a.label.toUpperCase()] || a.label.toUpperCase()) === label) &&
+        (a.note.toUpperCase().includes('LLM') || a.note.toUpperCase().includes('AI') || a.note.toLowerCase().includes('llama') || a.note.toLowerCase().includes('bert'))
+      );
+
+      if (existingAI) {
+        const updatedAI = {
+          ...existingAI,
+          note: `${existingAI.note} | VERIFIED BY ${userRole}`
+        };
+        
+        // Single history entry: ADD with 'verify' type and the old AI as prevAnnotation
+        dispatch({ 
+          type: DocActionTypes.ADD_ANNOTATION, 
+          payload: { 
+            annotation: newAnnotation, 
+            historyType: 'verify',
+            prevAnnotation: existingAI
+          } 
+        });
+
+        // Silent update
+        dispatch({ type: DocActionTypes.UPDATE_ANNOTATION, payload: { annotation: updatedAI } });
+      }
+    } else {
+      // Normal add
+      dispatch({ type: DocActionTypes.ADD_ANNOTATION, payload: { annotation: newAnnotation, historyType: 'add' } });
+    }
+
     setLlmPopup((prev) => ({ ...prev, visible: false }));
     setSelectedTermContext(null); // Exit Focus Mode
   };
 
+  const handleUnverifyAnnotation = (start: number, end: number, label: number | string) => {
+    const labelStr = String(label);
+    
+    // 1. Find the human annotation that was created during verification
+    const humanAnno = doc.annotations.find(a => 
+      a.textContext.start === start && 
+      a.textContext.end === end && 
+      (a.label === labelStr || (labelNormalizer[a.label.toUpperCase()] || a.label.toUpperCase()) === labelStr) &&
+      (a.note.toUpperCase().includes('SME') || a.note.toUpperCase().includes('MJ.L'))
+    );
+
+    // 2. Find the AI annotation that was marked as verified
+    const aiAnno = doc.annotations.find(a => 
+      a.textContext.start === start && 
+      a.textContext.end === end && 
+      (a.label === labelStr || (labelNormalizer[a.label.toUpperCase()] || a.label.toUpperCase()) === labelStr) &&
+      (a.note.toUpperCase().includes('LLM') || a.note.toUpperCase().includes('AI') || a.note.toLowerCase().includes('llama') || a.note.toLowerCase().includes('bert')) &&
+      a.note.toUpperCase().includes('VERIFIED')
+    );
+
+    if (aiAnno) {
+      // Revert AI note by removing the verified part
+      const revertedAiNote = aiAnno.note.split(' | VERIFIED BY')[0];
+      const revertedAi = { ...aiAnno, note: revertedAiNote };
+      
+      // Dispatch UPDATE for the AI one
+      dispatch({ type: DocActionTypes.UPDATE_ANNOTATION, payload: { annotation: revertedAi } });
+      
+      // If the human annotation exists, remove it
+      if (humanAnno) {
+        dispatch({ type: DocActionTypes.REMOVE_ANNOTATION, payload: { annotation: humanAnno } });
+      }
+    }
+    
+    setLlmPopup(prev => ({ ...prev, visible: false }));
+    setSelectedTermContext(null);
+  };
+
   const onClickAnnotation = (text: string, start: number, end: number, x: number, y: number, note?: string, label?: string) => {
     let type: 'AI' | 'SME' | 'NEW' = 'NEW';
+    let isVerified = false;
+
     if (note) {
       const upperNote = note.toUpperCase();
       if (upperNote.includes('LLM') || upperNote.includes('AI') || upperNote.includes('LLAMA') || upperNote.includes('BERT')) {
         type = 'AI';
+        // Check if THIS specific AI suggestion is already verified
+        // (Either by checking the passed note or searching the doc)
+        isVerified = upperNote.includes('VERIFIED');
       } else if (upperNote.includes('SME') || upperNote.includes('MJ.L')) {
         type = 'SME';
       }
     }
     
     setLlmPopup({
-      visible: true, x, y, text, start, end, type, label
+      visible: true, x, y, text, start, end, type, label, isVerified
     });
     if (label) setSelectedPopupLabel(label);
   };
@@ -364,27 +481,76 @@ export default function Annotate_Panel({ overrideFileName, overrideFolder}: Prop
 
         <div className="flex items-center gap-3">
           <button onClick={() => handleSave(false)} className="text-xs font-bold text-gray-600 hover:text-black">Save</button>
-          <button onClick={() => handleSave(true)} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-xs font-bold shadow-md transition-all">
+          <button onClick={handleFinish} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-xs font-bold shadow-md transition-all">
             Finish
           </button>
         </div>
       </header>
 
+      {/* 🔴 FINISH CONFIRMATION MODAL */}
+      {showFinishConfirm && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6 animate-in zoom-in-95 duration-200">
+            <div className="text-center">
+              <div className="w-16 h-16 bg-amber-100 text-amber-600 rounded-full flex items-center justify-center mx-auto mb-4 text-2xl">
+                ⚠️
+              </div>
+              <h3 className="text-lg font-black text-gray-900 mb-2">Unsaved Changes</h3>
+              <p className="text-sm text-gray-500 mb-6 font-medium">
+                You have unsaved annotations. Would you like to save them before finishing?
+              </p>
+              
+              <div className="grid grid-cols-2 gap-3">
+                <button 
+                  onClick={() => handleSave(true)}
+                  className="bg-blue-600 hover:bg-blue-700 text-white py-2.5 rounded-xl text-xs font-black shadow-lg shadow-blue-200 transition-all"
+                >
+                  SAVE & FINISH
+                </button>
+                <button 
+                  onClick={() => window.close()}
+                  className="bg-gray-100 hover:bg-gray-200 text-gray-600 py-2.5 rounded-xl text-xs font-black transition-all"
+                >
+                  DISCARD & EXIT
+                </button>
+              </div>
+              
+              <button 
+                onClick={() => setShowFinishConfirm(false)}
+                className="mt-4 text-[10px] font-black text-gray-400 hover:text-gray-600 uppercase tracking-widest"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <main className="flex-1 flex overflow-hidden">
-        {/* Left Side: Summary - Increased Width */}
-        <div className="w-[450px] flex-shrink-0 border-r border-gray-200 bg-white">
-          <AnnotationPanel
-            annotations={visibleAnnotations}
-            annotationOptions={annotationOptions}
-            setAnnotationOptions={setAnnotationOptions}
+        {/* Left Side Sidebars */}
+        <div className="flex flex-shrink-0 h-full border-r border-gray-200">
+          {/* Main Annotation Panel */}
+          <div className="w-[450px] bg-white border-r border-gray-200">
+            <AnnotationPanel
+              annotations={visibleAnnotations}
+              annotationOptions={annotationOptions}
+              setAnnotationOptions={setAnnotationOptions}
+              optionColors={optionColors}
+              setOptionColors={setOptionColors}
+              handleRemoveAnnotation={(a) => dispatch({ type: DocActionTypes.REMOVE_ANNOTATION, payload: { annotation: a } })}
+              activeLabelFilters={activeLabelFilters}
+              setActiveLabelFilters={setActiveLabelFilters}
+              selectedTermContext={selectedTermContext}
+              setSelectedTermContext={setSelectedTermContext}
+              handleExtendMatch={() => {}}
+            />
+          </div>
+          
+          {/* Action History Panel */}
+          <ActionHistoryPanel 
+            history={doc.actionHistory}
             optionColors={optionColors}
-            setOptionColors={setOptionColors}
-            handleRemoveAnnotation={(a) => dispatch({ type: DocActionTypes.REMOVE_ANNOTATION, payload: { annotation: a } })}
-            activeLabelFilters={activeLabelFilters}
-            setActiveLabelFilters={setActiveLabelFilters}
-            selectedTermContext={selectedTermContext}
-            setSelectedTermContext={setSelectedTermContext}
-            handleExtendMatch={() => {}}
+            onUndo={(id) => dispatch({ type: DocActionTypes.UNDO_ACTION, payload: { actionId: id } })}
           />
         </div>
 
@@ -502,7 +668,9 @@ export default function Annotate_Panel({ overrideFileName, overrideFolder}: Prop
         type={llmPopup.type}
         userRole={userRole}
         selectedLabel={llmPopup.label || ''}
+        isVerified={llmPopup.isVerified}
         onAdd={handleLlmAddAnnotation}
+        onUnverify={() => handleUnverifyAnnotation(llmPopup.start, llmPopup.end, llmPopup.label || '')}
         onReject={() => handleRejectAnnotation(llmPopup.start, llmPopup.end, llmPopup.label || '')}
         onRemove={() => handleRejectAnnotation(llmPopup.start, llmPopup.end, llmPopup.label || '')}
         onClose={() => {
