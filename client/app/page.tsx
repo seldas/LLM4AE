@@ -14,95 +14,92 @@ import {
 } from '@tanstack/react-table';
 import type { ProjectEntry, MetaRecord } from './lib/interfaces';
 
+// --- Icons (Inline SVGs for professional look) ---
+const IconPlus = () => <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4"/></svg>;
+const IconRefresh = () => <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>;
+const IconSearch = () => <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>;
+const IconFolder = () => <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/></svg>;
+
 const NewProjectUploader = ({
-  newProjectName,
-  setNewProjectName,
-  excelFile,
-  setExcelFile,
-  fileInputRef,
-  refreshHistoryFiles,
-  fetchProjectList  
+  fetchProjectList,
+  onClose
 }: {
-  newProjectName: string;
-  setNewProjectName: (name: string) => void;
-  excelFile: File | null;
-  setExcelFile: (file: File | null) => void;
-  fileInputRef: React.RefObject<HTMLInputElement | null>;
-  refreshHistoryFiles: () => Promise<any[]>;
-  fetchProjectList: () => Promise<void>;  
+  fetchProjectList: () => Promise<void>;
+  onClose: () => void;
 }) => {
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files?.[0]) {
-      setExcelFile(e.target.files[0]);
-    }
-  };
+  const [newProjectName, setNewProjectName] = useState('');
+  const [excelFile, setExcelFile] = useState<File | null>(null);
+  const [loading, setLoading] = useState(false);
 
   const handleUploadProject = async () => {
-    if (!newProjectName.trim() || !excelFile) {
-      alert("Please enter a project name and select an Excel file.");
-      return;
-    }
-
+    if (!newProjectName.trim() || !excelFile) return;
+    setLoading(true);
     const formData = new FormData();
     formData.append("file", excelFile);
     formData.append("projectName", newProjectName.trim());
 
-    const res = await fetch("/api/create-project-from-excel", {
-      method: "POST",
-      body: formData,
-    });
-    
-    if (res.ok) {
-      alert("Project created successfully!");
-      setNewProjectName('');
-      setExcelFile(null);
-      if (fileInputRef.current) fileInputRef.current.value = '';
-      await refreshHistoryFiles();
-      await fetchProjectList();  
-    } else {
-      alert("Failed to create project.");
+    try {
+      const res = await fetch("/api/create-project-from-excel", { method: "POST", body: formData });
+      if (res.ok) {
+        await fetchProjectList();
+        onClose();
+      } else {
+        alert("System error: Unable to create project.");
+      }
+    } finally {
+      setLoading(false);
     }
   };
 
   return (
-    <div className="flex pl-4 items-center gap-1 bg-gray-100 hover:bg-gray-200 border-gray-900">
-      <input
-        type="text"
-        placeholder="Project name"
-        value={newProjectName}
-        onChange={(e) => setNewProjectName(e.target.value)}
-        className="px-2 py-0.5 border border-gray-300 rounded text-xs shadow-sm focus:outline-none focus:ring-1 focus:ring-blue-500 w-[120px]"
-      />
-    
-      <input
-        type="file"
-        accept=".xlsx"
-        ref={fileInputRef}
-        onChange={(e) => {
-          if (e.target.files?.[0]) {
-            const file = e.target.files[0];
-            setExcelFile(file);
-            const nameWithoutExtension = file.name.replace(/\.xlsx$/i, '');
-            setNewProjectName(nameWithoutExtension);
-          }
-        }}
-        className="hidden"
-        id="newProjectExcel"
-      />
-    
-      <label
-        htmlFor="newProjectExcel"
-        className="bg-blue-500 hover:bg-blue-600 text-white px-2 py-0.5 text-xs rounded cursor-pointer whitespace-nowrap"
-      >
-        Choose
-      </label>
-    
-      <button
-        onClick={handleUploadProject}
-        className="bg-green-600 hover:bg-green-700 text-white px-2 py-0.5 rounded text-xs font-medium whitespace-nowrap"
-      >
-        Create
-      </button>
+    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+      <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-8 border border-slate-200">
+        <h2 className="text-lg font-semibold text-slate-900 mb-6 border-b border-slate-100 pb-4">Initialize Dataset</h2>
+        <div className="space-y-5">
+          <div>
+            <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Project Identifier</label>
+            <input
+              type="text"
+              placeholder="Internal ID (e.g. PH-2026-03)"
+              value={newProjectName}
+              onChange={(e) => setNewProjectName(e.target.value)}
+              className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded text-sm focus:border-blue-500 outline-none transition-colors placeholder:text-slate-300"
+            />
+          </div>
+          <div>
+            <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Source File (.xlsx)</label>
+            <input
+              type="file"
+              accept=".xlsx"
+              onChange={(e) => {
+                if (e.target.files?.[0]) {
+                  const file = e.target.files[0];
+                  setExcelFile(file);
+                  if (!newProjectName) setNewProjectName(file.name.replace(/\.xlsx$/i, ''));
+                }
+              }}
+              className="hidden"
+              id="fileInput"
+            />
+            <label
+              htmlFor="fileInput"
+              className="flex items-center justify-center gap-2 w-full px-4 py-4 bg-slate-50 border border-dashed border-slate-300 rounded text-slate-600 text-sm font-medium cursor-pointer hover:bg-slate-100 transition-colors"
+            >
+              {excelFile ? excelFile.name : 'Select structured data source'}
+            </label>
+          </div>
+          <div className="flex gap-3 pt-4">
+            <button onClick={onClose} className="flex-1 px-4 py-2 text-slate-600 text-sm font-semibold hover:text-slate-900 transition-colors">Cancel</button>
+            <button
+              disabled={loading || !excelFile}
+              onClick={handleUploadProject}
+              className="flex-1 px-4 py-2 bg-blue-600 text-white rounded text-sm font-semibold hover:bg-blue-700 transition-colors disabled:opacity-50"
+            >
+              {loading ? 'Initializing...' : 'Confirm'}
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 };
@@ -110,29 +107,28 @@ const NewProjectUploader = ({
 export default function HomePage() {
   const [user, setUser] = useState<any>(null);
   const router = useRouter();
-
-  const [projectFiles, setProjectFiles] = useState<string[]>([]);
+  const [projectList, setProjectList] = useState<string[]>([]);
+  const [selectedProjectName, setSelectedProjectName] = useState<string | null>(null);
   const [loadedProject, setLoadedProject] = useState<ProjectEntry | null>(null);
   const [loading, setLoading] = useState(false);
-  const [showUserInput, setShowUserInput] = useState(false);
-  const [customFilename, setCustomFilename] = useState('');
-  const [sorting, setSorting] = useState<SortingState>([])
-  const [pagination, setPagination] = useState({ pageIndex: 0, pageSize: 10 });
-  const [globalFilter, setGlobalFilter] = useState('');
-  const [playgroundText, setPlaygroundText] = useState('');
-  const [displayRows, setDisplayRows] = useState<any[]>([]);
-  const [newProjectName, setNewProjectName] = useState('');
-  const [excelFile, setExcelFile] = useState<File | null>(null);
-  const fileInputRef = useRef<HTMLInputElement | null>(null);  
-  const [deletionEnabled, setDeletionEnabled] = useState(false);
+  const [showUploader, setShowUploader] = useState(false);
   
+  const [sorting, setSorting] = useState<SortingState>([])
+  const [pagination, setPagination] = useState({ pageIndex: 0, pageSize: 15 });
+  const [globalFilter, setGlobalFilter] = useState('');
+  const [projectSearch, setProjectSearch] = useState('');
+  const [playgroundText, setPlaygroundText] = useState('');
+
   useEffect(() => {
     const storedUser = localStorage.getItem('user');
     if (!storedUser) {
       router.push('/login');
     } else {
-      setUser(JSON.parse(storedUser));
-      fetchProjectList();
+      const u = JSON.parse(storedUser);
+      setUser(u);
+      fetchProjectList().then(list => {
+        if (list.length > 0) handleProjectClick(list[0]);
+      });
     }
   }, []);
 
@@ -141,555 +137,291 @@ export default function HomePage() {
     router.push('/login');
   };
 
-  const handleProjectClick = async (projectName: string) => {
-      setLoading(true);
-      try {
-        const res = await fetch(`/api/show_project/${encodeURIComponent(projectName)}`);
-        const data = await res.json();
-        
-        if (!res.ok) throw new Error(data.error || 'Failed to load project');
-
-        const records = data.records.map((r: any) => {
-          const llmCount = r.counts?.LLM ?? 0;
-          const meta = r.meta || {};
-          let llmStatus = llmCount;
-          
-          // Only use status codes if there are NO annotations
-          if (llmCount === 0) {
-            if (!meta.llm_processed) {
-              llmStatus = -2; 
-            } else if (meta.llm_processed === 'working') {
-              llmStatus = -1;
-            };
-          }
-          
-          return {
-            ...r,
-            folderName: projectName,
-            counts: { ...r.counts, LLM: llmStatus }
-          };
-        });
-
-        setLoadedProject({
-          folderName: projectName,
-          fileName: '',
-          records: records,
-        });
-        setDisplayRows(records);
-        setShowUserInput(projectName === 'Playground');
-      } catch (err: any) {
-        alert(`❌ Error: ${err.message}`);
-      } finally {
-        setLoading(false);
-      }
-  };
-    
-  const handleDeleteProject = async (projectName: string) => {
-      const confirmed = window.confirm(`Are you sure you want to delete project "${projectName}"? This action cannot be undone.`);
-      if (!confirmed) return;
-    
-      try {
-        const res = await fetch('/api/delete-project', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ projectName }),
-        });
-        const result = await res.json();
-        if (!res.ok) throw new Error(result.error || 'Unknown error');
-        await fetchProjectList();  
-      } catch (err: any) {
-        alert(`❌ Failed to delete project: ${err.message}`);
-      }
-  };
-
-  const openAssessPopup = (folder: string, file: string) => {
-      const url = `/assess?project=${encodeURIComponent(folder)}&file=${encodeURIComponent(file)}`;
-      window.open(url, '_blank');
-  };
-
-  const openAnnotationPopup = (folder: string, file: string) => {
-      const url = `/annotate?project=${encodeURIComponent(folder)}&file=${encodeURIComponent(file)}`;
-      window.open(url, '_blank');
-  };
-
-  const handlePlaygroundSubmit = async (defaultFilename: string) => {
-    if (!playgroundText.trim()) return;
-
-    const text = playgroundText.trim();
-    const finalBaseName = (customFilename.trim() || defaultFilename).replace(/\.json$/i, '');
-
-    try {
-      const response = await fetch('/api/save', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          fileName: finalBaseName,
-          curr_folder: 'Playground',
-          pages: [text],
-          annotations: [],
-          meta: {},
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to save playground entry');
-      }
-
-      const filename = `${finalBaseName}.json`;
-      const url = `/annotate?project=Playground&file=${encodeURIComponent(filename)}`;
-      window.open(url, '_blank', 'width=1280,height=800');
-      setPlaygroundText('');
-      setCustomFilename('');
-      await refreshHistoryFiles();
-    } catch (err: any) {
-      alert(`❌ Failed to create playground file: ${err.message}`);
-    }
-  };
-  
-  const handleGenerateLLMAnnotation = async (row: any, table: any) => {
-    row.counts.LLM = -1; // mark as "processing"
-    setDisplayRows([...displayRows]); // trigger re-render
-  
-    const file = row.annotate_filename;
-    const folder = loadedProject?.folderName;
-    if (!file || !folder) return;
-  
-    try {
-      // Start the LLM annotation process
-      const response = await fetch('/api/llm-annotate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ file, folder }),
-      });
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.error || 'Unknown error');
-  
-    } catch (err: any) {
-      alert(`❌ Failed: ${err.message}`);
-      throw err;
-    }
-  };
-  
-
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-      if (e.target.files?.[0]) {
-        setExcelFile(e.target.files[0]);
-      }
-  };
-    
-  const handleDeletePlaygroundFile = async (filename: string) => {
-      const confirmed = window.confirm(`Are you sure you want to delete ${filename}?`);
-      if (!confirmed) return;
-    
-      try {
-        const path = `Playground___${filename}`;
-        const response = await fetch(`/api/history/${path}`, {
-          method: 'DELETE',
-        });
-    
-        const result = await response.json();
-    
-        if (!response.ok) {
-          throw new Error(result.error || 'Unknown error');
-        }
-    
-        await refreshHistoryFiles();
-      } catch (err: any) {
-        console.error("Delete failed:", err);
-        alert(`❌ Failed to delete file: ${err.message}`);
-      }
-  };
-    
-  const refreshHistoryFiles = async (): Promise<any[]> => {
-      if (!loadedProject?.folderName) return [];
-      
-      setLoading(true);
-      try {
-        const res = await fetch(`/api/show_project/${encodeURIComponent(loadedProject.folderName)}`);
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || 'Failed to refresh');
-
-        const records = data.records.map((r: any) => {
-          const llmCount = r.counts?.LLM ?? 0;
-          const meta = r.meta || {};
-          let llmStatus = llmCount;
-          
-          if (llmCount === 0) {
-            if (!meta.llm_processed) {
-              llmStatus = -2; 
-            } else if (meta.llm_processed === 'working') {
-              llmStatus = -1;
-            };
-          }
-          
-          return {
-            ...r,
-            folderName: loadedProject.folderName,
-            counts: { ...r.counts, LLM: llmStatus }
-          };
-        });
-
-        setLoadedProject({
-          folderName: loadedProject.folderName,
-          fileName: '',
-          records: records,
-        });
-        setDisplayRows(records);
-        return records;
-      } catch (err: any) {
-        console.error("Refresh failed:", err);
-        return [];
-      } finally {
-        setLoading(false);
-      }
-  };
-
   const fetchProjectList = async () => {
-      const res = await fetch('/api/projects');
-      const projects = await res.json();
-      const otherProjects = projects.filter((p: string) => p.toLowerCase() !== 'playground');
-      setProjectFiles(['Playground', ...otherProjects]);
+    const res = await fetch('/api/projects');
+    const projects = await res.json();
+    const sorted = projects.sort((a: string, b: string) => {
+      if (a.toLowerCase() === 'playground') return -1;
+      return a.localeCompare(b);
+    });
+    setProjectList(sorted);
+    return sorted;
   };
-    
-  // Demographic fields to show in the table
-  const demographicFields = [
-    "Case Number", "Version Number", "All Suspect Products", "MCN or CTU", "Latest FDA Received Date",
-    "Country Derived", "Patient ID", "Age in Years", "DOB", "Sex",
-    "Weight In kg", "Health Professional",
-  ];
 
-  const demographicColumns = demographicFields.map((label) => {
-    const id = label.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
-  
-    return {
-      id,
-      header: label,
-      accessorFn: (row: any) => row[label] ?? '',
-      cell: ({ getValue }: any) => (
-        <span className="truncate max-w-[200px] block">{String(getValue() || '')}</span>
-      ),
-    };
-  });
-  
+  const handleProjectClick = async (projectName: string) => {
+    setSelectedProjectName(projectName);
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/show_project/${encodeURIComponent(projectName)}`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      const records = data.records.map((r: any) => {
+        const llmCount = r.counts?.LLM ?? 0;
+        const meta = r.meta || {};
+        let llmStatus = llmCount;
+        if (llmCount === 0) {
+          if (!meta.llm_processed) llmStatus = -2; 
+          else if (meta.llm_processed === 'working') llmStatus = -1;
+        }
+        return { ...r, folderName: projectName, counts: { ...r.counts, LLM: llmStatus } };
+      });
+      setLoadedProject({ folderName: projectName, fileName: '', records });
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const demographicFields = ["Case Number", "Version Number", "All Suspect Products", "MCN or CTU", "Latest FDA Received Date", "Country Derived", "Patient ID", "Age in Years", "Sex"];
+
   const columns = useMemo(() => [
     {
       id: 'actions',
-      header: 'Action',
+      header: 'Workflow',
       cell: ({ row }: CellContext<MetaRecord, unknown>) => {
         const fileName = row.original.annotate_filename || '';
-        const folderName = row.original.folderName || loadedProject?.folderName || 'Playground'; // fallback
-    
+        const folderName = row.original.folderName || selectedProjectName || 'Playground';
         return (
           <button
-            onClick={() =>
-              openAnnotationPopup(folderName, fileName)
-            }
-            className="bg-sky-600 hover:bg-sky-700 text-white text-xs font-medium px-4 py-1.5 rounded-full shadow-sm transition-all duration-200"
+            onClick={() => window.open(`/annotate?project=${encodeURIComponent(folderName)}&file=${encodeURIComponent(fileName)}`, '_blank')}
+            className="text-blue-600 hover:text-blue-800 text-[11px] font-bold uppercase tracking-wider"
           >
-            ✏️Annotate
+            Review
           </button>
         );
       },
     },
     {
       id: 'human_count',
-      header: '👤 Human',
+      header: 'Manual',
       accessorFn: (row: any) => (row.counts?.SME1 || 0) + (row.counts?.SME2 || 0) + (row.counts?.Other || 0),
-      cell: ({ getValue }: any) => (
-        <span className="font-bold text-indigo-600 px-2">{getValue()}</span>
-      ),
+      cell: ({ getValue }: any) => <span className="text-slate-600 font-mono text-[11px]">{getValue()}</span>,
     },
     {
       id: 'ai_count',
-      header: '🤖 AI',
+      header: 'System',
       accessorFn: (row: any) => {
         const count = row.counts?.LLM || 0;
-        return count < 0 ? 0 : count; // handle status codes
+        return count < 0 ? 0 : count;
       },
-      cell: ({ getValue }: any) => (
-        <span className="font-bold text-orange-600 px-2">{getValue()}</span>
-      ),
+      cell: ({ getValue }: any) => <span className="text-slate-400 font-mono text-[11px]">{getValue()}</span>,
     },
-    ...(loadedProject?.folderName === 'Playground' ? [  
-      { accessorKey: 'annotate_filename', header: 'File' },
-      {
-      id: 'actions-playground',
-      header: '🗑️ Delete',
-      cell: ({ row }: CellContext<MetaRecord, unknown>) => {
-        const file = row.original.annotate_filename || '';
-        if (loadedProject?.folderName !== 'Playground') return null;
-        return (
-          <button
-            onClick={() => handleDeletePlaygroundFile(file)}
-            className="bg-red-100 hover:bg-red-200 text-red-800 font-semibold text-xs px-2 py-1 rounded shadow"
-          >
-            🗑️
-          </button>
-        );
-      }
-    }] : demographicColumns),
-    //
-  ], [loadedProject]);
+    ...demographicFields.map(label => ({
+      id: label.toLowerCase().replace(/\s+/g, '_'),
+      header: label,
+      accessorFn: (row: any) => row[label] ?? '',
+      cell: ({ getValue }: any) => <span className="truncate max-w-[140px] block text-slate-500">{String(getValue() || '')}</span>,
+    }))
+  ], [selectedProjectName]);
 
   const table = useReactTable({
-    data: loadedProject?.folderName === 'Playground' ? displayRows : loadedProject?.records ?? [],
+    data: loadedProject?.records ?? [],
     columns,
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
     getPaginationRowModel: getPaginationRowModel(),
-    state: {
-      sorting,
-      pagination,
-      globalFilter,
-    },
+    state: { sorting, pagination, globalFilter },
     onSortingChange: setSorting,
     onPaginationChange: setPagination,
     onGlobalFilterChange: setGlobalFilter,
   });
-    
+
   if (!user) return null;
 
-  const randomString = Math.random().toString(36).substring(2, 8); // generates 6-char string
-  const defaultFilename = `playground_${randomString}`;
-  
   return (
-    <div className="p-6">
-      <div className="flex justify-between items-center mb-4">
-        <h1 className="text-2xl font-bold">📁 <a href="">Annotation Projects</a></h1>
-        <div className="flex items-center gap-4">
-          {user.username === 'admin' && (
-            <button 
-              onClick={() => router.push('/admin/users')}
-              className="text-xs font-bold text-blue-600 hover:text-blue-800 border border-blue-200 px-3 py-1 rounded-full bg-blue-50 transition-all"
-            >
-              ⚙️ User Management
-            </button>
-          )}
-          <span className="text-sm font-medium text-gray-700">👤 {user.full_name || user.username}</span>
+    <div className="flex h-screen bg-slate-50 overflow-hidden text-slate-900 antialiased">
+      
+      {/* --- Sidebar Navigation --- */}
+      <aside className="w-64 bg-slate-900 flex flex-col z-20">
+        <div className="p-6 border-b border-slate-800">
+          <div className="flex items-center gap-2.5 mb-6">
+            <div className="w-2 h-2 bg-blue-500 rounded-full shadow-[0_0_8px_rgba(59,130,246,0.5)]"></div>
+            <h1 className="text-sm font-bold text-white tracking-widest uppercase">LLM4AE</h1>
+            <span className="text-[9px] font-black bg-blue-500/20 text-blue-400 px-1.5 py-0.5 rounded border border-blue-500/30 tracking-tighter">BETA</span>
+          </div>
           <button 
-            onClick={handleLogout}
-            className="text-xs font-semibold text-red-600 hover:text-red-800 transition-colors"
+            onClick={() => setShowUploader(true)}
+            className="w-full flex items-center justify-center gap-2 py-2.5 bg-blue-600 hover:bg-blue-500 text-white text-[11px] font-bold uppercase tracking-widest rounded transition-colors shadow-sm"
           >
-            Logout
+            <IconPlus /> Import Dataset
           </button>
         </div>
-      </div>
-      
-      <button
-          disabled
-          onClick={() => setDeletionEnabled(!deletionEnabled)}
-          // hidden // very dangerous to show, only for dev user.
-          className="mb-4 px-3 py-1 text-sm rounded border border-gray-400 bg-white hover:bg-gray-100"
-      >
-          {deletionEnabled ? '🛑 Deletion Enabled' : '🔒 Enable Delete Mode'}
-      </button>  
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 mb-6">
-          {projectFiles.map((fileName) => (
-              <div
-                key={fileName}
-                onClick={() => handleProjectClick(fileName)} // ✅ Clickable wrapper
-                className={`relative p-4 border rounded-lg shadow-sm transition-all cursor-pointer ${
-                  fileName === 'Playground'
-                    ? 'bg-amber-100 hover:bg-amber-200 border-amber-300 text-amber-900'
-                    : 'bg-sky-100 hover:bg-sky-200 border-sky-300 text-sky-900'
-                }`}
-              >
-                <h3 className="text-lg font-semibold">{fileName}</h3>
-            
-                {fileName !== 'Playground' && (
-                  <button
-                      onClick={(e) => {
-                        e.stopPropagation(); // 🛑 Prevents card click from triggering
-                        handleDeleteProject(fileName);
-                      }}
-                      disabled={!deletionEnabled}
-                      className={`mt-2 text-xs px-3 py-1 rounded ${
-                        deletionEnabled
-                          ? 'bg-red-600 text-white hover:bg-red-700'
-                          : 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                      }`}
-                  >
-                      {deletionEnabled ? 'Delete' : 'Delete Disabled'}
-                  </button>
 
-                )}
-              </div>
-          ))}
-
-
-          <NewProjectUploader
-            newProjectName={newProjectName}
-            setNewProjectName={setNewProjectName}
-            excelFile={excelFile}
-            setExcelFile={setExcelFile}
-            fileInputRef={fileInputRef}
-            refreshHistoryFiles={refreshHistoryFiles}
-            fetchProjectList={fetchProjectList}
-          />
-      </div>
-
-      {showUserInput && (
-        <div className="p-6 bg-white border border-gray-200 rounded-lg shadow-sm mb-8 space-y-4">
-          <h2 className="text-xl font-semibold text-gray-800 flex items-center gap-2">
-            🧪 Playground Input
-          </h2>
-
-          {/* Filename Input */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Filename <span className="text-gray-400 italic">(optional)</span>
-            </label>
-            <input
-              type="text"
-              placeholder={`[by default] ${defaultFilename}`}
-              value={customFilename}
-              onChange={(e) => setCustomFilename(e.target.value)}
-              className="w-full p-2 border border-gray-300 rounded-md text-sm font-mono shadow-sm focus:ring-2 focus:ring-indigo-400 focus:outline-none"
-            />
-          </div>
-
-          {/* Textarea */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Text to Annotate
-            </label>
-            <textarea
-              value={playgroundText}
-              onChange={(e) => setPlaygroundText(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                  e.preventDefault();
-                  handlePlaygroundSubmit(defaultFilename);
-                }
-              }}
-              rows={6}
-              placeholder="Paste or type any text here to begin annotation..."
-              className="w-full p-3 border border-gray-300 rounded-md text-sm font-mono shadow-sm focus:ring-2 focus:ring-indigo-400 focus:outline-none"
-            />
-          </div>
-
-          {/* Button */}
-          <div>
-            <button
-              onClick={() => handlePlaygroundSubmit(defaultFilename)}
-              className="bg-indigo-600 hover:bg-indigo-700 text-white text-sm px-4 py-2 rounded-md shadow"
-            >
-              Annotate
-            </button>
-          </div>
+        <div className="flex-1 overflow-y-auto py-4">
+          <div className="px-6 mb-3 text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em]">Available Repositories</div>
+          <nav className="px-3 space-y-0.5">
+            {projectList.filter(p => p.toLowerCase().includes(projectSearch.toLowerCase())).map(name => {
+              const isActive = selectedProjectName === name;
+              const isPlayground = name.toLowerCase() === 'playground';
+              return (
+                <button
+                  key={name}
+                  onClick={() => handleProjectClick(name)}
+                  className={`w-full flex items-center gap-3 px-4 py-2.5 rounded text-[12px] font-medium transition-all ${
+                    isActive ? 'bg-slate-800 text-white' : 'text-slate-400 hover:bg-slate-800/50 hover:text-slate-200'
+                  }`}
+                >
+                  <span className={isActive ? 'text-blue-400' : 'text-slate-600'}><IconFolder /></span>
+                  <span className="truncate uppercase tracking-tight">{isPlayground ? 'Ad-hoc Review' : name}</span>
+                </button>
+              );
+            })}
+          </nav>
         </div>
-      )}
 
-
-
-      {loading && <p className="text-gray-600 italic">Loading project...</p>}
-
-      {loadedProject && (
-        <div className="overflow-x-auto border rounded-lg shadow bg-white">
-          <div className="p-4 border-b flex justify-between items-center">
-            <h1 className="text-2xl font-semibold text-gray-800">
-              {loadedProject.folderName}
-            </h1>
-            <button 
-              onClick={async () => {
-                const updatedRecords = await refreshHistoryFiles();
-                setDisplayRows(updatedRecords);
-              }}
-              className="text-gray-600 hover:text-gray-900 transition-colors duration-200"
-              title="Reload project"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-              </svg>
-            </button>
-          </div>
-          <div className="flex justify-between items-center p-2 flex-wrap gap-3">            
-            <label className="text-sm font-medium">Rows per page:
-              <select
-                className="ml-2 px-2 py-1 border rounded"
-                value={pagination.pageSize}
-                onChange={(e) => setPagination({ ...pagination, pageSize: Number(e.target.value) })}
-              >
-                {[10, 25, 50].map(size => (
-                  <option key={size} value={size}>{size}</option>
-                ))}
-              </select>
-            </label>
-
-            <input
-              type="text"
-              placeholder="Search..."
-              value={globalFilter ?? ''}
-              onChange={(e) => setGlobalFilter(e.target.value)}
-              className="border px-3 py-1 rounded text-sm w-[200px]"
-            />
-
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => table.previousPage()}
-                disabled={!table.getCanPreviousPage()}
-                className="px-3 py-1 text-sm border rounded disabled:opacity-50"
-              >
-                Prev
-              </button>
-
-              <span className="text-sm">
-                Page {table.getState().pagination.pageIndex + 1} of {table.getPageCount()}
-              </span>
-
-              <input
-                type="number"
-                min={1}
-                max={table.getPageCount()}
-                placeholder="To ..."
-                className="w-[80px] text-sm px-2 py-1 border rounded"
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    const input = parseInt((e.target as HTMLInputElement).value);
-                    if (!isNaN(input) && input >= 1 && input <= table.getPageCount()) {
-                      table.setPageIndex(input - 1);
-                    }
-                  }
-                }}
-              />
-
-              <button
-                onClick={() => table.nextPage()}
-                disabled={!table.getCanNextPage()}
-                className="px-3 py-1 text-sm border rounded disabled:opacity-50"
-              >
-                Next
-              </button>
+        <div className="p-4 bg-slate-950 border-t border-slate-800">
+          <div className="flex items-center gap-3 mb-4 px-2">
+            <div className="w-7 h-7 rounded bg-slate-800 border border-slate-700 flex items-center justify-center text-xs font-bold text-slate-300">
+              {user.username.charAt(0).toUpperCase()}
+            </div>
+            <div className="min-w-0">
+              <p className="text-[11px] font-bold text-slate-200 truncate uppercase">{user.full_name || user.username}</p>
+              <p className="text-[9px] text-slate-500 font-medium">System Operator</p>
             </div>
           </div>
-
-          <table className="min-w-full table-auto text-sm">
-            <thead className="bg-gray-100">
-              {table.getHeaderGroups().map(headerGroup => (
-                <tr key={headerGroup.id}>
-                  {headerGroup.headers.map(header => (
-                    <th key={header.id} className="px-3 py-2 text-left font-semibold whitespace-nowrap cursor-pointer hover:bg-gray-200" onClick={header.column.getToggleSortingHandler()}>
-                      {flexRender(header.column.columnDef.header, header.getContext())}
-                      {{ asc: ' 🔼', desc: ' 🔽' }[header.column.getIsSorted() as string] ?? ''}
-                    </th>
-                  ))}
-                </tr>
-              ))}
-            </thead>
-            <tbody>
-              {table.getRowModel().rows.map(row => (
-                <tr key={row.id} className="hover:bg-blue-50">
-                  {row.getVisibleCells().map(cell => (
-                    <td key={cell.id} className="px-3 py-1 max-w-[160px] truncate whitespace-nowrap overflow-hidden text-ellipsis border-t">
-                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                    </td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <div className="flex gap-2">
+            {user.username === 'admin' && (
+              <button onClick={() => router.push('/admin/users')} className="flex-1 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-400 text-[10px] font-bold uppercase rounded border border-slate-700">Manage</button>
+            )}
+            <button onClick={handleLogout} className="flex-1 py-1.5 bg-slate-800 hover:bg-red-900/30 hover:text-red-400 text-slate-400 text-[10px] font-bold uppercase rounded border border-slate-700 transition-colors">Exit</button>
+          </div>
         </div>
+      </aside>
+
+      {/* --- Main Workspace --- */}
+      <main className="flex-1 flex flex-col overflow-hidden">
+        
+        <header className="bg-white border-b border-slate-200 h-16 flex items-center justify-between px-8 shrink-0">
+          <div>
+            <h2 className="text-sm font-bold text-slate-900 uppercase tracking-widest flex items-center gap-3">
+              {selectedProjectName ? selectedProjectName : 'Repository Overview'}
+              {selectedProjectName?.toLowerCase() === 'playground' && <span className="text-[9px] font-bold text-blue-500 border border-blue-500/30 px-1.5 py-0.5 rounded leading-none">Sandbox</span>}
+            </h2>
+          </div>
+
+          <div className="flex items-center gap-6">
+            <div className="relative">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"><IconSearch /></span>
+              <input
+                type="text"
+                placeholder="Search Inventory..."
+                value={globalFilter ?? ''}
+                onChange={(e) => setGlobalFilter(e.target.value)}
+                className="pl-9 pr-4 py-1.5 bg-slate-50 border border-slate-200 rounded-md text-[12px] focus:bg-white focus:ring-1 focus:ring-blue-500 outline-none w-64 transition-all"
+              />
+            </div>
+            <button onClick={() => handleProjectClick(selectedProjectName || '')} className="text-slate-400 hover:text-slate-600 transition-colors" title="Sync Database"><IconRefresh /></button>
+          </div>
+        </header>
+
+        <div className="flex-1 flex flex-col min-h-0 p-8">
+          {selectedProjectName?.toLowerCase() === 'playground' && (
+            <div className="bg-white border border-slate-200 rounded shadow-sm mb-8 p-6">
+              <h3 className="text-[11px] font-bold text-slate-400 uppercase tracking-[0.2em] mb-4">Ad-hoc Evidence Intake</h3>
+              <textarea
+                rows={3}
+                placeholder="Paste unstructured clinical narrative for immediate review..."
+                value={playgroundText}
+                onChange={(e) => setPlaygroundText(e.target.value)}
+                className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded text-sm focus:bg-white focus:border-blue-500 outline-none transition-all font-mono leading-relaxed mb-4"
+              />
+              <button 
+                onClick={async () => {
+                  const finalBaseName = `manual_${Date.now()}`;
+                  await fetch('/api/save', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ fileName: finalBaseName, curr_folder: 'Playground', pages: [playgroundText.trim()], annotations: [], meta: {} }) });
+                  setPlaygroundText('');
+                  handleProjectClick('Playground');
+                  window.open(`/annotate?project=Playground&file=${encodeURIComponent(finalBaseName + '.json')}`, '_blank');
+                }}
+                className="px-6 py-2 bg-slate-900 text-white text-[11px] font-bold uppercase tracking-widest rounded hover:bg-slate-800 transition-colors shadow-sm"
+              >
+                Launch Workflow
+              </button>
+            </div>
+          )}
+
+          {loading ? (
+            <div className="flex flex-col items-center justify-center h-64 text-slate-300">
+              <div className="w-5 h-5 border-2 border-slate-200 border-t-blue-500 rounded-full animate-spin mb-3"></div>
+              <p className="text-[10px] font-bold uppercase tracking-widest">Establishing Database Connection...</p>
+            </div>
+          ) : loadedProject ? (
+            <div className="bg-white border border-slate-200 rounded shadow-sm overflow-hidden flex flex-col flex-1 min-h-0">
+              
+              <div className="px-6 py-3 border-b border-slate-100 flex items-center justify-between bg-slate-50/50 shrink-0">
+                <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Inventory Management</div>
+                <div className="flex items-center gap-4">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] text-slate-400 font-bold uppercase">Display:</span>
+                    <select
+                      value={pagination.pageSize}
+                      onChange={e => setPagination({ ...pagination, pageSize: Number(e.target.value) })}
+                      className="text-[10px] font-bold text-blue-600 bg-transparent outline-none cursor-pointer"
+                    >
+                      {[15, 30, 50, 100].map(s => <option key={s} value={s}>{s} rows</option>)}
+                    </select>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <button onClick={() => table.previousPage()} disabled={!table.getCanPreviousPage()} className="p-1 hover:text-blue-600 disabled:opacity-20 transition-colors">◀</button>
+                    <span className="text-[10px] font-bold text-slate-600 mx-1 uppercase tracking-tighter">Page {table.getState().pagination.pageIndex + 1} / {table.getPageCount()}</span>
+                    <button onClick={() => table.nextPage()} disabled={!table.getCanNextPage()} className="p-1 hover:text-blue-600 disabled:opacity-20 transition-colors">▶</button>
+                  </div>
+                </div>
+              </div>
+
+              <div className="overflow-auto flex-1">
+                <table className="w-full border-collapse">
+                  <thead className="bg-white sticky top-0 z-10 shadow-[0_1px_0_rgba(0,0,0,0.05)]">
+                    {table.getHeaderGroups().map(headerGroup => (
+                      <tr key={headerGroup.id}>
+                        {headerGroup.headers.map(header => (
+                          <th 
+                            key={header.id} 
+                            onClick={header.column.getToggleSortingHandler()}
+                            className="px-6 py-4 text-left text-[10px] font-bold text-slate-400 uppercase tracking-wider border-b border-slate-100 cursor-pointer hover:text-slate-900 transition-colors"
+                          >
+                            <div className="flex items-center gap-1.5">
+                              {flexRender(header.column.columnDef.header, header.getContext())}
+                              <span className="text-blue-500 opacity-0 group-hover:opacity-100">
+                                {{ asc: '↑', desc: '↓' }[header.column.getIsSorted() as string] ?? ''}
+                              </span>
+                            </div>
+                          </th>
+                        ))}
+                      </tr>
+                    ))}
+                  </thead>
+                  <tbody className="divide-y divide-slate-50">
+                    {table.getRowModel().rows.map(row => (
+                      <tr key={row.id} className="hover:bg-slate-50/80 transition-colors">
+                        {row.getVisibleCells().map(cell => (
+                          <td key={cell.id} className="px-6 py-3 text-[12px] font-medium text-slate-600 whitespace-nowrap">
+                            {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ) : (
+            <div className="flex flex-col items-center justify-center h-full text-center py-32">
+              <div className="w-12 h-12 border border-slate-200 rounded flex items-center justify-center text-slate-300 mb-6"><IconFolder /></div>
+              <h2 className="text-sm font-bold text-slate-900 uppercase tracking-widest mb-2">Selection Required</h2>
+              <p className="text-[12px] text-slate-400 max-w-xs mx-auto">Please select a repository from the left panel to begin your evidence review workflow.</p>
+            </div>
+          )}
+        </div>
+      </main>
+
+      {showUploader && (
+        <NewProjectUploader 
+          fetchProjectList={fetchProjectList}
+          onClose={() => setShowUploader(false)}
+        />
       )}
     </div>
   );

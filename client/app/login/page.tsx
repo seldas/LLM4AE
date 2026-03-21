@@ -69,7 +69,7 @@ export default function LoginPage() {
       <div className="w-full max-w-md p-8 space-y-6 bg-white rounded-lg shadow-md">
         <div className="text-center">
           <h1 className="text-3xl font-bold text-gray-900">LLM4AE</h1>
-          <p className="mt-2 text-sm text-gray-600">Please sign in to continue</p>
+          <p className="mt-2 text-sm text-gray-600">Secure Access Portal</p>
         </div>
 
         <form className="space-y-4" onSubmit={handleLogin}>

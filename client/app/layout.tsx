@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Doc-annotation",
+  title: "LLM4AE",
   description: "Clinical Concepts Annotation",
 };
 
