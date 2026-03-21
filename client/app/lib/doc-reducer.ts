@@ -270,6 +270,7 @@ export function docReducer(state: DocState, action: DocActions ) {
                 return {
                   ...a,
                   note: action.payload.annotation.note,
+                  relationships: action.payload.annotation.relationships,
                 };
               }
               return a; 

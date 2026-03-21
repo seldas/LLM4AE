@@ -45,11 +45,9 @@ const RelationshipBuilderPanel = (props: Props) => {
     return (
         <div className="relationship-builder-panel h-full flex flex-col">
           <div className="mb-4">
-            <h2 className="text-sm font-black text-gray-800 uppercase tracking-widest flex items-center gap-2">
-              <span className="text-lg">🔗</span> Relationship Linker
-            </h2>
-            <p className="text-[10px] text-gray-400 font-medium mt-1">
-              Select a cell to start linking entities from the narrative
+            <p className="text-[11px] text-slate-500 font-semibold bg-slate-50 border border-slate-100 p-3 rounded-lg leading-relaxed">
+              <span className="text-blue-600 font-bold">Step 1:</span> Click an empty cell below to activate a link type.<br/>
+              <span className="text-blue-600 font-bold">Step 2:</span> Highlight the corresponding term in the narrative above to link it.
             </p>
           </div>
 

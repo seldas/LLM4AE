@@ -9,6 +9,8 @@ interface Props {
   optionColors: { [key: string]: string };
   handleTextSelection: () => void;
   userRole: string; 
+  onClickAnnotation?: (anno: Annotation) => void;
+  isReadOnly?: boolean;
 }
 
 function escapeRegExp(text: string): string {
@@ -57,6 +59,8 @@ const PageDisplayBuilder = ({
   optionColors,
   handleTextSelection,
   userRole,
+  onClickAnnotation,
+  isReadOnly,
 }: Props) => {
   const textRef = useRef<HTMLPreElement>(null);
   const [selectedBox, setSelectedBox] = useState<{ start: number; end: number } | null>(null);  
@@ -106,51 +110,20 @@ const PageDisplayBuilder = ({
     
   const computeHighlightBoxes = useCallback(() => {
       const container = textRef.current;
-      if (!container || !currentAnnotationRelation) return;
+      if (!container) return;
     
       const containerRect = container.getBoundingClientRect();
       const boxes: any[] = [];
-    
-      const color = optionColors[currentAnnotationRelation.label] || "rgba(255,255,0,0.4)";
-      const main = currentAnnotationRelation.textContext;
-      if (typeof main.start !== 'number' || typeof main.end !== 'number') return;
-      const startInfo = getNodeAndOffsetForIndex(container, main.start);
-      const endInfo = getNodeAndOffsetForIndex(container, main.end);
-    
-      if (startInfo && endInfo) {
-        try {
-          const range = document.createRange();
-          range.setStart(startInfo.node, startInfo.offset);
-          range.setEnd(endInfo.node, endInfo.offset);
-          const rects = range.getClientRects();
-          for (const r of rects) {
-            boxes.push({
-              top: r.top - containerRect.top,
-              left: r.left - containerRect.left,
-              width: r.width,
-              height: r.height,
-              label: currentAnnotationRelation.label,
-              color,
-              isRelation: false,
-              ...main,
-            });
-          }
-        } catch (e) {
-          console.warn("Main entity render failed", e);
-        }
-      }
-    
-      // Render related terms
-      Object.entries(currentAnnotationRelation.relationships).forEach(([relType, relCtx]) => {
-        if (relCtx.start === relCtx.end) return;
-    
-        const relStartInfo = getNodeAndOffsetForIndex(container, relCtx.start);
-        const relEndInfo = getNodeAndOffsetForIndex(container, relCtx.end);
-        if (relStartInfo && relEndInfo) {
+
+      // Helper to add a box to the collection
+      const addBox = (start: number, end: number, label: string, color: string, isRelation: boolean, note?: string) => {
+        const startInfo = getNodeAndOffsetForIndex(container, start);
+        const endInfo = getNodeAndOffsetForIndex(container, end);
+        if (startInfo && endInfo) {
           try {
             const range = document.createRange();
-            range.setStart(relStartInfo.node, relStartInfo.offset);
-            range.setEnd(relEndInfo.node, relEndInfo.offset);
+            range.setStart(startInfo.node, startInfo.offset);
+            range.setEnd(endInfo.node, endInfo.offset);
             const rects = range.getClientRects();
             for (const r of rects) {
               boxes.push({
@@ -158,20 +131,41 @@ const PageDisplayBuilder = ({
                 left: r.left - containerRect.left,
                 width: r.width,
                 height: r.height,
-                label: relType,
-                color: optionColors[currentAnnotationRelation.label] || "rgba(200,200,255,0.3)",
-                isRelation: true,
-                ...relCtx,
+                label,
+                color,
+                isRelation,
+                start,
+                end,
+                note
               });
             }
           } catch (e) {
-            console.warn("Relationship render failed", e);
+            console.warn("Box render failed", e);
           }
         }
-      });
+      };
+
+      if (!currentAnnotationRelation) {
+        // MODE 1: Overview - Show all filtered annotations
+        annotations.forEach(ann => {
+          const color = optionColors[ann.label] || "rgba(255,255,0,0.4)";
+          addBox(ann.textContext.start, ann.textContext.end, ann.label, color, false, ann.note);
+        });
+      } else {
+        // MODE 2: Focus - Show only selected annotation and its relationships
+        const color = optionColors[currentAnnotationRelation.label] || "rgba(255,255,0,0.4)";
+        addBox(currentAnnotationRelation.textContext.start, currentAnnotationRelation.textContext.end, 
+               currentAnnotationRelation.label, color, false, currentAnnotationRelation.note);
+
+        // Render related terms
+        Object.entries(currentAnnotationRelation.relationships).forEach(([relType, relCtx]) => {
+          if (relCtx.start === relCtx.end) return;
+          addBox(relCtx.start, relCtx.end, relType, color, true);
+        });
+      }
     
       setHighlightBoxes(boxes);
-  }, [currentAnnotationRelation, optionColors]);
+  }, [annotations, currentAnnotationRelation, optionColors]);
 
 
   // Call once on mount and on updates
@@ -199,7 +193,7 @@ const PageDisplayBuilder = ({
   }, [computeHighlightBoxes, updateLineCount]);
 
   return (
-    <div className="page flex" style={{ margin: "20px auto" }} onMouseUp={handleTextSelection}>
+    <div className="page flex" style={{ margin: "20px auto" }} onMouseUp={() => !isReadOnly && handleTextSelection()}>
       {/* Visual Gutter */}
       <div 
         className="flex-shrink-0 text-right pr-4 text-gray-300 select-none font-mono text-xs border-r border-gray-100" 
@@ -232,6 +226,11 @@ const PageDisplayBuilder = ({
               key={i}
               onMouseEnter={() => setHoveredBox({ start: box.start, end: box.end })}
               onMouseLeave={() => setHoveredBox(null)}
+              onClick={() => {
+                if (box.isRelation) return;
+                const anno = annotations.find(a => a.textContext.start === box.start && a.textContext.end === box.end);
+                if (anno) onClickAnnotation?.(anno);
+              }}
               style={{
                 position: "absolute",
                 top: (box.top ?? 0) + (box.stackOffset ?? 0) - 2,
