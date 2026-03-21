@@ -232,12 +232,8 @@ body {
 
 /* annotation panel*/
 .annotation-panel {
-  padding: 16px;
+  padding: 0;
   background-color: #ffffff;
-  border-left: 1px solid #ddd;
-  box-shadow: -2px 0 6px rgba(0, 0, 0, 0.03);
-  width: 450px;
-  min-height: 100vh;
 }
 
 .panel-title {
