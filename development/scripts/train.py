@@ -9,7 +9,7 @@ from transformers import (
     DataCollatorForTokenClassification
 )
 from datasets import load_metric
-from data_loader import load_json_data, prepare_datasets, NERDataset
+from data_loader import load_data_from_db, prepare_datasets, NERDataset
 
 # Load seqeval for evaluation
 metric = load_metric("seqeval")
@@ -36,17 +36,19 @@ def compute_metrics(p, label_list):
         "accuracy": results["overall_accuracy"],
     }
 
-def main(folders, model_path="../models/foundation", output_dir="../models/bert_ner_latest"):
+def main(include_ai=False, model_path="../models/foundation", output_dir="../models/bert_ner_latest"):
     print(f"--- Starting Fine-tuning Pipeline ---")
     
     tokenizer = AutoTokenizer.from_pretrained(model_path)
     
     # 1. Load and Prepare Data
-    raw_data = load_json_data(folders)
+    print(f"Loading data from DB (Include AI: {include_ai})...")
+    raw_data = load_data_from_db(include_ai=include_ai)
     if not raw_data:
-        print("Error: No data found in provided folders.")
+        print("Error: No data found in database.")
         return
 
+    print(f"Loaded {len(raw_data)} cases. Preparing datasets (70:30 split)...")
     train_raw, val_raw, label_list, label_to_id, id_to_label = prepare_datasets(raw_data, tokenizer)
     
     train_dataset = NERDataset(train_raw)
@@ -97,8 +99,9 @@ def main(folders, model_path="../models/foundation", output_dir="../models/bert_
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--folders", nargs="+", required=True, help="List of folder names in history/ to use for training")
+    parser.add_argument("--include_ai", action="store_true", help="Include AI-generated annotations for training")
     parser.add_argument("--base_model", type=str, default="../models/foundation")
+    parser.add_argument("--output_dir", type=str, default="../models/bert_ner_latest")
     args = parser.parse_args()
     
-    main(args.folders, args.base_model)
+    main(args.include_ai, args.base_model, args.output_dir)

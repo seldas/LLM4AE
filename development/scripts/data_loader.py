@@ -1,33 +1,72 @@
 import os
+import sqlite3
 import json
 import random
 import torch
 from transformers import AutoTokenizer
 
-def load_json_data(folders, base_history_dir="../../server/history"):
+def load_data_from_db(db_path="../../server/database/llm4ae.db", include_ai=False):
+    """
+    Loads narratives and annotations from the SQLite database.
+    By default, only human annotations are included.
+    """
+    if not os.path.exists(db_path):
+        # Try absolute path or relative to current script
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        db_path = os.path.join(script_dir, "../../server/database/llm4ae.db")
+        if not os.path.exists(db_path):
+            raise FileNotFoundError(f"Database not found at {db_path}")
+
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    
+    # Fetch all cases
+    cases = conn.execute("SELECT id, narrative FROM cases").fetchall()
+    
     all_data = []
-    for folder in folders:
-        folder_path = os.path.join(base_history_dir, folder)
-        if not os.path.exists(folder_path):
-            print(f"Warning: Folder {folder_path} does not exist.")
-            continue
+    for case in cases:
+        case_id = case["id"]
+        narrative = case["narrative"]
+        
+        # Build query for annotations
+        query = "SELECT a.label, a.start_offset, a.end_offset, a.text_content, u.role_id FROM annotations a JOIN users u ON a.user_id = u.id WHERE a.case_id = ?"
+        if not include_ai:
+            query += " AND u.role_id != 4" # Role 4 is AI
             
-        for filename in os.listdir(folder_path):
-            if filename.endswith(".json"):
-                with open(os.path.join(folder_path, filename), "r", encoding="utf-8") as f:
-                    all_data.append(json.load(f))
+        anns = conn.execute(query, (case_id,)).fetchall()
+        
+        # Convert to the format expected by tokenization logic
+        formatted_anns = []
+        for ann in anns:
+            formatted_anns.append({
+                "label": ann["label"],
+                "textContext": {
+                    "start": ann["start_offset"],
+                    "end": ann["end_offset"],
+                    "text": ann["text_content"]
+                }
+            })
+            
+        all_data.append({
+            "pages": [narrative],
+            "annotations": formatted_anns
+        })
+        
+    conn.close()
     return all_data
 
 def tokenize_and_align_labels(examples, tokenizer, label_to_id, max_length=512):
     """
-    examples: List of JSON data (one per file/page)
+    examples: List of JSON-like data (one per case)
     Converts char-level annotations to BIO-tagged token-level labels.
     """
     tokenized_inputs = []
     
     for item in examples:
-        text = item["pages"][0] # Assuming single page for now
+        text = item["pages"][0]
         annotations = item.get("annotations", [])
+        
+        if not text: continue
         
         # Tokenize text
         tokenized = tokenizer(
@@ -38,7 +77,7 @@ def tokenize_and_align_labels(examples, tokenizer, label_to_id, max_length=512):
             return_offsets_mapping=True
         )
         
-        labels = [0] * len(tokenized["input_ids"]) # Default to 'O' tag
+        labels = [0] * len(tokenized["input_ids"]) # Default to 'O' tag (which should be at index 0)
         offset_mapping = tokenized["offset_mapping"]
         
         for ann in annotations:
@@ -52,7 +91,13 @@ def tokenize_and_align_labels(examples, tokenizer, label_to_id, max_length=512):
                 
                 # Align logic: BIO format
                 if start_tok >= start_char and end_tok <= end_char:
-                    bio_prefix = "B-" if start_tok == start_char else "I-"
+                    # Logic for B- and I- prefixes
+                    # B- if it's the start of the annotation OR if it's the first token in range
+                    # We use a simple heuristic: if the previous token was also in range, it's I-
+                    # But the offset mapping allows more precise check:
+                    is_start = (start_tok == start_char) or (i > 0 and offset_mapping[i-1][0] < start_char and start_tok >= start_char)
+                    
+                    bio_prefix = "B-" if is_start else "I-"
                     tag = f"{bio_prefix}{label_name}"
                     if tag in label_to_id:
                         labels[i] = label_to_id[tag]
@@ -64,11 +109,16 @@ def tokenize_and_align_labels(examples, tokenizer, label_to_id, max_length=512):
         ]
         
         tokenized["labels"] = labels
+        # remove offset_mapping as it's not needed for training and contains tuples (which torch doesn't like)
+        del tokenized["offset_mapping"] 
         tokenized_inputs.append(tokenized)
         
     return tokenized_inputs
 
-def prepare_datasets(all_data, tokenizer, split_ratio=0.8):
+def prepare_datasets(all_data, tokenizer, split_ratio=0.7):
+    """
+    Split ratio 0.7 for training, 0.3 for validation.
+    """
     random.shuffle(all_data)
     split_idx = int(len(all_data) * split_ratio)
     
@@ -101,5 +151,4 @@ class NERDataset(torch.utils.data.Dataset):
         return len(self.data)
         
     def __getitem__(self, idx):
-        item = {key: torch.tensor(val) for key, val in self.data[idx].items() if key != "offset_mapping"}
-        return item
+        return {key: torch.tensor(val) for key, val in self.data[idx].items()}

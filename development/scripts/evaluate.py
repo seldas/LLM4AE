@@ -4,7 +4,7 @@ import numpy as np
 import torch
 from transformers import AutoTokenizer, AutoModelForTokenClassification, Trainer, TrainingArguments, DataCollatorForTokenClassification
 from datasets import load_metric
-from data_loader import load_json_data, NERDataset, tokenize_and_align_labels
+from data_loader import load_data_from_db, NERDataset, tokenize_and_align_labels
 
 metric = load_metric("seqeval")
 
@@ -24,7 +24,7 @@ def compute_metrics(p, label_list):
     results = metric.compute(predictions=true_predictions, references=true_labels)
     return results
 
-def main(folders, model_path="../models/bert_ner_latest", output_file="../results/evaluation_report.txt"):
+def main(include_ai=False, model_path="../models/bert_ner_latest", output_file="../results/evaluation_report.txt"):
     print(f"--- Evaluating fine-tuned model: {model_path} ---")
     
     tokenizer = AutoTokenizer.from_pretrained(model_path)
@@ -35,12 +35,18 @@ def main(folders, model_path="../models/bert_ner_latest", output_file="../result
     label_to_id = {l: i for i, l in enumerate(label_list)}
     
     # 1. Load Data
-    raw_data = load_json_data(folders)
+    print(f"Loading evaluation data from DB (Include AI: {include_ai})...")
+    raw_data = load_data_from_db(include_ai=include_ai)
     if not raw_data:
         print("Error: No data found for evaluation.")
         return
         
-    # Process all provided data as evaluation data
+    # For evaluation, we might want to use the same 70:30 split logic if we want to evaluate on the test set.
+    # However, usually evaluate.py is for evaluating on a specific held-out set.
+    # Given the user's request for "all narratives and annotation", I will evaluate on all data for now,
+    # or I could implement a proper split and only evaluate on the 30%.
+    # To keep it simple and follow "use all narratives", I'll use all.
+    
     tokenized_data = tokenize_and_align_labels(raw_data, tokenizer, label_to_id)
     eval_dataset = NERDataset(tokenized_data)
     
@@ -70,7 +76,7 @@ def main(folders, model_path="../models/bert_ner_latest", output_file="../result
     with open(output_file, "w", encoding="utf-8") as f:
         f.write("--- NER Model Evaluation Report ---\n\n")
         f.write(f"Model: {os.path.abspath(model_path)}\n")
-        f.write(f"Test Sets: {', '.join(folders)}\n\n")
+        f.write(f"Source: SQLite Database (Include AI: {include_ai})\n\n")
         
         # Summary metrics
         f.write("Overall Performance:\n")
@@ -93,8 +99,9 @@ def main(folders, model_path="../models/bert_ner_latest", output_file="../result
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--folders", nargs="+", required=True, help="List of history folders to evaluate on")
+    parser.add_argument("--include_ai", action="store_true", help="Include AI annotations in evaluation")
     parser.add_argument("--model", type=str, default="../models/bert_ner_latest")
+    parser.add_argument("--output", type=str, default="../results/evaluation_report.txt")
     args = parser.parse_args()
     
-    main(args.folders, args.model)
+    main(args.include_ai, args.model, args.output)

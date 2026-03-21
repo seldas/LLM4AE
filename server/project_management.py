@@ -105,17 +105,35 @@ def show_project(project_name):
                 c.all_llts as "All LLTs", c.all_pts as "All PTs", 
                 c.all_hlts as "All HLTs", c.all_hlgts as "All HLGTs", 
                 c.all_socs as "All SOCs",
-                c.annotate_filename, c.meta
+                c.annotate_filename, c.meta,
+                COUNT(CASE WHEN u.username IN ('Llama4', 'BioBERT') OR u.migration_key = 'LLM' THEN a.id END) as count_llm,
+                COUNT(CASE WHEN u.username = 'MJ.L' OR u.migration_key = 'SME1' THEN a.id END) as count_sme1,
+                COUNT(CASE WHEN u.username = 'K.L' OR u.migration_key = 'SME2' THEN a.id END) as count_sme2,
+                COUNT(CASE WHEN u.username NOT IN ('Llama4', 'BioBERT', 'MJ.L', 'K.L') AND u.migration_key NOT IN ('LLM', 'SME1', 'SME2') THEN a.id END) as count_other
             FROM cases c
             JOIN project_cases pc ON c.id = pc.case_id
+            LEFT JOIN annotations a ON c.id = a.case_id
+            LEFT JOIN users u ON a.user_id = u.id
             WHERE pc.project_id = ?
+            GROUP BY c.id
         '''
         rows = conn.execute(query, (project['id'],)).fetchall()
         conn.close()
 
         records = [dict(r) for r in rows]
         for r in records:
-            r['counts'] = {'LLM': 0, 'SME1': 0, 'SME2': 0} # Placeholders
+            r['counts'] = {
+                'LLM': r.get('count_llm', 0), 
+                'SME1': r.get('count_sme1', 0), 
+                'SME2': r.get('count_sme2', 0),
+                'Other': r.get('count_other', 0)
+            }
+            # For direct access safety
+            r['LLM'] = r.get('count_llm', 0)
+            r['SME1'] = r.get('count_sme1', 0)
+            r['SME2'] = r.get('count_sme2', 0)
+            r['Other'] = r.get('count_other', 0)
+            
             r['meta'] = json.loads(r['meta']) if r['meta'] else {}
 
         return jsonify({'projectName': project_name, 'records': records}), 200

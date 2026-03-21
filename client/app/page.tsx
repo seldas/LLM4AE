@@ -132,14 +132,18 @@ export default function HomePage() {
         if (!res.ok) throw new Error(data.error || 'Failed to load project');
 
         const records = data.records.map((r: any) => {
-          const llm = r.counts?.LLM ?? 0;
+          const llmCount = r.counts?.LLM ?? 0;
           const meta = r.meta || {};
-          let llmStatus = llm;
-          if (!meta.llm_processed) {
-            llmStatus = -2; 
-          } else if (meta.llm_processed === 'working') {
-            llmStatus = -1;
-          };
+          let llmStatus = llmCount;
+          
+          // Only use status codes if there are NO annotations
+          if (llmCount === 0) {
+            if (!meta.llm_processed) {
+              llmStatus = -2; 
+            } else if (meta.llm_processed === 'working') {
+              llmStatus = -1;
+            };
+          }
           
           return {
             ...r,
@@ -288,14 +292,17 @@ export default function HomePage() {
         if (!res.ok) throw new Error(data.error || 'Failed to refresh');
 
         const records = data.records.map((r: any) => {
-          const llm = r.counts?.LLM ?? 0;
+          const llmCount = r.counts?.LLM ?? 0;
           const meta = r.meta || {};
-          let llmStatus = llm;
-          if (!meta.llm_processed) {
-            llmStatus = -2; 
-          } else if (meta.llm_processed === 'working') {
-            llmStatus = -1;
-          };
+          let llmStatus = llmCount;
+          
+          if (llmCount === 0) {
+            if (!meta.llm_processed) {
+              llmStatus = -2; 
+            } else if (meta.llm_processed === 'working') {
+              llmStatus = -1;
+            };
+          }
           
           return {
             ...r,
@@ -365,6 +372,25 @@ export default function HomePage() {
           </button>
         );
       },
+    },
+    {
+      id: 'human_count',
+      header: '👤 Human',
+      accessorFn: (row: any) => (row.counts?.SME1 || 0) + (row.counts?.SME2 || 0) + (row.counts?.Other || 0),
+      cell: ({ getValue }: any) => (
+        <span className="font-bold text-indigo-600 px-2">{getValue()}</span>
+      ),
+    },
+    {
+      id: 'ai_count',
+      header: '🤖 AI',
+      accessorFn: (row: any) => {
+        const count = row.counts?.LLM || 0;
+        return count < 0 ? 0 : count; // handle status codes
+      },
+      cell: ({ getValue }: any) => (
+        <span className="font-bold text-orange-600 px-2">{getValue()}</span>
+      ),
     },
     ...(loadedProject?.folderName === 'Playground' ? [  
       { accessorKey: 'annotate_filename', header: 'File' },
