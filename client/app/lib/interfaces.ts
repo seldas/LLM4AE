@@ -26,11 +26,13 @@ export interface MetaRecord {
 
 
 export interface Annotation {
+    id?: number;
     textContext: TextContext,
     label: string,
     note: string
     relationships: AnnotationRelationships
     disputed?: boolean
+    adjudication?: string;
 }
 
 export interface AnnotationOptions {

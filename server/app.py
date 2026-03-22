@@ -155,6 +155,36 @@ def list_roles():
     conn.close()
     return jsonify([dict(r) for r in roles]), 200
 
+@app.route("/api/adjudicate", methods=["POST"])
+@cross_origin()
+def adjudicate():
+    data = request.get_json()
+    annotation_id = data.get("annotation_id")
+    status = data.get("status") # approved, denied, modified
+    reason = data.get("reason", "")
+    adjudicator_id = data.get("user_id")
+    
+    if not annotation_id or not status:
+        return jsonify({"error": "Missing required fields"}), 400
+        
+    conn = get_db_connection()
+    try:
+        import json
+        from datetime import datetime
+        adjudication_data = json.dumps({
+            "status": status,
+            "reason": reason,
+            "adjudicator_id": adjudicator_id,
+            "timestamp": datetime.now().isoformat()
+        })
+        conn.execute('UPDATE annotations SET adjudication = ? WHERE id = ?', (adjudication_data, annotation_id))
+        conn.commit()
+        return jsonify({"message": "Adjudication saved"}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        conn.close()
+
 # -----------------------------------------------------------------------------
 # API: Trigger LLM annotation (background)
 # -----------------------------------------------------------------------------

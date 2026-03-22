@@ -168,10 +168,12 @@ def history_file(file_path):
             return jsonify({
                 'pages': json.loads(doc['pages']),
                 'annotations': [{
+                    'id': a['id'],
                     'label': a['label'],
                     'textContext': {'start': a['start_offset'], 'end': a['end_offset'], 'text': a['text_content']},
                     'note': a['note'],
-                    'relationships': json.loads(a['relationships']) if a['relationships'] else {}
+                    'relationships': json.loads(a['relationships']) if a['relationships'] else {},
+                    'adjudication': a['adjudication']
                 } for a in get_annotations(doc['id'])],
                 'meta': json.loads(doc['meta']) if doc['meta'] else {}
             })
@@ -188,10 +190,12 @@ def history_file(file_path):
             return jsonify({
                 'pages': json.loads(doc['pages']),
                 'annotations': [{
+                    'id': a['id'],
                     'label': a['label'],
                     'textContext': {'start': a['start_offset'], 'end': a['end_offset'], 'text': a['text_content']},
                     'note': a['note'],
-                    'relationships': json.loads(a['relationships']) if a['relationships'] else {}
+                    'relationships': json.loads(a['relationships']) if a['relationships'] else {},
+                    'adjudication': a['adjudication']
                 } for a in get_annotations(doc['id'])],
                 'meta': json.loads(doc['meta']) if doc['meta'] else {}
             })

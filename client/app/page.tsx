@@ -182,13 +182,26 @@ export default function HomePage() {
       cell: ({ row }: CellContext<MetaRecord, unknown>) => {
         const fileName = row.original.annotate_filename || '';
         const folderName = row.original.folderName || selectedProjectName || 'Playground';
+        
+        const isAdj = user?.username === 'admin' || user?.role_name === 'Adjudicator';
+
         return (
-          <button
-            onClick={() => window.open(`/annotate?project=${encodeURIComponent(folderName)}&file=${encodeURIComponent(fileName)}`, '_blank')}
-            className="text-blue-600 hover:text-blue-800 text-[11px] font-bold uppercase tracking-wider"
-          >
-            Review
-          </button>
+          <div className="flex gap-3">
+            {isAdj && (
+              <button
+                onClick={() => window.open(`/adjudicate?project=${encodeURIComponent(folderName)}&file=${encodeURIComponent(fileName)}`, '_blank')}
+                className="text-emerald-600 hover:text-emerald-800 text-[11px] font-bold uppercase tracking-wider"
+              >
+                Adjudicate
+              </button>
+            )}
+            <button
+              onClick={() => window.open(`/annotate?project=${encodeURIComponent(folderName)}&file=${encodeURIComponent(fileName)}`, '_blank')}
+              className="text-blue-600 hover:text-blue-800 text-[11px] font-bold uppercase tracking-wider"
+            >
+              Review
+            </button>
+          </div>
         );
       },
     },
