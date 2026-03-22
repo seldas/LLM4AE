@@ -107,20 +107,47 @@ export default function Annotate_Panel({ overrideFileName, overrideFolder}: Prop
 
   // Filter Annotations for Display
   const visibleAnnotations = useMemo(() => {
-    return doc.annotations.filter(a => {
-      const note = a.note.toUpperCase();
-      const isRejected = note.includes('REJECTED');
-      if (isRejected && !showRejected) return false;
-
-      // Logic: AI is anything with LLM, llama, bert, or AI in note (and NOT verified)
-      const isPureAI = (note.includes('LLM') || note.includes('LLAMA') || note.includes('BERT') || note.includes('AI')) && !note.includes('VERIFIED');
-      const isHuman = !isPureAI; // Verified AI or anything else is Human layer
-
-      if (isPureAI && activeLayers.includes('AI')) return true;
-      if (isHuman && activeLayers.includes('Human')) return true;
+    // 1. Assign types and priority (Lower number = Higher priority)
+    // 1: Human (Direct), 2: Pure AI (Suggestion), 3: Verified AI (System + Checkmark)
+    const enriched = doc.annotations.map(a => {
+      const note = (a.note || "").toUpperCase();
+      const isAI = note.includes('LLM') || note.includes('LLAMA') || note.includes('BERT') || note.includes('AI');
+      const isVerified = note.includes('VERIFIED');
       
+      let priority = 3; 
+      if (!isAI) priority = 1;
+      else if (!isVerified) priority = 2;
+      else priority = 3;
+
+      return { ...a, priority };
+    });
+
+    // 2. Filter by active layers and rejection
+    let filtered = enriched.filter(a => {
+      const note = (a.note || "").toUpperCase();
+      if (note.includes('REJECTED') && !showRejected) return false;
+      
+      const isPureAI = a.priority === 2;
+      const isHumanLayer = a.priority === 1 || a.priority === 3;
+      
+      if (isPureAI && activeLayers.includes('AI')) return true;
+      if (isHumanLayer && activeLayers.includes('Human')) return true;
       return false;
     });
+
+    // 3. STRICT DE-DUPLICATION: Only one highlight per (start, end) position
+    const positionMap: Record<string, typeof enriched[0]> = {};
+    
+    // Sort by priority so the highest priority (1) is processed first or overrides
+    filtered.sort((a, b) => a.priority - b.priority).forEach(ann => {
+      const key = `${ann.textContext.start}-${ann.textContext.end}`;
+      // Only keep the first one encountered for this position (which will be highest priority)
+      if (!positionMap[key]) {
+        positionMap[key] = ann;
+      }
+    });
+
+    return Object.values(positionMap);
   }, [doc.annotations, activeLayers, showRejected]);
 
   // Specific filtering for Relationship/Link mode: Human annotations + AE/Drug labels

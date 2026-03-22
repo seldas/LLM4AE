@@ -17,6 +17,7 @@ export default function AdjudicateClient() {
   const [fileData, setFileData] = useState<FileData | null>(null);
   const [user, setUser] = useState<any>(null);
   const [adjudications, setAdjudications] = useState<Record<number, { status: string; reason: string }>>({});
+  const [selectedAnn, setSelectedAnn] = useState<any>(null);
   
   // Popup for reasons
   const [reasonPopup, setReasonPopup] = useState<{ id: number; status: string; text: string } | null>(null);
@@ -35,7 +36,6 @@ export default function AdjudicateClient() {
       const data = await getHistoryFile(file, folder);
       if (data) {
         setFileData(data);
-        // Initialize adjudications from loaded data if available
         const initialAdj: Record<number, any> = {};
         data.annotations.forEach((ann: any) => {
           if (ann.adjudication) {
@@ -59,7 +59,7 @@ export default function AdjudicateClient() {
     if (!fileData) return [];
     return fileData.annotations.filter(a => {
       const note = a.note.toUpperCase();
-      const isAI = note.includes('LLM') || note.includes('LLAMA') || note.includes('BERT') || note.includes('AI');
+      const isAI = note.includes('AI') || note.includes('LLM') || note.includes('LLAMA') || note.includes('BERT');
       return !isAI || note.includes('VERIFIED');
     });
   }, [fileData]);
@@ -98,6 +98,12 @@ export default function AdjudicateClient() {
     }
   };
 
+  const getAnnotatorDisplay = (note: string) => {
+    const upperNote = note.toUpperCase();
+    if (['SME1', 'SME2', 'ADJUDICATOR'].includes(upperNote)) return 'DevUser';
+    return note;
+  };
+
   if (loading || !fileData) return <div className="p-8">Loading for adjudication...</div>;
 
   return (
@@ -119,36 +125,47 @@ export default function AdjudicateClient() {
           </div>
           <div className="flex-1 overflow-y-auto p-4 space-y-3">
             {humanAnnotations.map((ann: any, idx: number) => {
-              const keyId = ann.id || idx;
+              const keyId = ann.id || `idx-${idx}`;
               const adj = adjudications[ann.id] || { status: 'not-assessed', reason: '' };
+              const isSelected = selectedAnn?.id === ann.id;
+
               return (
-                <div key={keyId} className={`p-4 border rounded-lg transition-all ${
-                  adj.status === 'approved' ? 'border-emerald-200 bg-emerald-50/30' :
-                  adj.status === 'denied' ? 'border-red-200 bg-red-50/30' :
-                  adj.status === 'modified' ? 'border-amber-200 bg-amber-50/30' : 'border-slate-200 bg-white'
-                }`}>
+                <div 
+                  key={keyId} 
+                  onClick={() => setSelectedAnn(ann)}
+                  className={`p-4 border rounded-lg transition-all cursor-pointer ${
+                    isSelected ? 'ring-2 ring-blue-500 shadow-md' : ''
+                  } ${
+                    adj.status === 'approved' ? 'border-emerald-200 bg-emerald-50/30' :
+                    adj.status === 'denied' ? 'border-red-200 bg-red-50/30' :
+                    adj.status === 'modified' ? 'border-amber-200 bg-amber-50/30' : 'border-slate-200 bg-white'
+                  }`}
+                >
                   <div className="flex justify-between items-start mb-3">
                     <div className="min-w-0">
                       <span className="inline-block px-2 py-0.5 rounded text-[9px] font-black text-white uppercase mb-1" style={{ backgroundColor: optionColors[ann.label.toUpperCase()] }}>
                         {ann.label}
                       </span>
                       <p className="text-sm font-bold text-slate-800 break-words">"{ann.textContext.text}"</p>
-                      <p className="text-[10px] text-slate-400 mt-1 font-medium italic">By {ann.username || ann.note}</p>
+                      <p className="text-[10px] text-slate-400 mt-1 font-medium italic">By {getAnnotatorDisplay(ann.note)}</p>
                     </div>
-                    <div className="flex gap-1">
-                      {['approved', 'denied', 'modified'].map(s => (
-                        <button
-                          key={s}
-                          onClick={() => handleStatusChange(ann.id, s)}
-                          className={`px-2 py-1 rounded text-[10px] font-bold uppercase transition-all ${
-                            adj.status === s 
-                            ? (s === 'approved' ? 'bg-emerald-600 text-white' : s === 'denied' ? 'bg-red-600 text-white' : 'bg-amber-500 text-white')
-                            : 'bg-slate-100 text-slate-400 hover:bg-slate-200'
-                          }`}
-                        >
-                          {s === 'approved' ? '✓' : s === 'denied' ? '✗' : '±'} {s}
-                        </button>
-                      ))}
+                    <div className="flex gap-1" onClick={e => e.stopPropagation()}>
+                      {['approved', 'denied', 'modified'].map(s => {
+                        const isActive = adj.status === s;
+                        return (
+                          <button
+                            key={s}
+                            onClick={() => handleStatusChange(ann.id, s)}
+                            className={`px-2 py-1 rounded text-[10px] font-bold uppercase transition-all shadow-sm ${
+                              isActive 
+                              ? (s === 'approved' ? 'bg-emerald-600 text-white' : s === 'denied' ? 'bg-red-600 text-white' : 'bg-amber-500 text-white')
+                              : 'bg-white text-slate-400 border border-slate-200 hover:bg-slate-50'
+                            }`}
+                          >
+                            {s === 'approved' ? '✓' : s === 'denied' ? '✗' : '±'} {s}
+                          </button>
+                        );
+                      })}
                     </div>
                   </div>
                   {adj.reason && (
@@ -182,8 +199,13 @@ export default function AdjudicateClient() {
                 activeLabelFilters={Array.from(new Set(humanAnnotations.map(a => a.label.toUpperCase())))}
                 disableFilter={true}
                 annotationSet="SME"
-                selectedTermContext={null}
-                setSelectedTermContext={() => {}}
+                selectedTermContext={selectedAnn ? { text: selectedAnn.textContext.text, start: selectedAnn.textContext.start, end: selectedAnn.textContext.end } : null}
+                setSelectedTermContext={(ctx) => {
+                  if (ctx) {
+                    const found = humanAnnotations.find(a => a.textContext.start === ctx.start);
+                    if (found) setSelectedAnn(found);
+                  }
+                }}
                 isReadOnly={true}
               />
             </div>

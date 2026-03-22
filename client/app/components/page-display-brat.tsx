@@ -243,10 +243,14 @@ function PageDisplay({
         {highlightBoxes.map((box, i) => {
           const isSelected = selectedTermContext?.start === box.start;
           const isHovered = hoveredBox?.start === box.start && hoveredBox?.end === box.end;
-          const isAI = box.note.toUpperCase().includes('AI') || box.note.toUpperCase().includes('LLM') || box.note.toLowerCase().includes('llama') || box.note.toLowerCase().includes('bert');
-          const isVerified = box.note.toUpperCase().includes('VERIFIED');
+          const note = box.note.toUpperCase();
+          const isAI = note.includes('AI') || note.includes('LLM') || note.includes('LLAMA') || note.includes('BERT');
+          const isVerified = note.includes('VERIFIED');
           
-          const stackOffset = box.stackIndex * 4;
+          // Pure AI has 🤖, Human/Verified doesn't or has ✓
+          const isPureAI = isAI && !isVerified;
+
+          const stackOffset = box.stackIndex * 12; // Increased offset for multiple tags
 
           return (
             <div
@@ -276,40 +280,38 @@ function PageDisplay({
                 zIndex: isSelected ? 10 : 2,
                 pointerEvents: "auto",
                 borderRadius: "4px",
-                border: isSelected ? "2px solid #2563eb" : isVerified ? "1px solid #059669" : "none",
+                border: isSelected ? "2px solid #2563eb" : isVerified ? "1px solid #059669" : isPureAI ? "1px dashed rgba(0,0,0,0.2)" : "none",
                 boxShadow: isHovered ? "0 0 0 2px rgba(0,0,0,0.1)" : "none",
                 cursor: "pointer",
                 transition: "all 0.1s ease-out",
               }}
             >
-              {(isHovered || isSelected) && (
-                <div
-                  style={{
-                    position: "absolute",
-                    top: "-1.8em",
-                    left: 0,
-                    backgroundColor: darkenHSLColor(box.color),
-                    color: "#fff",
-                    fontSize: "10px",
-                    fontWeight: 800,
-                    padding: "2px 6px",
-                    borderRadius: "4px",
-                    whiteSpace: "nowrap",
-                    zIndex: 20,
-                    boxShadow: "0 2px 4px rgba(0,0,0,0.2)",
-                    textTransform: "uppercase",
-                    display: "flex",
-                    gap: "4px",
-                    alignItems: "center"
-                  }}
-                >
-                  <span>{box.label}</span>
-                  <span style={{ opacity: 0.8, fontSize: '8px' }}>•</span>
-                  <span>{getAnnotatorDisplay(box.note)}</span>
-                  {isAI && <span>🤖</span>}
-                  {isVerified && <span>✓</span>}
-                </div>
-              )}
+              <div
+                style={{
+                  position: "absolute",
+                  top: `-${1.8 + (box.stackIndex * 1.2)}em`, // Stack labels upwards
+                  left: 0,
+                  backgroundColor: darkenHSLColor(box.color),
+                  color: "#fff",
+                  fontSize: "9px",
+                  fontWeight: 800,
+                  padding: "1px 5px",
+                  borderRadius: "3px",
+                  whiteSpace: "nowrap",
+                  zIndex: isSelected ? 30 : 20 - box.stackIndex,
+                  boxShadow: "0 1px 3px rgba(0,0,0,0.2)",
+                  textTransform: "uppercase",
+                  display: "flex",
+                  gap: "3px",
+                  alignItems: "center"
+                }}
+              >
+                <span>{box.label}</span>
+                <span style={{ opacity: 0.6, fontSize: '7px' }}>|</span>
+                <span>{getAnnotatorDisplay(box.note)}</span>
+                {isPureAI && <span>🤖</span>}
+                {isVerified && <span className="text-emerald-300">✓</span>}
+              </div>
             </div>
           );
         })}
