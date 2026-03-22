@@ -31,6 +31,11 @@ interface Props {
   overrideFolder?: string;
 }
 
+// Icons
+const IconSave = () => <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"/></svg>;
+const IconExport = () => <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a2 2 0 002 2h12a2 2 0 002-2v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>;
+const IconExit = () => <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>;
+
 export default function Annotate_Panel({ overrideFileName, overrideFolder}: Props) {
   const [doc, dispatch] = useReducer(docReducer, initialDocState)
   const [selectedText, setSelectedText] = useState('');
@@ -54,7 +59,7 @@ export default function Annotate_Panel({ overrideFileName, overrideFolder}: Prop
   }; 
   
   // Layer Management
-  const [activeLayers, setActiveLayers] = useState<string[]>(['Human', 'AI']); // Simplified layers
+  const [activeLayers, setActiveLayers] = useState<string[]>(['Human', 'AI']);
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [userRole, setUserRole] = useState<string>("Anonymous");
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -69,7 +74,6 @@ export default function Annotate_Panel({ overrideFileName, overrideFolder}: Prop
       setIsLoggedIn(true);
       const isGuest = u.username === 'guest';
       setIsReadOnly(isGuest);
-      // Use real name or username for new annotations, not migration key
       const displayName = u.full_name || u.username;
       setUserRole(displayName);
     }
@@ -107,50 +111,36 @@ export default function Annotate_Panel({ overrideFileName, overrideFolder}: Prop
 
   // Filter Annotations for Display
   const visibleAnnotations = useMemo(() => {
-    // 1. Assign types and priority (Lower number = Higher priority)
-    // 1: Human (Direct), 2: Pure AI (Suggestion), 3: Verified AI (System + Checkmark)
     const enriched = doc.annotations.map(a => {
       const note = (a.note || "").toUpperCase();
       const isAI = note.includes('LLM') || note.includes('LLAMA') || note.includes('BERT') || note.includes('AI');
       const isVerified = note.includes('VERIFIED');
-      
       let priority = 3; 
       if (!isAI) priority = 1;
       else if (!isVerified) priority = 2;
       else priority = 3;
-
-      return { ...a, priority };
+      const normalizedLabel = labelNormalizer[a.label.toUpperCase()] || a.label.toUpperCase();
+      return { ...a, priority, normalizedLabel };
     });
 
-    // 2. Filter by active layers and rejection
     let filtered = enriched.filter(a => {
       const note = (a.note || "").toUpperCase();
       if (note.includes('REJECTED') && !showRejected) return false;
-      
       const isPureAI = a.priority === 2;
       const isHumanLayer = a.priority === 1 || a.priority === 3;
-      
       if (isPureAI && activeLayers.includes('AI')) return true;
       if (isHumanLayer && activeLayers.includes('Human')) return true;
       return false;
     });
 
-    // 3. STRICT DE-DUPLICATION: Only one highlight per (start, end) position
     const positionMap: Record<string, typeof enriched[0]> = {};
-    
-    // Sort by priority so the highest priority (1) is processed first or overrides
     filtered.sort((a, b) => a.priority - b.priority).forEach(ann => {
       const key = `${ann.textContext.start}-${ann.textContext.end}`;
-      // Only keep the first one encountered for this position (which will be highest priority)
-      if (!positionMap[key]) {
-        positionMap[key] = ann;
-      }
+      if (!positionMap[key]) positionMap[key] = ann;
     });
-
     return Object.values(positionMap);
   }, [doc.annotations, activeLayers, showRejected]);
 
-  // Specific filtering for Relationship/Link mode: Human annotations + AE/Drug labels
   const filteredLinkAnnotations = useMemo(() => {
     return visibleAnnotations.filter(a => {
       const label = a.label.toUpperCase();
@@ -171,7 +161,6 @@ export default function Annotate_Panel({ overrideFileName, overrideFolder}: Prop
     'CDRUG': '#3b82f6'
   };
 
-  // Sync current selection when annotations update
   useEffect(() => {
     if (currentAnnotationRelation) {
       const updated = doc.annotations.find(a => 
@@ -180,13 +169,10 @@ export default function Annotate_Panel({ overrideFileName, overrideFolder}: Prop
         a.label === currentAnnotationRelation.label &&
         a.note === currentAnnotationRelation.note
       );
-      if (updated) {
-        setCurrentAnnotationRelation(updated);
-      }
+      if (updated) setCurrentAnnotationRelation(updated);
     }
   }, [doc.annotations]);
 
-  // Track unsaved changes
   useEffect(() => {
     setHasUnsavedChanges(doc.actionHistory.length > 0);
   }, [doc.actionHistory.length]);
@@ -212,23 +198,17 @@ export default function Annotate_Panel({ overrideFileName, overrideFolder}: Prop
   };
 
   const handleFinish = () => {
-    if (hasUnsavedChanges) {
-      setShowFinishConfirm(true);
-    } else {
-      window.close();
-    }
+    if (hasUnsavedChanges) setShowFinishConfirm(true);
+    else window.close();
   };
 
   const handleLayerToggle = (layer: string) => {
-    setActiveLayers(prev => 
-      prev.includes(layer) ? prev.filter(l => l !== layer) : [...prev, layer]
-    );
+    setActiveLayers(prev => prev.includes(layer) ? prev.filter(l => l !== layer) : [...prev, layer]);
   };
 
   const handleExport = async () => {
     const workbook = new ExcelJS.Workbook();
     const worksheet = workbook.addWorksheet('Annotations');
-
     worksheet.columns = [
       { header: 'Text', key: 'text', width: 40 },
       { header: 'Label', key: 'label', width: 20 },
@@ -237,81 +217,50 @@ export default function Annotate_Panel({ overrideFileName, overrideFolder}: Prop
       { header: 'Page', key: 'page', width: 10 },
       { header: 'Provenance', key: 'note', width: 30 },
     ];
-
     doc.annotations.forEach(anno => {
-      worksheet.addRow({
-        text: anno.textContext.text,
-        label: anno.label,
-        start: anno.textContext.start,
-        end: anno.textContext.end,
-        page: anno.textContext.page + 1,
-        note: anno.note
-      });
+      worksheet.addRow({ text: anno.textContext.text, label: anno.label, start: anno.textContext.start, end: anno.textContext.end, page: anno.textContext.page + 1, note: anno.note });
     });
-
     const buffer = await workbook.xlsx.writeBuffer();
     const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
     const url = window.URL.createObjectURL(blob);
     const anchor = document.createElement('a');
     anchor.href = url;
-    
-    // Construct dynamic filename
     const caseNumber = doc.meta.case_number || doc.meta.caseNumber || overrideFileName?.split('.')[0] || 'Unknown';
     const version = doc.meta.version || 'v1';
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-    
     anchor.download = `Annotation_${caseNumber}_${version}_${timestamp}.xlsx`;
     anchor.click();
     window.URL.revokeObjectURL(url);
   };
 
-  // Selection Logic
   const handleTextSelection = () => {
       if (isReadOnly) return;
       const selection = window.getSelection();
       if (!selection || !selection.toString().trim()) return;
-
       const text = selection.toString().trim().replace(/\u00A0/g, ' ');
-      const range = selection.getRangeAt(0);      const startNode = range.startContainer;
+      const range = selection.getRangeAt(0);      
+      const startNode = range.startContainer;
       const container = document.querySelector('.page .text-block');
-      
       if (!container?.contains(startNode)) return;
-    
       const rect = range.getBoundingClientRect();
-      
       const tempRange = document.createRange();
       tempRange.selectNodeContents(container);
       tempRange.setEnd(startNode, range.startOffset);
       const absoluteStart = (tempRange.cloneContents().textContent || "").length;
       const absoluteEnd = absoluteStart + text.length;
-    
       setSelectedText(text);
-    
       if (!relationshipBuilderMode) {
-        setUnifiedContextMenu({
-          visible: true, x: rect.left + window.scrollX, y: rect.top + window.scrollY,
-          type: 'annotation', start: absoluteStart, end: absoluteEnd
-        });
+        setUnifiedContextMenu({ visible: true, x: rect.left + window.scrollX, y: rect.top + window.scrollY, type: 'annotation', start: absoluteStart, end: absoluteEnd });
       } else if (currentAnnotationRelation) {
-          setUnifiedContextMenu({
-            visible: true, x: rect.left + window.scrollX, y: rect.top + window.scrollY,
-            type: 'relationship', start: absoluteStart, end: absoluteEnd,
-            options: ['Set', 'Delete']
-          });
+          setUnifiedContextMenu({ visible: true, x: rect.left + window.scrollX, y: rect.top + window.scrollY, type: 'relationship', start: absoluteStart, end: absoluteEnd, options: ['Set', 'Delete'] });
       }
   };
 
   const handleAddAnnotation = (label: string) => {
       if (isReadOnly) return;
       const newAnnotation: Annotation = {
-        textContext: {
-          text: selectedText,
-          page: doc.currentPageIndex,
-          start: unifiedContextMenu.start as number,
-          end: unifiedContextMenu.end as number,
-          disputed: false,
-        },
-        label: label, // Keep original label
+        textContext: { text: selectedText, page: doc.currentPageIndex, start: unifiedContextMenu.start as number, end: unifiedContextMenu.end as number, disputed: false },
+        label: label,
         note: userRole,
         relationships: { latency: {text:'',page:0}, date: {text:'',page:0}, time: {text:'',page:0}, frequency: {text:'',page:0}, temporal_sequence: {text:'',page:0} },
       };
@@ -321,55 +270,24 @@ export default function Annotate_Panel({ overrideFileName, overrideFolder}: Prop
 
   const handleVerifyAnnotation = (start: number, end: number, text: string, label: string, note: string) => {
     if (isReadOnly) return;
-    // 1. Find and update the existing AI annotation
-    const existingAI = doc.annotations.find(a => 
-      a.textContext.start === start && 
-      a.textContext.end === end && 
-      (a.label.toUpperCase() === label.toUpperCase() || (labelNormalizer[a.label.toUpperCase()] || a.label.toUpperCase()) === label.toUpperCase()) &&
-      (a.note.toUpperCase().includes('LLM') || a.note.toUpperCase().includes('AI') || a.note.toLowerCase().includes('llama') || a.note.toLowerCase().includes('bert'))
-    );
-
+    const existingAI = doc.annotations.find(a => a.textContext.start === start && a.textContext.end === end && (a.label.toUpperCase() === label.toUpperCase() || (labelNormalizer[a.label.toUpperCase()] || a.label.toUpperCase()) === label.toUpperCase()) && (a.note.toUpperCase().includes('LLM') || a.note.toUpperCase().includes('AI') || a.note.toLowerCase().includes('llama') || a.note.toLowerCase().includes('bert')));
     if (existingAI) {
-      const updatedAI = {
-        ...existingAI,
-        note: `${existingAI.note} | VERIFIED BY ${userRole}`
-      };
-      
-      // Dispatch UPDATE for AI with 'verify' historyType
+      const updatedAI = { ...existingAI, note: `${existingAI.note} | VERIFIED BY ${userRole}` };
       dispatch({ type: DocActionTypes.UPDATE_ANNOTATION, payload: { annotation: updatedAI, historyType: 'verify' } });
-
-      // 2. Create and add the human annotation
       const newHumanAnnotation: Annotation = {
-        textContext: {
-          text,
-          start,
-          end,
-          page: doc.currentPageIndex,
-          disputed: false,
-        },
-        label: label,
-        note: userRole,
+        textContext: { text, start, end, page: doc.currentPageIndex, disputed: false },
+        label: label, note: userRole,
         relationships: { latency: {text:'',page:0}, date: {text:'',page:0}, time: {text:'',page:0}, frequency: {text:'',page:0}, temporal_sequence: {text:'',page:0} },
       };
-
-      // Dispatch ADD for human with 'add' historyType
       dispatch({ type: DocActionTypes.ADD_ANNOTATION, payload: { annotation: newHumanAnnotation, historyType: 'add' } });
     }
   };
 
   const handleRejectAnnotation = (start: number, end: number, label: string) => {
     if (isReadOnly) return;
-    const existing = doc.annotations.find(a => 
-      a.textContext.start === start && 
-      a.textContext.end === end && 
-      (a.label.toUpperCase() === label.toUpperCase() || (labelNormalizer[a.label.toUpperCase()] || a.label.toUpperCase()) === label.toUpperCase())
-    );
-    
+    const existing = doc.annotations.find(a => a.textContext.start === start && a.textContext.end === end && (a.label.toUpperCase() === label.toUpperCase() || (labelNormalizer[a.label.toUpperCase()] || a.label.toUpperCase()) === label.toUpperCase()));
     if (existing) {
-      const updatedAnnotation = {
-        ...existing,
-        note: `${existing.note} | REJECTED BY ${userRole}`
-      };
+      const updatedAnnotation = { ...existing, note: `${existing.note} | REJECTED BY ${userRole}` };
       dispatch({ type: DocActionTypes.UPDATE_ANNOTATION, payload: { annotation: updatedAnnotation, historyType: 'reject' } });
       setLlmPopup(prev => ({ ...prev, visible: false }));
       setSelectedTermContext(null);
@@ -380,50 +298,21 @@ export default function Annotate_Panel({ overrideFileName, overrideFolder}: Prop
     if (isReadOnly) return;
     const { start, end, text, type } = llmPopup;
     const label = labelOverride || selectedPopupLabel;
-    
     const newAnnotation: Annotation = {
-      textContext: {
-        text,
-        start,
-        end,
-        page: doc.currentPageIndex,
-        disputed: false,
-      },
-      label: label,
-      note: userRole,
-      relationships: {
-        latency: { text: '', page: 0 },
-        date: { text: '', page: 0 },
-        time: { text: '', page: 0 },
-        frequency: { text: '', page: 0 },
-        temporal_sequence: { text: '', page: 0 },
-      },
+      textContext: { text, start, end, page: doc.currentPageIndex, disputed: false },
+      label: label, note: userRole,
+      relationships: { latency: { text: '', page: 0 }, date: { text: '', page: 0 }, time: { text: '', page: 0 }, frequency: { text: '', page: 0 }, temporal_sequence: { text: '', page: 0 } },
     };
-  
     if (type === 'AI') {
-      const existingAI = doc.annotations.find(a => 
-        a.textContext.start === start && 
-        a.textContext.end === end && 
-        (a.label.toUpperCase() === label.toUpperCase() || (labelNormalizer[a.label.toUpperCase()] || a.label.toUpperCase()) === label.toUpperCase()) &&
-        (a.note.toUpperCase().includes('LLM') || a.note.toUpperCase().includes('AI') || a.note.toLowerCase().includes('llama') || a.note.toLowerCase().includes('bert'))
-      );
-
+      const existingAI = doc.annotations.find(a => a.textContext.start === start && a.textContext.end === end && (a.label.toUpperCase() === label.toUpperCase() || (labelNormalizer[a.label.toUpperCase()] || a.label.toUpperCase()) === label.toUpperCase()) && (a.note.toUpperCase().includes('LLM') || a.note.toUpperCase().includes('AI') || a.note.toLowerCase().includes('llama') || a.note.toLowerCase().includes('bert')));
       if (existingAI) {
-        const updatedAI = {
-          ...existingAI,
-          note: `${existingAI.note} | VERIFIED BY ${userRole}`
-        };
-        
-        // Separate history entry 1: Verify AI
+        const updatedAI = { ...existingAI, note: `${existingAI.note} | VERIFIED BY ${userRole}` };
         dispatch({ type: DocActionTypes.UPDATE_ANNOTATION, payload: { annotation: updatedAI, historyType: 'verify' } });
-
-        // Separate history entry 2: Add Human
         dispatch({ type: DocActionTypes.ADD_ANNOTATION, payload: { annotation: newAnnotation, historyType: 'add' } });
       }
     } else {
       dispatch({ type: DocActionTypes.ADD_ANNOTATION, payload: { annotation: newAnnotation, historyType: 'add' } });
     }
-
     setLlmPopup((prev) => ({ ...prev, visible: false }));
     setSelectedTermContext(null);
   };
@@ -431,31 +320,14 @@ export default function Annotate_Panel({ overrideFileName, overrideFolder}: Prop
   const handleUnverifyAnnotation = (start: number, end: number, label: number | string) => {
     if (isReadOnly) return;
     const labelStr = String(label);
-    
-    const humanAnno = doc.annotations.find(a => 
-      a.textContext.start === start && 
-      a.textContext.end === end && 
-      (a.label.toUpperCase() === labelStr.toUpperCase() || (labelNormalizer[a.label.toUpperCase()] || a.label.toUpperCase()) === labelStr.toUpperCase()) &&
-      (a.note.toUpperCase().includes('SME') || a.note.toUpperCase().includes('MJ.L') || a.note.toUpperCase().includes('K.L') || a.note.toUpperCase().includes('ADJUDICATOR'))
-    );
-
-    const aiAnno = doc.annotations.find(a => 
-      a.textContext.start === start && 
-      a.textContext.end === end && 
-      (a.label.toUpperCase() === labelStr.toUpperCase() || (labelNormalizer[a.label.toUpperCase()] || a.label.toUpperCase()) === labelStr.toUpperCase()) &&
-      (a.note.toUpperCase().includes('LLM') || a.note.toUpperCase().includes('AI') || a.note.toLowerCase().includes('llama') || a.note.toLowerCase().includes('bert')) &&
-      a.note.toUpperCase().includes('VERIFIED')
-    );
-
+    const humanAnno = doc.annotations.find(a => a.textContext.start === start && a.textContext.end === end && (a.label.toUpperCase() === labelStr.toUpperCase() || (labelNormalizer[a.label.toUpperCase()] || a.label.toUpperCase()) === labelStr.toUpperCase()) && (a.note.toUpperCase().includes('SME') || a.note.toUpperCase().includes('MJ.L') || a.note.toUpperCase().includes('K.L') || a.note.toUpperCase().includes('ADJUDICATOR')));
+    const aiAnno = doc.annotations.find(a => a.textContext.start === start && a.textContext.end === end && (a.label.toUpperCase() === labelStr.toUpperCase() || (labelNormalizer[a.label.toUpperCase()] || a.label.toUpperCase()) === labelStr.toUpperCase()) && (a.note.toUpperCase().includes('LLM') || a.note.toUpperCase().includes('AI') || a.note.toLowerCase().includes('llama') || a.note.toLowerCase().includes('bert')) && a.note.toUpperCase().includes('VERIFIED'));
     if (aiAnno) {
       const revertedAiNote = aiAnno.note.split(' | VERIFIED BY')[0];
       const revertedAi = { ...aiAnno, note: revertedAiNote };
       dispatch({ type: DocActionTypes.UPDATE_ANNOTATION, payload: { annotation: revertedAi } });
-      if (humanAnno) {
-        dispatch({ type: DocActionTypes.REMOVE_ANNOTATION, payload: { annotation: humanAnno } });
-      }
+      if (humanAnno) dispatch({ type: DocActionTypes.REMOVE_ANNOTATION, payload: { annotation: humanAnno } });
     }
-    
     setLlmPopup(prev => ({ ...prev, visible: false }));
     setSelectedTermContext(null);
   };
@@ -463,22 +335,13 @@ export default function Annotate_Panel({ overrideFileName, overrideFolder}: Prop
   const onClickAnnotation = (text: string, start: number, end: number, x: number, y: number, note?: string, label?: string) => {
     let type: 'AI' | 'SME' | 'NEW' = 'NEW';
     let isVerified = false;
-
     if (note) {
       const upperNote = note.toUpperCase();
       const isAI = upperNote.includes('LLM') || upperNote.includes('AI') || upperNote.includes('LLAMA') || upperNote.includes('BERT');
-      // Any annotation that isn't purely AI is treated as SME (Human)
-      if (isAI) {
-        type = 'AI';
-        isVerified = upperNote.includes('VERIFIED');
-      } else {
-        type = 'SME';
-      }
+      if (isAI) { type = 'AI'; isVerified = upperNote.includes('VERIFIED'); } 
+      else { type = 'SME'; }
     }
-    
-    setLlmPopup({
-      visible: true, x, y, text, start, end, type, label, isVerified, note
-    });
+    setLlmPopup({ visible: true, x, y, text, start, end, type, label, isVerified, note });
     if (label) setSelectedPopupLabel(label);
   };
 
@@ -506,172 +369,86 @@ export default function Annotate_Panel({ overrideFileName, overrideFolder}: Prop
   useEffect(() => {
     const labels = new Set(['DRUG', 'AE', 'MEDICAL HISTORY', 'LAB', 'TEMPORAL', 'AGE', 'SEX', 'COD', 'DIAGNOSTIC']);
     doc.annotations.forEach(a => labels.add(a.label.toUpperCase()));
-    
     const arr = Array.from(labels).sort();
     setAnnotationOptions(Object.fromEntries(arr.map(l => [l, l])));
     setOptionColors(generateOptionColors(arr));
-    
-    // Auto-enable new labels in filter
     setActiveLabelFilters(prev => {
       const newFilters = [...prev];
       let changed = false;
-      arr.forEach(l => {
-        if (!newFilters.includes(l)) {
-          newFilters.push(l);
-          changed = true;
-        }
-      });
+      arr.forEach(l => { if (!newFilters.includes(l)) { newFilters.push(l); changed = true; } });
       return changed ? newFilters : prev;
     });
   }, [doc.annotations]);
 
   return (
-    <div className="app-container h-screen overflow-hidden flex flex-col bg-gray-100">
+    <div className="app-container h-screen overflow-hidden flex flex-col bg-slate-50 text-slate-900 antialiased">
       
-      {/* 🟢 NEW TOP BANNER */}
-      <header className="bg-white border-b border-gray-200 px-6 py-3 flex items-center justify-between shadow-sm z-30">
-        <div className="flex items-center gap-6">
-          <div>
-            <button 
-              onClick={handleExport}
-              className="group flex items-center gap-2 px-3 py-1.5 bg-gray-50 hover:bg-emerald-50 border border-gray-200 hover:border-emerald-200 rounded-lg transition-all"
-            >
-              <span className="text-emerald-600 text-sm">📊</span>
-              <span className="text-[10px] font-black text-gray-500 group-hover:text-emerald-700 uppercase tracking-widest">Export Excel</span>
-            </button>
+      {/* --- Unified Header --- */}
+      <header className="bg-white border-b border-slate-200 h-14 px-6 flex items-center justify-between shadow-sm z-30 shrink-0">
+        <div className="flex items-center gap-8">
+          <div className="flex items-center gap-2.5">
+            <div className="w-2 h-2 bg-blue-500 rounded-full shadow-[0_0_8px_rgba(59,130,246,0.5)]"></div>
+            <h1 className="text-sm font-bold text-slate-900 tracking-widest uppercase">LLM4AE</h1>
           </div>
 
-          {/* User Section in Header */}
-          <div className="flex items-center gap-2 border-l border-gray-200 pl-4">
-            {isLoggedIn && currentUser ? (
-              <div className="flex items-center gap-2">
-                <div className="w-7 h-7 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-700 font-black text-[10px] border border-indigo-200 shadow-sm uppercase">
-                  {(currentUser.full_name || currentUser.username).charAt(0)}
-                </div>
-                <div>
-                   <span className="text-[10px] font-black text-gray-800 block leading-none">
-                     {currentUser.username === 'guest' ? 'Anonymous' : (currentUser.full_name || currentUser.username)}
-                   </span>
-                   <span className="text-[8px] font-bold text-gray-400 uppercase tracking-tighter">
-                     {currentUser.username === 'guest' ? 'Guest Access' : 'Active User'}
-                   </span>
-                </div>
-              </div>
-            ) : (
-              <button 
-                onClick={() => setIsLoggedIn(true)}
-                className="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1 rounded text-[10px] font-black uppercase shadow-sm transition-all"
-              >
-                Sign In
+          <div className="h-6 w-px bg-slate-200"></div>
+
+          <div className="flex items-center gap-4">
+            <button onClick={handleExport} className="flex items-center gap-2 px-3 py-1.5 hover:bg-slate-50 rounded text-[11px] font-bold text-slate-500 uppercase tracking-wider transition-colors">
+              <IconExport /> Export
+            </button>
+            {!isReadOnly && (
+              <button onClick={() => handleSave(false)} className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded text-[11px] font-bold uppercase tracking-wider shadow-sm transition-colors">
+                <IconSave /> Save
               </button>
             )}
           </div>
-
-          {/* Layer Toggles */}
-          <div className="flex items-center gap-2 border-l border-gray-200 pl-4">
-            <span className="text-[10px] font-bold text-gray-400 uppercase">Layers:</span>
-            <div className="flex items-center bg-gray-100 rounded-lg p-0.5 gap-1">
-              {['Human', 'AI'].map(layer => (
-                <button
-                  key={layer}
-                  onClick={() => handleLayerToggle(layer)}
-                  className={`px-2.5 py-1 rounded-md text-[10px] font-black transition-all ${
-                    activeLayers.includes(layer) 
-                    ? 'bg-white text-blue-600 shadow-sm ring-1 ring-black/5' 
-                    : 'text-gray-400 hover:text-gray-600'
-                  }`}
-                >
-                  {layer}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Metadata Toggles */}
-          <div className="flex items-center gap-2 border-l border-gray-200 pl-4">
-            <span className="text-[10px] font-bold text-gray-400 uppercase">View Data:</span>
-            <div className="flex gap-1">
-              {['Demographic', 'Products', 'Outcomes'].map(v => (
-                <button
-                  key={v}
-                  onClick={() => setMetaView(metaView === v.toLowerCase() ? 'none' : v.toLowerCase() as any)}
-                  className={`px-2 py-1 rounded text-[10px] font-bold border transition-all ${
-                    metaView === v.toLowerCase() ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
-                  }`}
-                >
-                  {v}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Rejected Toggle */}
-          <div className="flex items-center gap-2 border-l border-gray-200 pl-4">
-            <span className="text-[10px] font-bold text-gray-400 uppercase">Rejected:</span>
-            <button 
-              onClick={() => setShowRejected(!showRejected)}
-              className={`flex items-center gap-2 px-2 py-1 rounded-lg transition-all ${
-                showRejected ? 'bg-red-100 text-red-700 ring-1 ring-red-200' : 'bg-gray-100 text-gray-400'
-              }`}
-            >
-              <div className={`w-3 h-3 rounded-full transition-colors ${showRejected ? 'bg-red-500' : 'bg-gray-300'}`} />
-              <span className="text-[10px] font-black uppercase tracking-tighter">Show Rejected AI</span>
-            </button>
-          </div>
         </div>
 
-        <div className="flex items-center gap-3">
-          {!isReadOnly && <button onClick={() => handleSave(false)} className="text-xs font-bold text-gray-600 hover:text-black">Save</button>}
-          <button onClick={handleFinish} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-xs font-bold shadow-md transition-all">
-            {isReadOnly ? 'Close' : 'Finish'}
+        <div className="flex items-center gap-6">
+          {/* User Display */}
+          {isLoggedIn && currentUser && (
+            <div className="flex items-center gap-3 border-r border-slate-200 pr-6">
+              <div className="w-7 h-7 rounded bg-slate-800 border border-slate-700 flex items-center justify-center text-[10px] font-bold text-slate-300">
+                {currentUser.username.charAt(0).toUpperCase()}
+              </div>
+              <div className="text-right">
+                <p className="text-[10px] font-bold text-slate-900 leading-none uppercase">{currentUser.username === 'guest' ? 'Anonymous' : (currentUser.full_name || currentUser.username)}</p>
+                <p className="text-[8px] text-slate-400 font-bold uppercase tracking-tighter mt-0.5">{currentUser.username === 'guest' ? 'Guest' : 'Operator'}</p>
+              </div>
+            </div>
+          )}
+
+          <button onClick={handleFinish} className="flex items-center gap-2 px-4 py-1.5 border border-slate-200 hover:bg-red-50 hover:text-red-600 rounded text-[11px] font-bold text-slate-500 uppercase tracking-wider transition-all">
+            <IconExit /> {isReadOnly ? 'Close' : 'Exit'}
           </button>
         </div>
       </header>
 
-      {/* 🔴 FINISH CONFIRMATION MODAL */}
-      {showFinishConfirm && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6 animate-in zoom-in-95 duration-200">
-            <div className="text-center">
-              <div className="w-16 h-16 bg-amber-100 text-amber-600 rounded-full flex items-center justify-center mx-auto mb-4 text-2xl">
-                ⚠️
+      {/* --- Main Area --- */}
+      <div className="flex-1 flex overflow-hidden">
+        
+        {/* Left Sidebar */}
+        <aside className="w-[400px] flex flex-col border-r border-slate-200 bg-white shrink-0 shadow-sm overflow-hidden">
+          <div className="p-4 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-1.5">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Visibility:</span>
+                <div className="flex bg-slate-200/50 p-0.5 rounded gap-0.5">
+                  {['Human', 'AI'].map(layer => (
+                    <button key={layer} onClick={() => handleLayerToggle(layer)} className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase transition-all ${activeLayers.includes(layer) ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>
+                      {layer}
+                    </button>
+                  ))}
+                </div>
               </div>
-              <h3 className="text-lg font-black text-gray-900 mb-2">Unsaved Changes</h3>
-              <p className="text-sm text-gray-500 mb-6 font-medium">
-                You have unsaved annotations. Would you like to save them before finishing?
-              </p>
-              
-              <div className="grid grid-cols-2 gap-3">
-                <button 
-                  onClick={() => handleSave(true)}
-                  className="bg-blue-600 hover:bg-blue-700 text-white py-2.5 rounded-xl text-xs font-black shadow-lg shadow-blue-200 transition-all"
-                >
-                  SAVE & FINISH
-                </button>
-                <button 
-                  onClick={() => window.close()}
-                  className="bg-gray-100 hover:bg-gray-200 text-gray-600 py-2.5 rounded-xl text-xs font-black transition-all"
-                >
-                  DISCARD & EXIT
-                </button>
-              </div>
-              
-              <button 
-                onClick={() => setShowFinishConfirm(false)}
-                className="mt-4 text-[10px] font-black text-gray-400 hover:text-gray-600 uppercase tracking-widest"
-              >
-                Cancel
+              <button onClick={() => setShowRejected(!showRejected)} className={`text-[9px] font-bold uppercase px-2 py-1 rounded transition-colors ${showRejected ? 'bg-red-50 text-red-600' : 'text-slate-400 hover:text-slate-600'}`}>
+                {showRejected ? 'Hiding Rejected' : 'Show Rejected'}
               </button>
             </div>
           </div>
-        </div>
-      )}
 
-      <main className="flex-1 flex overflow-hidden">
-        {/* Left Sidebar (Stacked Panels) */}
-        <div className="w-[450px] flex flex-col flex-shrink-0 h-full border-r border-gray-200 bg-white overflow-hidden">
-          {/* Top Part: Annotation Summary */}
-          <div className="flex-[3] border-b border-gray-200 overflow-hidden">
+          <div className="flex-[3] border-b border-slate-100 overflow-hidden">
             <AnnotationPanel
               annotations={visibleAnnotations}
               annotationOptions={annotationOptions}
@@ -688,51 +465,39 @@ export default function Annotate_Panel({ overrideFileName, overrideFolder}: Prop
             />
           </div>
           
-          {/* Bottom Part: Action History */}
-          <div className="flex-[2] overflow-hidden">
+          <div className="flex-[2] overflow-hidden bg-slate-50/20">
             <ActionHistoryPanel 
               history={doc.actionHistory}
               optionColors={optionColors}
               onUndo={(id) => !isReadOnly && dispatch({ type: DocActionTypes.UNDO_ACTION, payload: { actionId: id } })}
             />
           </div>
-        </div>
+        </aside>
 
-        {/* Center: Narrative */}
-        <div className="flex-1 flex flex-col overflow-hidden bg-white">
-          
-          {/* Narrative Toolbar (NEW) */}
-          <div className="px-12 py-3 border-b border-gray-100 flex items-center justify-between bg-gray-50/30">
-            <div className="flex items-center gap-4">
-              <span className="text-[11px] font-black text-gray-500 uppercase tracking-widest">Narrative View</span>
-              
-              {/* Display Toggle (Relationship Builder Mode) */}
-              <div className="flex items-center gap-3 bg-white border border-gray-200 rounded-full px-4 py-1.5 shadow-sm">
-                <span className={`text-[10px] font-bold transition-colors ${!relationshipBuilderMode ? 'text-blue-600' : 'text-gray-400'}`}>Standard</span>
-                <button 
-                  onClick={() => setRelationshipBuilderMode(!relationshipBuilderMode)}
-                  className={`relative w-10 h-5 rounded-full transition-colors duration-200 focus:outline-none ${
-                    relationshipBuilderMode ? 'bg-orange-500' : 'bg-gray-200'
-                  }`}
-                >
-                  <div className={`absolute top-1 left-1 bg-white w-3 h-3 rounded-full shadow-sm transform transition-transform duration-200 ${
-                    relationshipBuilderMode ? 'translate-x-5' : 'translate-x-0'
-                  }`} />
-                </button>
-                <span className={`text-[10px] font-bold transition-colors ${relationshipBuilderMode ? 'text-orange-600' : 'text-gray-400'}`}>Link Mode</span>
+        {/* Center Canvas */}
+        <main className="flex-1 flex flex-col overflow-hidden bg-white">
+          <div className="px-8 py-3 border-b border-slate-100 flex items-center justify-between bg-white shrink-0">
+            <div className="flex items-center gap-6">
+              <div className="flex items-center gap-3 bg-slate-100 rounded-full px-3 py-1 shrink-0">
+                <button onClick={() => setRelationshipBuilderMode(false)} className={`px-3 py-0.5 rounded-full text-[10px] font-bold transition-all ${!relationshipBuilderMode ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400'}`}>STANDARD</button>
+                <button onClick={() => setRelationshipBuilderMode(true)} className={`px-3 py-0.5 rounded-full text-[10px] font-bold transition-all ${relationshipBuilderMode ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400'}`}>LINK MODE</button>
+              </div>
+
+              <div className="flex gap-1.5 items-center">
+                <span className="text-[10px] font-bold text-slate-400 uppercase mr-1">Data:</span>
+                {['Demographic', 'Products', 'Outcomes'].map(v => (
+                  <button key={v} onClick={() => setMetaView(metaView === v.toLowerCase() ? 'none' : v.toLowerCase() as any)} className={`px-2 py-0.5 rounded text-[10px] font-bold transition-all border ${metaView === v.toLowerCase() ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-400 border-slate-200 hover:border-slate-300'}`}>{v}</button>
+                ))}
               </div>
             </div>
 
-            <div className="text-[10px] font-medium text-gray-400">
-              Page {doc.currentPageIndex + 1} of {doc.pages.length}
-            </div>
+            <div className="text-[10px] font-bold text-slate-300 uppercase tracking-tighter">Case Reference: {overrideFileName || 'Ad-hoc'}</div>
           </div>
 
           {relationshipBuilderMode ? (
             <div className="flex-1 flex flex-col overflow-hidden">
-              {/* Top: Narrative (Independent Scroll) */}
-              <div className="flex-1 overflow-y-auto p-4 lg:p-8 border-b border-gray-200 bg-slate-50/30">
-                <div className="max-w-6xl mx-auto relative">
+              <div className="flex-1 overflow-y-auto p-12 bg-slate-50/30">
+                <div className="max-w-4xl mx-auto bg-white shadow-sm border border-slate-200 min-h-full">
                   <PageDisplayBuilder
                     annotations={filteredLinkAnnotations}
                     currentPage={doc.currentPageIndex}
@@ -746,29 +511,14 @@ export default function Annotate_Panel({ overrideFileName, overrideFolder}: Prop
                   />
                 </div>
               </div>
-              {/* Bottom: Table (Independent Scroll) */}
-              <div className="h-2/5 min-h-[300px] overflow-y-auto p-6 bg-white border-t border-slate-200 shadow-[0_-4px_12px_rgba(0,0,0,0.03)]">
-                <div className="max-w-6xl mx-auto">
-                  <div className="flex justify-between items-center mb-4">
-                    <div className="flex items-center gap-4">
-                      <h2 className="text-sm font-black text-gray-800 uppercase tracking-widest flex items-center gap-2">
-                        <span className="text-lg">🔗</span> Relationship Linker
-                      </h2>
-                      <button 
-                        onClick={() => setShowAllLinkRows(!showAllLinkRows)}
-                        className={`px-3 py-1 rounded-full text-[10px] font-black transition-all border ${
-                          showAllLinkRows 
-                          ? 'bg-blue-600 text-white border-blue-600' 
-                          : 'bg-white text-gray-500 border-gray-200 hover:bg-gray-50'
-                        }`}
-                      >
-                        {showAllLinkRows ? '✓ SHOWING ALL' : 'SHOW ALL'}
-                      </button>
-                    </div>
+              <div className="h-[350px] overflow-y-auto p-8 bg-white border-t border-slate-200 shadow-[0_-4px_12px_rgba(0,0,0,0.03)]">
+                <div className="max-w-5xl mx-auto">
+                  <div className="flex justify-between items-center mb-6">
+                    <button onClick={() => setShowAllLinkRows(!showAllLinkRows)} className={`px-4 py-1.5 rounded text-[10px] font-bold transition-all border uppercase tracking-wider ${showAllLinkRows ? 'bg-blue-600 text-white border-blue-600 shadow-lg shadow-blue-100' : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300 shadow-sm'}`}>
+                      {showAllLinkRows ? '✓ Displaying All Entries' : 'Show Complete Inventory'}
+                    </button>
                     {currentAnnotationRelation && (
-                      <div className="text-[10px] font-bold text-blue-600 bg-blue-50 px-3 py-1 rounded-lg border border-blue-100">
-                        Focus: {currentAnnotationRelation.textContext.text} ({currentAnnotationRelation.label})
-                      </div>
+                      <div className="text-[10px] font-bold text-blue-600 px-3 py-1.5 rounded bg-blue-50 border border-blue-100 uppercase tracking-tight">Active: {currentAnnotationRelation.textContext.text}</div>
                     )}
                   </div>
                   <RelationshipBuilderPanel
@@ -776,7 +526,6 @@ export default function Annotate_Panel({ overrideFileName, overrideFolder}: Prop
                     handleSelectCell={(a, type) => {
                       if (isReadOnly) return;
                       if (currentAnnotationRelation?.textContext.start === a.textContext.start && currentRelationType === type) {
-                        // Toggle off: clear selection if same cell clicked again
                         setCurrentAnnotationRelation(null);
                         setCurrentRelationType('');
                       } else {
@@ -792,8 +541,8 @@ export default function Annotate_Panel({ overrideFileName, overrideFolder}: Prop
               </div>
             </div>
           ) : (
-            <div className="flex-1 overflow-y-auto p-4 lg:p-8">
-              <div className="max-w-6xl mx-auto relative pb-32">
+            <div className="flex-1 overflow-y-auto p-12 bg-slate-50/30">
+              <div className="max-w-4xl mx-auto bg-white shadow-sm border border-slate-200 min-h-full pb-32">
                 <PageDisplay
                   annotations={visibleAnnotations}
                   updateAnnotationNote={handleVerifyAnnotation}
@@ -816,59 +565,42 @@ export default function Annotate_Panel({ overrideFileName, overrideFolder}: Prop
 
           {/* Bottom Drawer: Metadata */}
           {metaView !== 'none' && (
-            <div className="h-1/3 bg-gray-50 border-t border-gray-200 overflow-y-auto p-6 animate-in slide-in-from-bottom-full duration-300">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-sm font-black text-gray-800 uppercase tracking-widest">{metaView}</h3>
-                <button onClick={() => setMetaView('none')} className="text-gray-400 hover:text-black font-bold">✕</button>
+            <div className="h-1/3 bg-slate-900 text-slate-300 border-t border-slate-800 overflow-y-auto p-8 animate-in slide-in-from-bottom-full duration-300 shadow-2xl">
+              <div className="flex items-center justify-between mb-6">
+                <h3 className="text-xs font-bold text-white uppercase tracking-[0.2em]">{metaView} Reference</h3>
+                <button onClick={() => setMetaView('none')} className="text-slate-500 hover:text-white font-bold p-2 transition-colors">✕</button>
               </div>
-              <div 
-                className="prose prose-sm max-w-none bg-white p-6 rounded-xl border border-gray-200 shadow-inner"
-                dangerouslySetInnerHTML={{ __html: doc.meta[metaView] || 'No data available' }} 
-              />
+              <div className="prose prose-invert prose-sm max-w-none bg-slate-800/50 p-8 rounded border border-slate-700/50 shadow-inner leading-relaxed" dangerouslySetInnerHTML={{ __html: doc.meta[metaView] || 'No data available' }} />
             </div>
           )}
+        </main>
+      </div>
+
+      {/* --- Modals & Context --- */}
+      {showFinishConfirm && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+          <div className="bg-white rounded shadow-2xl max-w-sm w-full p-8 border border-slate-200">
+            <div className="text-center">
+              <h3 className="text-lg font-bold text-slate-900 mb-2 uppercase tracking-tight">Unsaved Session</h3>
+              <p className="text-sm text-slate-500 mb-8 font-medium leading-relaxed">System has detected pending modifications. How would you like to proceed?</p>
+              <div className="grid grid-cols-1 gap-2">
+                <button onClick={() => handleSave(true)} className="bg-blue-600 hover:bg-blue-700 text-white py-2.5 rounded text-xs font-bold uppercase tracking-widest transition-all shadow-md">Commit & Exit</button>
+                <button onClick={() => window.close()} className="bg-white border border-slate-200 hover:bg-red-50 hover:text-red-600 text-slate-500 py-2.5 rounded text-xs font-bold uppercase tracking-widest transition-all">Discard & Exit</button>
+                <button onClick={() => setShowFinishConfirm(false)} className="mt-4 text-[10px] font-bold text-slate-400 hover:text-slate-600 uppercase tracking-widest">Back to Review</button>
+              </div>
+            </div>
+          </div>
         </div>
-      </main>
+      )}
 
       {unifiedContextMenu.visible && !isReadOnly && (
         <UnifiedContextMenuDisplay
-          contextMenu={unifiedContextMenu}
-          annotationOptions={annotationOptions}
-          optionColors={optionColors}
+          contextMenu={unifiedContextMenu} annotationOptions={annotationOptions} optionColors={optionColors}
           addAnnotation={handleAddAnnotation}
           handleAddRelationship={(opt) => {
              if (isReadOnly || !currentAnnotationRelation || !currentRelationType) return;
-             
-             if (opt === 'Set') {
-               const updatedAnnotation = {
-                 ...currentAnnotationRelation,
-                 relationships: {
-                   ...currentAnnotationRelation.relationships,
-                   [currentRelationType]: {
-                     text: selectedText,
-                     page: doc.currentPageIndex,
-                     start: unifiedContextMenu.start,
-                     end: unifiedContextMenu.end
-                   }
-                 }
-               };
-               dispatch({ 
-                 type: DocActionTypes.UPDATE_ANNOTATION, 
-                 payload: { annotation: updatedAnnotation, historyType: 'update' } 
-               });
-             } else if (opt === 'Delete') {
-               const updatedAnnotation = {
-                 ...currentAnnotationRelation,
-                 relationships: {
-                   ...currentAnnotationRelation.relationships,
-                   [currentRelationType]: { text: '', page: 0, start: 0, end: 0 }
-                 }
-               };
-               dispatch({ 
-                 type: DocActionTypes.UPDATE_ANNOTATION, 
-                 payload: { annotation: updatedAnnotation, historyType: 'update' } 
-               });
-             }
+             const updated = { ...currentAnnotationRelation, relationships: { ...currentAnnotationRelation.relationships, [currentRelationType]: opt === 'Set' ? { text: selectedText, page: doc.currentPageIndex, start: unifiedContextMenu.start, end: unifiedContextMenu.end } : { text: '', page: 0, start: 0, end: 0 } } };
+             dispatch({ type: DocActionTypes.UPDATE_ANNOTATION, payload: { annotation: updated, historyType: 'update' } });
              setUnifiedContextMenu(prev => ({ ...prev, visible: false }));
           }}
           closeContextMenu={() => setUnifiedContextMenu(prev => ({ ...prev, visible: false }))}
@@ -877,24 +609,14 @@ export default function Annotate_Panel({ overrideFileName, overrideFolder}: Prop
 
       <LLMAnnotationPopup
         x={llmPopup.x} y={llmPopup.y} visible={llmPopup.visible && !isReadOnly} text={llmPopup.text}
-        annotationOptions={annotationOptions}
-        type={llmPopup.type}
-        userRole={(() => {
-          if (!llmPopup.note) return userRole;
-          const note = llmPopup.note.toUpperCase();
-          if (['SME1', 'SME2', 'ADJUDICATOR'].includes(note)) return 'DevUser';
-          return llmPopup.note;
-        })()}
-        selectedLabel={llmPopup.label || ''}
-        isVerified={llmPopup.isVerified}
+        annotationOptions={annotationOptions} type={llmPopup.type}
+        userRole={(() => { if (!llmPopup.note) return userRole; const n = llmPopup.note.toUpperCase(); return (['SME1', 'SME2', 'ADJUDICATOR'].includes(n)) ? 'DevUser' : llmPopup.note; })()}
+        selectedLabel={llmPopup.label || ''} isVerified={llmPopup.isVerified}
         onAdd={handleLlmAddAnnotation}
         onUnverify={() => handleUnverifyAnnotation(llmPopup.start, llmPopup.end, llmPopup.label || '')}
         onReject={() => handleRejectAnnotation(llmPopup.start, llmPopup.end, llmPopup.label || '')}
         onRemove={() => handleRejectAnnotation(llmPopup.start, llmPopup.end, llmPopup.label || '')}
-        onClose={() => {
-          setLlmPopup(prev => ({ ...prev, visible: false }));
-          setSelectedTermContext(null);
-        }}
+        onClose={() => { setLlmPopup(prev => ({ ...prev, visible: false })); setSelectedTermContext(null); }}
         isReadOnly={isReadOnly}
       />
     </div>
