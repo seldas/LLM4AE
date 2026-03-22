@@ -52,21 +52,16 @@ function darkenHSLColor(hsl: string): string {
 function getTransparentColor(hsl: string, alpha: number = 0.15): string {
   const match = hsl.match(/hsl\((\d+),\s*(\d+)%,\s*(\d+)%\)/);
   if (!match) return hsl;
-  const h = match[1];
-  const s = match[2];
-  const l = match[3];
-  return `hsla(${h}, ${s}%, ${l}%, ${alpha})`;
+  return `hsla(${match[1]}, ${match[2]}%, ${match[3]}%, ${alpha})`;
 }
 
 function PageDisplay({
   annotations,
-  updateAnnotationNote,
   pageData,
   optionColors,
   handleTextSelection,
   activeLabelFilters,
   disableFilter = false,
-  userRole,
   onClickAnnotation,
   selectedTermContext,
   setSelectedTermContext,
@@ -76,6 +71,12 @@ function PageDisplay({
   const [highlightBoxes, setHighlightBoxes] = useState<any[]>([]);
   const [hoveredBox, setHoveredBox] = useState<null | { start: number; end: number }>(null);
   const [lineCount, setLineCount] = useState(0);
+
+  const getAnnotatorDisplay = (note: string) => {
+    const upperNote = note.toUpperCase();
+    if (['SME1', 'SME2', 'ADJUDICATOR'].includes(upperNote)) return 'DevUser';
+    return note;
+  };
 
   const processedPageData = useMemo(() => {
     if (!pageData) return "";
@@ -96,14 +97,8 @@ function PageDisplay({
     if (!container) return;
     const style = window.getComputedStyle(container);
     const lh = parseFloat(style.lineHeight);
-    if (lh > 0) setLineCount(Math.round((container.offsetHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom)) / lh));
+    if (lh > 0) setLineCount(Math.round(container.offsetHeight / lh));
   }, []);
-
-  const getAnnotatorDisplay = (note: string) => {
-    const upperNote = note.toUpperCase();
-    if (['SME1', 'SME2', 'ADJUDICATOR'].includes(upperNote)) return 'DevUser';
-    return note;
-  };
 
   const computeHighlightBoxes = useCallback(() => {
     const container = textRef.current;
@@ -123,7 +118,8 @@ function PageDisplay({
           range.setStart(startInfo.node, startInfo.offset);
           range.setEnd(endInfo.node, endInfo.offset);
           const rects = range.getClientRects();
-          for (const r of rects) {
+          for (let idx = 0; idx < rects.length; idx++) {
+            const r = rects[idx];
             boxes.push({
               top: r.top - containerRect.top,
               left: r.left - containerRect.left,
@@ -133,6 +129,7 @@ function PageDisplay({
               note: annotation.note,
               color: optionColors[label] || "hsl(60, 100%, 50%)",
               start, end,
+              isFirstBox: idx === 0
             });
           }
         } catch (e) {}
@@ -177,6 +174,7 @@ function PageDisplay({
           return (
             <div
               key={i}
+              id={`ann-match-${box.start}`}
               onMouseEnter={() => setHoveredBox({ start: box.start, end: box.end })}
               onMouseLeave={() => setHoveredBox(null)}
               onClick={(e) => {
@@ -202,32 +200,36 @@ function PageDisplay({
                 transition: "all 0.1s ease-out",
               }}
             >
-              <div
-                style={{
-                  position: "absolute",
-                  top: "-1.8em",
-                  left: 0,
-                  backgroundColor: darkenHSLColor(box.color),
-                  color: "#fff",
-                  fontSize: "9px",
-                  fontWeight: 800,
-                  padding: "1px 5px",
-                  borderRadius: "3px",
-                  whiteSpace: "nowrap",
-                  zIndex: 20,
-                  boxShadow: "0 1px 3px rgba(0,0,0,0.2)",
-                  textTransform: "uppercase",
-                  display: "flex",
-                  gap: "3px",
-                  alignItems: "center"
-                }}
-              >
-                <span>{box.label}</span>
-                <span style={{ opacity: 0.6, fontSize: '7px' }}>|</span>
-                <span>{getAnnotatorDisplay(box.note)}</span>
-                {isPureAI && <span className="bg-white/20 px-1 rounded-[2px] text-[7px] ml-0.5">AI</span>}
-                {isVerified && <span className="text-emerald-300">✓</span>}
-              </div>
+              {box.isFirstBox && (
+                <div
+                  style={{
+                    position: "absolute",
+                    top: isSelected ? "-2.2em" : "-1.8em",
+                    left: 0,
+                    backgroundColor: isSelected ? "#000" : darkenHSLColor(box.color),
+                    color: isSelected ? "#fde047" : "#fff", // yellow-300 for selected
+                    fontSize: isSelected ? "11px" : "9px",
+                    fontWeight: 900,
+                    padding: isSelected ? "2px 8px" : "1px 5px",
+                    borderRadius: "4px",
+                    whiteSpace: "nowrap",
+                    zIndex: isSelected ? 50 : 20,
+                    boxShadow: isSelected ? "0 4px 6px rgba(0,0,0,0.3)" : "0 1px 3px rgba(0,0,0,0.2)",
+                    textTransform: "uppercase",
+                    display: "flex",
+                    gap: "3px",
+                    alignItems: "center",
+                    transition: "all 0.2s ease-in-out",
+                    border: isSelected ? "1px solid #fde047" : "none"
+                  }}
+                >
+                  <span>{box.label}</span>
+                  <span style={{ opacity: 0.6, fontSize: '7px' }}>|</span>
+                  <span>{getAnnotatorDisplay(box.note)}</span>
+                  {isPureAI && <span className="bg-white/20 px-1 rounded-[2px] text-[7px] ml-0.5 font-black">AI</span>}
+                  {isVerified && <span className="text-emerald-300">✓</span>}
+                </div>
+              )}
             </div>
           );
         })}

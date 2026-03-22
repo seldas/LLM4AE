@@ -153,12 +153,12 @@ export default function Annotate_Panel({ overrideFileName, overrideFolder}: Prop
   }, [visibleAnnotations]);
 
   const linkModeColors: Record<string, string> = {
-    'AE': '#ef4444', 
-    'SYMPTOM': '#ef4444',
-    'SIGN': '#ef4444',
-    'DRUG': '#3b82f6', 
-    'SDRUG': '#3b82f6',
-    'CDRUG': '#3b82f6'
+    'AE': 'hsl(0, 70%, 50%)', 
+    'SYMPTOM': 'hsl(0, 70%, 50%)',
+    'SIGN': 'hsl(0, 70%, 50%)',
+    'DRUG': 'hsl(210, 70%, 50%)', 
+    'SDRUG': 'hsl(210, 70%, 50%)',
+    'CDRUG': 'hsl(210, 70%, 50%)'
   };
 
   useEffect(() => {
@@ -462,6 +462,7 @@ export default function Annotate_Panel({ overrideFileName, overrideFolder}: Prop
               setSelectedTermContext={setSelectedTermContext}
               handleExtendMatch={() => {}}
               isReadOnly={isReadOnly}
+              pageData={currentPageData || ""}
             />
           </div>
           

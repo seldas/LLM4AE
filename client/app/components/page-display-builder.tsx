@@ -58,6 +58,12 @@ const PageDisplayBuilder = ({
   const [hoveredBox, setHoveredBox] = useState<null | { start: number; end: number }>(null);
   const [lineCount, setLineCount] = useState(0);
 
+  const getAnnotatorDisplay = (note: string) => {
+    const upperNote = note.toUpperCase();
+    if (['SME1', 'SME2', 'ADJUDICATOR'].includes(upperNote)) return 'DevUser';
+    return note;
+  };
+
   const processedPageData = useMemo(() => {
     if (!pageData) return "";
     const chars = Array.from(pageData);
@@ -86,7 +92,7 @@ const PageDisplayBuilder = ({
       const containerRect = container.getBoundingClientRect();
       const boxes: any[] = [];
 
-      const addBox = (start: number, end: number, label: string, color: string, isRelation: boolean, note?: string) => {
+      const addBox = (start: number, end: number, label: string, color: string, isRelation: boolean, note: string = "", isSelected: boolean = false, isFirstBox: boolean = true) => {
         const startInfo = getNodeAndOffsetForIndex(container, start);
         const endInfo = getNodeAndOffsetForIndex(container, end);
         if (startInfo && endInfo) {
@@ -95,13 +101,15 @@ const PageDisplayBuilder = ({
             range.setStart(startInfo.node, startInfo.offset);
             range.setEnd(endInfo.node, endInfo.offset);
             const rects = range.getClientRects();
-            for (const r of rects) {
+            for (let idx = 0; idx < rects.length; idx++) {
+              const r = rects[idx];
               boxes.push({
                 top: r.top - containerRect.top,
                 left: r.left - containerRect.left,
                 width: r.width,
                 height: r.height,
-                label, color, isRelation, start, end, note
+                label, color, isRelation, start, end, note, isSelected,
+                isFirstBox: isFirstBox && idx === 0
               });
             }
           } catch (e) {}
@@ -110,15 +118,16 @@ const PageDisplayBuilder = ({
 
       if (!currentAnnotationRelation) {
         annotations.forEach(ann => {
-          const color = optionColors[ann.label] || "hsl(60, 100%, 50%)";
+          const color = optionColors[ann.label.toUpperCase()] || "hsl(210, 10%, 50%)";
           addBox(ann.textContext.start, ann.textContext.end, ann.label, color, false, ann.note);
         });
       } else {
-        const color = optionColors[currentAnnotationRelation.label] || "hsl(60, 100%, 50%)";
-        addBox(currentAnnotationRelation.textContext.start, currentAnnotationRelation.textContext.end, currentAnnotationRelation.label, color, false, currentAnnotationRelation.note);
+        const color = optionColors[currentAnnotationRelation.label.toUpperCase()] || "hsl(210, 10%, 50%)";
+        addBox(currentAnnotationRelation.textContext.start, currentAnnotationRelation.textContext.end, currentAnnotationRelation.label, color, false, currentAnnotationRelation.note, true);
+
         Object.entries(currentAnnotationRelation.relationships).forEach(([relType, relCtx]) => {
           if (relCtx.start === relCtx.end) return;
-          addBox(relCtx.start, relCtx.end, relType, color, true);
+          addBox(relCtx.start, relCtx.end, relType, color, true, "", false);
         });
       }
       setHighlightBoxes(boxes);
@@ -159,6 +168,7 @@ const PageDisplayBuilder = ({
           return (
             <div
               key={i}
+              id={`ann-match-${box.start}`}
               onMouseEnter={() => setHoveredBox({ start: box.start, end: box.end })}
               onMouseLeave={() => setHoveredBox(null)}
               onClick={() => {
@@ -172,45 +182,53 @@ const PageDisplayBuilder = ({
                 left: (box.left ?? 0) - 2,
                 width: (box.width ?? 0) + 4,
                 height: (box.height ?? 0) + 4,
-                backgroundColor: box.isRelation ? "transparent" : (isPureAI ? "transparent" : getTransparentColor(box.color, 0.15)),
+                backgroundColor: box.isRelation || isPureAI ? "transparent" : (box.isSelected ? getTransparentColor(box.color, 0.3) : getTransparentColor(box.color, 0.15)),
                 opacity: 1,
-                zIndex: 2,
+                zIndex: box.isSelected ? 10 : 2,
                 pointerEvents: "auto",
                 borderRadius: "4px",
                 borderBottom: box.isRelation
                   ? `2px solid ${darkenHSLColor(box.color)}`
-                  : (isPureAI ? `2px dashed ${darkenHSLColor(box.color)}` : "none"),
+                  : (isPureAI ? `2px dashed ${darkenHSLColor(box.color)}` : (box.isSelected ? "2px solid #000" : "none")),
                 boxShadow: isHovered
                   ? "0 0 6px 2px rgba(0,0,0,0.1)"
                   : "none",
                 cursor: "pointer",
-                transition: "all 0.2s ease-in-out",
+                transition: "all 0.1s ease-out",
               }}
             >
-              {(box.label || box.note) && (
+              {box.isFirstBox && box.label && (
                 <div
                   style={{
                     position: "absolute",
-                    top: "-1.8em",
+                    top: box.isSelected ? "-2.2em" : "-1.8em",
                     left: 0,
                     display: "flex",
                     alignItems: "center",
-                    flexWrap: "wrap",
-                    backgroundColor: darkenHSLColor(box.color),
-                    color: "#fff",
-                    fontSize: "9px",
-                    fontWeight: 600,
-                    padding: "1px 5px",
-                    borderRadius: "3px",
+                    backgroundColor: box.isSelected ? "#000" : darkenHSLColor(box.color),
+                    color: box.isSelected ? "#fde047" : "#fff",
+                    fontSize: box.isSelected ? "11px" : "9px",
+                    fontWeight: 900,
+                    padding: box.isSelected ? "2px 8px" : "1px 5px",
+                    borderRadius: "4px",
                     whiteSpace: "nowrap",
-                    boxShadow: "0 1px 3px rgba(0,0,0,0.2)",
-                    maxWidth: "100%",
-                    gap: "0.25em",
+                    boxShadow: box.isSelected ? "0 4px 6px rgba(0,0,0,0.3)" : "0 1px 3px rgba(0,0,0,0.2)",
                     textTransform: "uppercase",
+                    gap: "3px",
+                    zIndex: box.isSelected ? 50 : 20,
+                    border: box.isSelected ? "1px solid #fde047" : "none",
+                    transition: "all 0.2s ease-in-out",
                   }}
                 >
                   <span>{box.label}</span>
-                  {isPureAI && <span className="bg-white/20 px-1 rounded-[2px] text-[7px] ml-0.5">AI</span>}
+                  {box.note && (
+                    <>
+                      <span style={{ opacity: 0.6, fontSize: '7px' }}>|</span>
+                      <span>{getAnnotatorDisplay(box.note)}</span>
+                    </>
+                  )}
+                  {isPureAI && <span className="bg-white/20 px-1 rounded-[2px] text-[7px] font-black">AI</span>}
+                  {isVerified && <span className="text-emerald-300">✓</span>}
                 </div>
               )}
             </div>
