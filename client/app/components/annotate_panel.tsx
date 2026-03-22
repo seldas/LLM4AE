@@ -414,7 +414,7 @@ export default function Annotate_Panel({ overrideFileName, overrideFolder}: Prop
               </div>
               <div className="text-right">
                 <p className="text-[10px] font-bold text-slate-900 leading-none uppercase">{currentUser.username === 'guest' ? 'Anonymous' : (currentUser.full_name || currentUser.username)}</p>
-                <p className="text-[8px] text-slate-400 font-bold uppercase tracking-tighter mt-0.5">{currentUser.username === 'guest' ? 'Guest' : 'Operator'}</p>
+                <p className="text-[8px] text-slate-400 font-bold uppercase tracking-tighter mt-0.5">{currentUser.username === 'guest' ? 'Guest' : 'Annotator'}</p>
               </div>
             </div>
           )}
