@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState, useMemo, useRef, } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   useReactTable,
@@ -148,29 +148,46 @@ export default function HomePage() {
     return sorted;
   };
 
-  const handleProjectClick = async (projectName: string) => {
+  const handleProjectClick = async (projectName: string, limit = 15, offset = 0) => {
     setSelectedProjectName(projectName);
     setLoading(true);
     try {
-      const res = await fetch(`/api/show_project/${encodeURIComponent(projectName)}`);
+      const res = await fetch(`/api/show_project/${encodeURIComponent(projectName)}?limit=${limit}&offset=${offset}`);
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
       const records = data.records.map((r: any) => {
         const llmCount = r.counts?.LLM ?? 0;
-        const meta = r.meta || {};
-        let llmStatus = llmCount;
-        if (llmCount === 0) {
-          if (!meta.llm_processed) llmStatus = -2; 
-          else if (meta.llm_processed === 'working') llmStatus = -1;
-        }
+        let llmStatus = 0;
         return { ...r, folderName: projectName, counts: { ...r.counts, LLM: llmStatus } };
       });
-      setLoadedProject({ folderName: projectName, fileName: '', records });
+      setLoadedProject({ 
+        folderName: projectName, 
+        fileName: '', 
+        records,
+        totalCount: data.totalCount,
+        limit: data.limit,
+        offset: data.offset
+      });
     } catch (err) {
       console.error(err);
     } finally {
       setLoading(false);
     }
+  };
+
+  const handlePageChange = async (pageIndex: number) => {
+    if (!selectedProjectName) return;
+    const limit = pagination.pageSize;
+    const offset = pageIndex * limit;
+    await handleProjectClick(selectedProjectName, limit, offset);
+    setPagination({ ...pagination, pageIndex });
+  };
+
+  const handlePageSizeChange = async (pageSize: number) => {
+    if (!selectedProjectName) return;
+    const offset = 0;
+    await handleProjectClick(selectedProjectName, pageSize, offset);
+    setPagination({ pageIndex: 0, pageSize });
   };
 
   const demographicFields = ["Case Number", "Version Number", "All Suspect Products", "MCN or CTU", "Latest FDA Received Date", "Country Derived", "Patient ID", "Age in Years", "Sex"];
@@ -180,23 +197,23 @@ export default function HomePage() {
       id: 'actions',
       header: 'Workflow',
       cell: ({ row }: CellContext<MetaRecord, unknown>) => {
-        const fileName = row.original.annotate_filename || '';
+        const id = row.original.id;
         const folderName = row.original.folderName || selectedProjectName || 'Playground';
-        
+
         const isAdj = user?.username === 'admin' || user?.role_name === 'Adjudicator';
 
         return (
           <div className="flex gap-3">
             {isAdj && (
               <button
-                onClick={() => window.open(`/adjudicate?project=${encodeURIComponent(folderName)}&file=${encodeURIComponent(fileName)}`, '_blank')}
+                onClick={() => window.open(`/adjudicate?project=${encodeURIComponent(folderName)}&id=${encodeURIComponent(id)}`, '_blank')}
                 className="text-emerald-600 hover:text-emerald-800 text-[11px] font-bold uppercase tracking-wider"
               >
                 Adjudicate
               </button>
             )}
             <button
-              onClick={() => window.open(`/annotate?project=${encodeURIComponent(folderName)}&file=${encodeURIComponent(fileName)}`, '_blank')}
+              onClick={() => window.open(`/annotate?project=${encodeURIComponent(folderName)}&id=${encodeURIComponent(id)}`, '_blank')}
               className="text-blue-600 hover:text-blue-800 text-[11px] font-bold uppercase tracking-wider"
             >
               Review
@@ -204,21 +221,6 @@ export default function HomePage() {
           </div>
         );
       },
-    },
-    {
-      id: 'human_count',
-      header: 'Manual',
-      accessorFn: (row: any) => (row.counts?.SME1 || 0) + (row.counts?.SME2 || 0) + (row.counts?.Other || 0),
-      cell: ({ getValue }: any) => <span className="text-slate-600 font-mono text-[11px]">{getValue()}</span>,
-    },
-    {
-      id: 'ai_count',
-      header: 'System',
-      accessorFn: (row: any) => {
-        const count = row.counts?.LLM || 0;
-        return count < 0 ? 0 : count;
-      },
-      cell: ({ getValue }: any) => <span className="text-slate-400 font-mono text-[11px]">{getValue()}</span>,
     },
     ...demographicFields.map(label => ({
       id: label.toLowerCase().replace(/\s+/g, '_'),
@@ -370,16 +372,30 @@ export default function HomePage() {
                     <span className="text-[10px] text-slate-400 font-bold uppercase">Display:</span>
                     <select
                       value={pagination.pageSize}
-                      onChange={e => setPagination({ ...pagination, pageSize: Number(e.target.value) })}
+                      onChange={e => handlePageSizeChange(Number(e.target.value))}
                       className="text-[10px] font-bold text-blue-600 bg-transparent outline-none cursor-pointer"
                     >
                       {[15, 30, 50, 100].map(s => <option key={s} value={s}>{s} rows</option>)}
                     </select>
                   </div>
                   <div className="flex items-center gap-1">
-                    <button onClick={() => table.previousPage()} disabled={!table.getCanPreviousPage()} className="p-1 hover:text-blue-600 disabled:opacity-20 transition-colors">◀</button>
-                    <span className="text-[10px] font-bold text-slate-600 mx-1 uppercase tracking-tighter">Page {table.getState().pagination.pageIndex + 1} / {table.getPageCount()}</span>
-                    <button onClick={() => table.nextPage()} disabled={!table.getCanNextPage()} className="p-1 hover:text-blue-600 disabled:opacity-20 transition-colors">▶</button>
+                    <button 
+                      onClick={() => handlePageChange(pagination.pageIndex - 1)} 
+                      disabled={pagination.pageIndex === 0} 
+                      className="p-1 hover:text-blue-600 disabled:opacity-20 transition-colors"
+                    >
+                      ◀
+                    </button>
+                    <span className="text-[10px] font-bold text-slate-600 mx-1 uppercase tracking-tighter">
+                      Page {pagination.pageIndex + 1} / {loadedProject?.totalCount ? Math.ceil(loadedProject.totalCount / pagination.pageSize) : 1}
+                    </span>
+                    <button 
+                      onClick={() => handlePageChange(pagination.pageIndex + 1)} 
+                      disabled={(pagination.pageIndex + 1) * pagination.pageSize >= (loadedProject?.totalCount || 0)} 
+                      className="p-1 hover:text-blue-600 disabled:opacity-20 transition-colors"
+                    >
+                      ▶
+                    </button>
                   </div>
                 </div>
               </div>

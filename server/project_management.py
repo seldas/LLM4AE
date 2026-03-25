@@ -78,34 +78,21 @@ def list_projects():
 @cross_origin()
 def show_project(project_name):
     try:
+        import logging
         project = get_project_by_name(project_name)
         if not project: return jsonify({'error': 'Project not found'}), 404
+
+        limit = request.args.get('limit', default=15, type=int)
+        offset = request.args.get('offset', default=0, type=int)
 
         conn = get_db_connection()
         query = '''
             SELECT 
-                c.case_number as "Case Number", c.version_number as "Version Number", 
-                c.mcn_or_ctu as "MCN or CTU", c.report_type as "Report Type", c.form_type as "Form Type",
-                c.initial_fda_received_date as "Initial FDA Received Date", 
+                c.id, c.case_number as "Case Number", c.version_number as "Version Number", 
+                c.all_suspect_products as "All Suspect Products", c.mcn_or_ctu as "MCN or CTU", 
                 c.latest_fda_received_date as "Latest FDA Received Date", 
-                c.completeness_score as "Completeness Score",
-                c.patient_id as "Patient ID", c.age_in_years as "Age in Years", c.dob as "DOB", 
-                c.sex as "Sex", c.weight_in_kg as "Weight In kg", c.race as "Race",
-                c.medical_history_and_comments as "Medical History and Comments", 
-                c.sender_mfr_organization as "Sender Mfr Organization", 
-                c.reporter_organization as "Reporter Organization",
-                c.country_derived as "Country Derived", 
-                c.reporter_qualifications as "Reporter Qualifications", 
-                c.health_professional as "Health Professional",
-                c.report_source as "Report Source", c.narrative as "Narrative", 
-                c.seriousness as "Seriousness", c.all_outcomes as "All Outcomes",
-                c.all_suspect_products as "All Suspect Products", 
-                c.all_suspect_pais as "All Suspect PAIs", 
-                c.all_concomitant_products as "All Concomitant Products",
-                c.all_llts as "All LLTs", c.all_pts as "All PTs", 
-                c.all_hlts as "All HLTs", c.all_hlgts as "All HLGTs", 
-                c.all_socs as "All SOCs",
-                c.annotate_filename, c.meta,
+                c.country_derived as "Country Derived", c.patient_id as "Patient ID", 
+                c.age_in_years as "Age in Years", c.sex as "Sex",
                 COUNT(CASE WHEN u.username IN ('Llama4', 'BioBERT') OR u.migration_key = 'LLM' THEN a.id END) as count_llm,
                 COUNT(CASE WHEN u.username = 'MJ.L' OR u.migration_key = 'SME1' THEN a.id END) as count_sme1,
                 COUNT(CASE WHEN u.username = 'K.L' OR u.migration_key = 'SME2' THEN a.id END) as count_sme2,
@@ -116,8 +103,21 @@ def show_project(project_name):
             LEFT JOIN users u ON a.user_id = u.id
             WHERE pc.project_id = ?
             GROUP BY c.id
+            LIMIT ? OFFSET ?
         '''
-        rows = conn.execute(query, (project['id'],)).fetchall()
+        count_query = '''
+            SELECT COUNT(*) as total_count
+            FROM cases c
+            JOIN project_cases pc ON c.id = pc.case_id
+            WHERE pc.project_id = ?
+        '''
+
+        import time
+        start_time = time.time()
+        rows = conn.execute(query, (project['id'], limit, offset)).fetchall()
+        total_count = conn.execute(count_query, (project['id'],)).fetchone()['total_count']
+        end_time = time.time()
+        logging.debug(f"Query execution time: {end_time - start_time} seconds")
         conn.close()
 
         records = [dict(r) for r in rows]
@@ -134,9 +134,15 @@ def show_project(project_name):
             r['SME2'] = r.get('count_sme2', 0)
             r['Other'] = r.get('count_other', 0)
             
-            r['meta'] = json.loads(r['meta']) if r['meta'] else {}
 
-        return jsonify({'projectName': project_name, 'records': records}), 200
+        logging.debug(f"Query execution time: {end_time - start_time} seconds")
+        return jsonify({
+            'projectName': project_name, 
+            'records': records, 
+            'totalCount': total_count,
+            'limit': limit,
+            'offset': offset
+        }), 200
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 

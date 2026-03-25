@@ -9,6 +9,9 @@ export interface ProjectEntry {
   folderName: string;
   fileName: string;
   records: any[];
+  totalCount?: number;
+  limit?: number;
+  offset?: number;
 }
 
 export interface FileStats {
@@ -56,10 +59,12 @@ export interface ContextMenu {
     end?: number
 }
 
-export interface FileData {
-    pages: string[],
-    annotations: Annotation[],
-    meta: Record<string, any>;
+export interface SaveAnnotationsPayload {
+  id?: string;
+  curr_folder: string;
+  pages: string[];
+  annotations: Annotation[];
+  meta: Record<string, any>;
 }
 
 export interface AnnotationRelationships {

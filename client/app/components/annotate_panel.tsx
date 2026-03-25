@@ -27,8 +27,8 @@ import ActionHistoryPanel from '../components/action-history-panel';
 import '../globals.css';
 
 interface Props {
-  overrideFileName?: string;
-  overrideFolder?: string;
+  overrideProject?: string;
+  overrideId?: string;
 }
 
 // Icons
@@ -36,7 +36,7 @@ const IconSave = () => <svg className="w-3.5 h-3.5" fill="none" stroke="currentC
 const IconExport = () => <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a2 2 0 002 2h12a2 2 0 002-2v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>;
 const IconExit = () => <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>;
 
-export default function Annotate_Panel({ overrideFileName, overrideFolder}: Props) {
+export default function Annotate_Panel({ overrideProject, overrideId}: Props) {
   const [doc, dispatch] = useReducer(docReducer, initialDocState)
   const [selectedText, setSelectedText] = useState('');
 
@@ -181,8 +181,8 @@ export default function Annotate_Panel({ overrideFileName, overrideFolder}: Prop
       if (isReadOnly) return;
       try {
         await saveAnnotationsToDb({
-          fileName: overrideFileName || doc.saveFileName,
-          curr_folder: overrideFolder ?? 'Playground',
+          id: overrideId || '',
+          curr_folder: overrideProject ?? 'Playground',
           pages: doc.pages,
           annotations: doc.annotations,
           meta: doc.meta,
@@ -225,10 +225,9 @@ export default function Annotate_Panel({ overrideFileName, overrideFolder}: Prop
     const url = window.URL.createObjectURL(blob);
     const anchor = document.createElement('a');
     anchor.href = url;
-    const caseNumber = doc.meta.case_number || doc.meta.caseNumber || overrideFileName?.split('.')[0] || 'Unknown';
-    const version = doc.meta.version || 'v1';
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-    anchor.download = `Annotation_${caseNumber}_${version}_${timestamp}.xlsx`;
+    const id = overrideId || 'unknown';
+    anchor.download = `Annotation_${id}_${timestamp}.xlsx`;
     anchor.click();
     window.URL.revokeObjectURL(url);
   };
@@ -358,13 +357,10 @@ export default function Annotate_Panel({ overrideFileName, overrideFolder}: Prop
   };
 
   useEffect(() => {
-    if (overrideFileName && overrideFolder) {
-      getHistoryFile(overrideFileName, overrideFolder).then(data => {
-        if (!data) return;
-        dispatch({ type: DocActionTypes.LOAD, payload: { ...data, fileName: overrideFileName } });
-      });
+    if (overrideProject && overrideId) {
+      // Implement logic to fetch data based on record ID
     }
-  }, [overrideFileName, overrideFolder]);
+  }, [overrideProject, overrideId]);
 
   useEffect(() => {
     const labels = new Set(['DRUG', 'AE', 'MEDICAL HISTORY', 'LAB', 'TEMPORAL', 'AGE', 'SEX', 'COD', 'DIAGNOSTIC']);
@@ -391,12 +387,21 @@ export default function Annotate_Panel({ overrideFileName, overrideFolder}: Prop
             <h1 className="text-sm font-bold text-slate-900 tracking-widest uppercase">LLM4AE</h1>
           </div>
 
-          <div className="h-6 w-px bg-slate-200"></div>
+              <div className="h-6 w-px bg-slate-200"></div>
 
-          <div className="flex items-center gap-4">
-            <button onClick={handleExport} className="flex items-center gap-2 px-3 py-1.5 hover:bg-slate-50 rounded text-[11px] font-bold text-slate-500 uppercase tracking-wider transition-colors">
-              <IconExport /> Export
-            </button>
+              <div className="flex items-center gap-4">
+                <button 
+                  onClick={async () => {
+                    try {
+                      await handleExport();
+                    } catch (error) {
+                      console.error("Export failed:", error);
+                    }
+                  }} 
+                  className="flex items-center gap-2 px-3 py-1.5 hover:bg-slate-50 rounded text-[11px] font-bold text-slate-500 uppercase tracking-wider transition-colors"
+                >
+                  <IconExport /> Export
+                </button>
             {!isReadOnly && (
               <button onClick={() => handleSave(false)} className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded text-[11px] font-bold uppercase tracking-wider shadow-sm transition-colors">
                 <IconSave /> Save
@@ -492,7 +497,10 @@ export default function Annotate_Panel({ overrideFileName, overrideFolder}: Prop
               </div>
             </div>
 
-            <div className="text-[10px] font-bold text-slate-300 uppercase tracking-tighter">Case Reference: {overrideFileName || 'Ad-hoc'}</div>
+
+            <div className="text-[10px] font-bold text-slate-300 uppercase tracking-tighter">
+              Record ID: {overrideId || 'Ad-hoc'}
+            </div>
           </div>
 
           {relationshipBuilderMode ? (
@@ -600,12 +608,20 @@ export default function Annotate_Panel({ overrideFileName, overrideFolder}: Prop
           addAnnotation={handleAddAnnotation}
           handleAddRelationship={(opt) => {
              if (isReadOnly || !currentAnnotationRelation || !currentRelationType) return;
+
              const updated = { ...currentAnnotationRelation, relationships: { ...currentAnnotationRelation.relationships, [currentRelationType]: opt === 'Set' ? { text: selectedText, page: doc.currentPageIndex, start: unifiedContextMenu.start, end: unifiedContextMenu.end } : { text: '', page: 0, start: 0, end: 0 } } };
-             dispatch({ type: DocActionTypes.UPDATE_ANNOTATION, payload: { annotation: updated, historyType: 'update' } });
+             dispatch({ type: DocActionTypes.UPDATE_ANNOTATION, payload: { annotation: updated, historyType: 'verify' } });
              setUnifiedContextMenu(prev => ({ ...prev, visible: false }));
           }}
+
           closeContextMenu={() => setUnifiedContextMenu(prev => ({ ...prev, visible: false }))}
         />
+      )}
+
+      {saveSuccess && (
+        <div className="fixed bottom-4 right-4 bg-green-100 border border-green-300 text-green-700 px-4 py-2 rounded shadow-lg text-sm">
+          ✓ Changes saved successfully
+        </div>
       )}
 
       <LLMAnnotationPopup

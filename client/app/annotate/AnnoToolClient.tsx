@@ -7,12 +7,12 @@ import Annotate_Panel from '../components/annotate_panel';
 export default function AnnoToolClient() {
   const searchParams = useSearchParams();
   const router = useRouter();
-  const folder = searchParams.get('project');
-  const file = searchParams.get('file');
+  const project = searchParams.get('project');
+  const id = searchParams.get('id');
 
   const [ready, setReady] = useState(false);
-  const [overrideFile, setOverrideFile] = useState('');
-  const [currFolder, setCurrFolder] = useState('');
+  const [currProject, setCurrProject] = useState('');
+  const [currId, setCurrId] = useState('');
 
   useEffect(() => {
     const storedUser = localStorage.getItem('user');
@@ -21,18 +21,18 @@ export default function AnnoToolClient() {
       return;
     }
     
-    if (!folder || !file) return;
-    setOverrideFile(file);
-    setCurrFolder(folder);
+    if (!project || !id) return;
+    setCurrProject(project);
+    setCurrId(id);
     setReady(true);
-  }, [folder, file, router]);
+  }, [project, id, router]);
 
   if (!ready) return <div className="p-6">Loading annotation tool...</div>;
 
   return (
     <Annotate_Panel
-      overrideFileName={overrideFile}
-      overrideFolder={currFolder}
+      overrideProject={currProject}
+      overrideId={currId}
     />
   );
 }
