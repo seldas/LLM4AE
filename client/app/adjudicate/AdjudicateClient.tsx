@@ -60,9 +60,9 @@ export default function AdjudicateClient() {
     load();
   }, [folder, file, id, router]);
 
-  const humanAnnotations = useMemo(() => {
+  const humanAnnotations = useMemo<Annotation[]>(() => {
     if (!fileData) return [];
-    return fileData.annotations.filter(a => {
+    return fileData.annotations.filter((a: Annotation) => {
       const note = a.note.toUpperCase();
       const isAI = note.includes('AI') || note.includes('LLM') || note.includes('LLAMA') || note.includes('BERT');
       return !isAI || note.includes('VERIFIED');
@@ -70,8 +70,8 @@ export default function AdjudicateClient() {
   }, [fileData]);
 
   const optionColors = useMemo(() => {
-    const labels = Array.from(new Set(humanAnnotations.map(a => a.label.toUpperCase())));
-    return generateOptionColors(labels);
+    const labels = Array.from(new Set(humanAnnotations.map((a: Annotation) => a.label.toUpperCase())));
+    return generateOptionColors(labels as string[]);
   }, [humanAnnotations]);
 
   const handleStatusChange = (annId: number, status: string) => {

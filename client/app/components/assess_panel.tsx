@@ -99,7 +99,7 @@ function AssessmentOutcomeControls({
   );
 }
 
-export default function AssessPanel({ pages, meta, annotations, folder, fileName }: Props) {
+export default function AssessPanel({ pages, meta, annotations, folder, fileName, id }: Props) {
   const firstPageText = pages?.[0] || '';
   const textRef = useRef<HTMLPreElement>(null);
   const [lineCount, setLineCount] = useState(0);

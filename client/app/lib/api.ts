@@ -1,5 +1,5 @@
 import axios, { AxiosResponse } from 'axios';
-import { Annotation, FileData } from './interfaces';
+import { Annotation, FileData, SaveAnnotationsPayload } from './interfaces';
 
 const client = axios.create({
   baseURL: '/api/',
@@ -28,15 +28,6 @@ export const getCaseById = async (id: string, project: string) => {
     alert(`Failed to load the case with ID: ${id}. Error: ${errorMessage}`);
   }
 };
-
-export interface SaveAnnotationsPayload {
-  fileName?: string;
-  id?: string;
-  curr_folder: string;
-  pages: string[];
-  annotations: Annotation[];
-  meta: Record<string, any>;
-}
 
 export const saveAnnotationsToDb = async ({
   fileName,

@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import AssessPanel from '../components/assess_panel';
 import { getHistoryFile, getCaseById } from '../lib/api';
-import type { FileData } from '../lib/interfaces';
+import { FileData } from '../lib/interfaces';
 
 export default function AssessClient() {
   const searchParams = useSearchParams();

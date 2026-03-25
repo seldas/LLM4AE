@@ -119,15 +119,15 @@ const PageDisplayBuilder = ({
       if (!currentAnnotationRelation) {
         annotations.forEach(ann => {
           const color = optionColors[ann.label.toUpperCase()] || "hsl(210, 10%, 50%)";
-          addBox(ann.textContext.start, ann.textContext.end, ann.label, color, false, ann.note);
+          addBox(ann.textContext.start ?? 0, ann.textContext.end ?? 0, ann.label, color, false, ann.note);
         });
       } else {
         const color = optionColors[currentAnnotationRelation.label.toUpperCase()] || "hsl(210, 10%, 50%)";
-        addBox(currentAnnotationRelation.textContext.start, currentAnnotationRelation.textContext.end, currentAnnotationRelation.label, color, false, currentAnnotationRelation.note, true);
+        addBox(currentAnnotationRelation.textContext.start ?? 0, currentAnnotationRelation.textContext.end ?? 0, currentAnnotationRelation.label, color, false, currentAnnotationRelation.note, true);
 
         Object.entries(currentAnnotationRelation.relationships).forEach(([relType, relCtx]) => {
           if (relCtx.start === relCtx.end) return;
-          addBox(relCtx.start, relCtx.end, relType, color, true, "", false);
+          addBox(relCtx.start ?? 0, relCtx.end ?? 0, relType, color, true, "", false);
         });
       }
       setHighlightBoxes(boxes);

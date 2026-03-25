@@ -5,6 +5,12 @@ export interface HoverNote {
     text: string,
 }
 
+export interface FileData {
+  pages: string[];
+  annotations: Annotation[];
+  meta: Record<string, any>;
+}
+
 export interface ProjectEntry {
   folderName: string;
   fileName: string;
@@ -60,6 +66,7 @@ export interface ContextMenu {
 }
 
 export interface SaveAnnotationsPayload {
+  fileName?: string;
   id?: string;
   curr_folder: string;
   pages: string[];
