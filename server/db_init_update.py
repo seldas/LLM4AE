@@ -137,6 +137,7 @@ def init_update_db():
     # Annotations table updates
     add_column_if_missing(cursor, 'annotations', 'note', 'TEXT')
     add_column_if_missing(cursor, 'annotations', 'relationships', 'TEXT')
+    add_column_if_missing(cursor, 'annotations', 'adjudication', 'TEXT')
 
     # 3. Create Indexes
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_project_cases_project ON project_cases(project_id)')

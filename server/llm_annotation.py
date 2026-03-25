@@ -124,9 +124,9 @@ def run_llm_annotation(file_path=None, doc_id=None):
         # Save annotations to DB
         for ann in llm_annotations:
             conn.execute('''
-                INSERT INTO annotations (case_id, user_id, label, start_offset, end_offset, text_content, note, relationships)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            ''', (doc_id, ann['user_id'], ann['label'], ann['start'], ann['end'], ann['text'], ann['note'], '{}'))
+                INSERT INTO annotations (case_id, user_id, label, start_offset, end_offset, text_content, note, relationships, adjudication)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (doc_id, ann['user_id'], ann['label'], ann['start'], ann['end'], ann['text'], ann['note'], '{}', None))
         
         meta["llm_processed"] = "Done"
         meta["llm_provider"] = AI_PROVIDER

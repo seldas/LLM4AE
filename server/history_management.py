@@ -102,6 +102,7 @@ def save_annotations_to_db(project_name: str, project, filename: str, data: dict
         note = ann.get('note', '')
         user_id = get_user_by_note(note) or 1
         relationships = json.dumps(ann.get('relationships', {}))
+        adjudication = ann.get('adjudication')
         insertion_rows.append((
             case_id,
             user_id,
@@ -110,13 +111,14 @@ def save_annotations_to_db(project_name: str, project, filename: str, data: dict
             end,
             text,
             note,
-            relationships
+            relationships,
+            adjudication
         ))
 
     if insertion_rows:
         conn.executemany('''
-            INSERT INTO annotations (case_id, user_id, label, start_offset, end_offset, text_content, note, relationships)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO annotations (case_id, user_id, label, start_offset, end_offset, text_content, note, relationships, adjudication)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', insertion_rows)
 
     conn.commit()
@@ -137,8 +139,13 @@ def history_file(file_path):
             project = get_project_by_name(project_name)
             if not project:
                 return jsonify({'error': 'No project'}), 404
+            
+            doc = get_case(project_id=project['id'], filename=filename)
+            if not doc:
+                return jsonify({'error': 'Not found'}), 404
+
             conn = get_db_connection()
-            conn.execute('DELETE FROM project_cases WHERE project_id = ? AND case_id = (SELECT id FROM cases WHERE annotate_filename = ?)', (project['id'], filename))
+            conn.execute('DELETE FROM project_cases WHERE project_id = ? AND case_id = ?', (project['id'], doc['id']))
             conn.commit()
             conn.close()
             return jsonify({'message': 'Deleted'})
@@ -231,9 +238,9 @@ def save_file():
         for ann in data.get('annotations', []):
             uid = get_user_by_note(ann.get('note', 'Admin')) or 1
             conn.execute('''
-                INSERT INTO annotations (case_id, user_id, label, start_offset, end_offset, text_content, note, relationships)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            ''', (case_id, uid, ann['label'], ann['textContext']['start'], ann['textContext']['end'], ann['textContext']['text'], ann['note'], json.dumps(ann.get('relationships', {}))))
+                INSERT INTO annotations (case_id, user_id, label, start_offset, end_offset, text_content, note, relationships, adjudication)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (case_id, uid, ann['label'], ann['textContext']['start'], ann['textContext']['end'], ann['textContext']['text'], ann['note'], json.dumps(ann.get('relationships', {}))), ann.get('adjudication'))
         conn.commit()
         conn.close()
         return jsonify({'message': 'Saved'})

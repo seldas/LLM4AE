@@ -103,9 +103,9 @@ def migrate():
                             break
                     
                     cursor.execute('''
-                        INSERT INTO annotations (case_id, user_id, label, start_offset, end_offset, text_content, note, relationships)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                    ''', (case_id, user_id, ann.get('label', 'UNKNOWN'), ann.get('textContext', {}).get('start', 0), ann.get('textContext', {}).get('end', 0), ann.get('textContext', {}).get('text', ''), ann.get('note', ''), json.dumps(ann.get('relationships', {}))))
+                        INSERT INTO annotations (case_id, user_id, label, start_offset, end_offset, text_content, note, relationships, adjudication)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ''', (case_id, user_id, ann.get('label', 'UNKNOWN'), ann.get('textContext', {}).get('start', 0), ann.get('textContext', {}).get('end', 0), ann.get('textContext', {}).get('text', ''), ann.get('note', ''), json.dumps(ann.get('relationships', {})), ann.get('adjudication')))
 
             except Exception as e:
                 print(f"  Error processing {filename}: {e}")

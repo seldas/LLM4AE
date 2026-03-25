@@ -199,9 +199,6 @@ def trigger_llm_annotation():
         if not file_name or not folder:
             return jsonify({"error": "Missing file or folder name"}), 400
 
-        if not file_name.endswith(".json"):
-            file_name += ".json"
-
         project = get_project_by_name(folder)
         if not project:
             return jsonify({"error": f"Project not found: {folder}"}), 404
@@ -249,9 +246,6 @@ def save_assessment():
 
         if not file_name or not folder:
             return jsonify({"error": "Missing file or folder name"}), 400
-
-        if not file_name.endswith(".json"):
-            file_name += ".json"
 
         project = get_project_by_name(folder)
         doc = get_case(project_id=project['id'], filename=file_name)

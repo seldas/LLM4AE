@@ -110,6 +110,7 @@ def init_db():
             text_content TEXT NOT NULL,
             note TEXT,
             relationships TEXT,
+            adjudication TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (case_id) REFERENCES cases (id) ON DELETE CASCADE,
             FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
@@ -200,11 +201,33 @@ def get_case(case_id=None, project_id=None, filename=None):
     try:
         if case_id:
             return conn.execute('SELECT * FROM cases WHERE id = ?', (case_id,)).fetchone()
-        return conn.execute('''
+        
+        # Try exact match first
+        res = conn.execute('''
             SELECT c.* FROM cases c
             JOIN project_cases pc ON c.id = pc.case_id
             WHERE pc.project_id = ? AND c.annotate_filename = ?
         ''', (project_id, filename)).fetchone()
+        
+        if not res and filename and filename.lower().endswith('.json'):
+            # Try without .json suffix
+            no_json = filename[:-5]
+            res = conn.execute('''
+                SELECT c.* FROM cases c
+                JOIN project_cases pc ON c.id = pc.case_id
+                WHERE pc.project_id = ? AND c.annotate_filename = ?
+            ''', (project_id, no_json)).fetchone()
+            
+        if not res and filename and not filename.lower().endswith('.json'):
+            # Try with .json suffix
+            with_json = filename + ".json"
+            res = conn.execute('''
+                SELECT c.* FROM cases c
+                JOIN project_cases pc ON c.id = pc.case_id
+                WHERE pc.project_id = ? AND c.annotate_filename = ?
+            ''', (project_id, with_json)).fetchone()
+            
+        return res
     finally: conn.close()
 
 def get_annotations(case_id):
