@@ -49,6 +49,7 @@ def list_history_files(folder_name=''):
         json_files = []
         for row in rows:
             json_files.append({
+                'id': row['id'],
                 'filename': row['annotate_filename'],
                 'counts': {
                     'LLM': row['count_llm'],
@@ -129,7 +130,13 @@ def save_annotations_to_db(project_name: str, project, filename: str, data: dict
 @history_blueprint.route('/api/history/<path:file_path>', methods=['GET', 'POST', 'DELETE'])
 def history_file(file_path):
     try:
-        if '___' in file_path:
+        # Check if file_path is actually an ID (numeric)
+        is_id = False
+        if file_path.isdigit():
+            is_id = True
+            case_id = int(file_path)
+            project_name = request.args.get('project', 'Playground')
+        elif '___' in file_path:
             parts = file_path.split('___')
             project_name, filename = parts[0], parts[1]
         else:
@@ -140,7 +147,11 @@ def history_file(file_path):
             if not project:
                 return jsonify({'error': 'No project'}), 404
             
-            doc = get_case(project_id=project['id'], filename=filename)
+            if is_id:
+                doc = get_case(case_id=case_id)
+            else:
+                doc = get_case(project_id=project['id'], filename=filename)
+
             if not doc:
                 return jsonify({'error': 'Not found'}), 404
 
@@ -152,20 +163,27 @@ def history_file(file_path):
 
         if request.method == 'POST':
             data = request.get_json(silent=True) or {}
-            if data.get('pages') is not None:
-                project = get_project_by_name(project_name)
-                return save_annotations_to_db(project_name, project, filename, data)
-
             project = get_project_by_name(project_name)
             project_id = project['id'] if project else create_project(project_name)
-            doc = get_case(project_id=project_id, filename=filename)
+
+            if data.get('pages') is not None:
+                if is_id:
+                    doc = get_case(case_id=case_id)
+                    filename = doc['annotate_filename'] if doc else f"case-{case_id}.json"
+                return save_annotations_to_db(project_name, project, filename, data)
+
+            if is_id:
+                doc = get_case(case_id=case_id)
+            else:
+                doc = get_case(project_id=project_id, filename=filename)
+
             if not doc:
                 narrative = data.get('narrative', '')
                 if narrative:
                     cid = upsert_case("0", "1", {
                         'narrative': narrative, 
                         'pages': json.dumps([narrative]), 
-                        'annotate_filename': filename
+                        'annotate_filename': filename if not is_id else f"case-{case_id}.json"
                     })
                     link_case_to_project(project_id, cid)
                     doc = get_case(case_id=cid)
@@ -186,11 +204,14 @@ def history_file(file_path):
             })
 
         if request.method == 'GET':
-            project = get_project_by_name(project_name)
-            if not project:
-                return jsonify({'error': 'Project not found'}), 404
-
-            doc = get_case(project_id=project['id'], filename=filename)
+            if is_id:
+                doc = get_case(case_id=case_id)
+            else:
+                project = get_project_by_name(project_name)
+                if not project:
+                    return jsonify({'error': 'Project not found'}), 404
+                doc = get_case(project_id=project['id'], filename=filename)
+            
             if not doc:
                 return jsonify({'error': 'Not found'}), 404
 

@@ -9,7 +9,7 @@ import {
   AnnotationRelationships,
   TextContext
 } from '../lib/interfaces';
-import { getHistoryFile, saveAnnotationsToDb } from '../lib/api';
+import { getHistoryFile, getCaseById, saveAnnotationsToDb } from '../lib/api';
 import {  
   escapeRegExp,
   generateOptionColors
@@ -358,7 +358,10 @@ export default function Annotate_Panel({ overrideProject, overrideId}: Props) {
 
   useEffect(() => {
     if (overrideProject && overrideId) {
-      // Implement logic to fetch data based on record ID
+      getCaseById(overrideId, overrideProject).then(data => {
+        if (!data) return;
+        dispatch({ type: DocActionTypes.LOAD, payload: { ...data, fileName: overrideId } });
+      });
     }
   }, [overrideProject, overrideId]);
 

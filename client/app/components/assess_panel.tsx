@@ -10,6 +10,7 @@ interface Props {
   annotations: Annotation[];
   folder: string;
   fileName: string;
+  id?: string;
 }
 
 type LlmHeaderObject = {
@@ -214,6 +215,7 @@ export default function AssessPanel({ pages, meta, annotations, folder, fileName
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          id: id,
           file: fileName,
           folder,
           assessment: payload,

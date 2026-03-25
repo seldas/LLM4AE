@@ -240,15 +240,21 @@ def trigger_llm_annotation():
 def save_assessment():
     try:
         data = request.get_json(silent=True) or {}
+        case_id = data.get("id")
         file_name = (data.get("file") or "").strip()
         folder = (data.get("folder") or "").strip()
         assessment = data.get("assessment") or {}
 
-        if not file_name or not folder:
-            return jsonify({"error": "Missing file or folder name"}), 400
+        if case_id:
+            doc = get_case(case_id=case_id)
+        elif file_name and folder:
+            project = get_project_by_name(folder)
+            if not project:
+                return jsonify({"error": "Project not found"}), 404
+            doc = get_case(project_id=project['id'], filename=file_name)
+        else:
+            return jsonify({"error": "Missing identifier (id or file/folder)"}), 400
 
-        project = get_project_by_name(folder)
-        doc = get_case(project_id=project['id'], filename=file_name)
         if not doc:
             return jsonify({"error": "Document not found"}), 404
 
@@ -260,10 +266,10 @@ def save_assessment():
         conn.commit()
         conn.close()
 
-        return jsonify({"message": "Assessment saved to database."}), 200
+        return jsonify({"message": "Assessment saved"})
     except Exception as e:
+        logging.error(f"Save assessment error: {e}")
         return jsonify({"error": str(e)}), 500
-
 # -----------------------------------------------------------------------------
 # API: LLM assess scores
 # -----------------------------------------------------------------------------

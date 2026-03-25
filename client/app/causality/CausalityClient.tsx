@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import AssessPanel from '../components/assess_panel';
-import { getHistoryFile } from '../lib/api';
+import { getHistoryFile, getCaseById } from '../lib/api';
 import type { FileData } from '../lib/interfaces';
 
 export default function CausalityClient() {
@@ -11,6 +11,7 @@ export default function CausalityClient() {
   const router = useRouter();
   const folder = searchParams.get('project');
   const file = searchParams.get('file');
+  const id = searchParams.get('id');
 
   const [loading, setLoading] = useState(true);
   const [fileData, setFileData] = useState<FileData | null>(null);
@@ -23,17 +24,19 @@ export default function CausalityClient() {
     }
 
     const load = async () => {
-      if (!folder || !file) return;
+      if (!folder || (!file && !id)) return;
       setLoading(true);
-      const data = await getHistoryFile(file, folder);
+      const data = id 
+        ? await getCaseById(id, folder)
+        : await getHistoryFile(file!, folder);
       if (data) setFileData(data);
       setLoading(false);
     };
     load();
-  }, [folder, file, router]);
+  }, [folder, file, id, router]);
 
-  if (!folder || !file) {
-    return <div className="p-6 text-sm text-red-700">Missing project or file parameters.</div>;
+  if (!folder || (!file && !id)) {
+    return <div className="p-6 text-sm text-red-700">Missing project or identifier parameters.</div>;
   }
 
   if (loading || !fileData) {
@@ -65,7 +68,8 @@ export default function CausalityClient() {
         meta={fileData.meta}
         annotations={fileData.annotations}
         folder={folder}
-        fileName={file}
+        fileName={file || ''}
+        id={id || undefined}
       />
     </div>
   );

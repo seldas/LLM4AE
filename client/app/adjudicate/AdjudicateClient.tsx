@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useMemo } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
-import { getHistoryFile } from '../lib/api';
+import { getHistoryFile, getCaseById } from '../lib/api';
 import type { FileData, Annotation } from '../lib/interfaces';
 import PageDisplay from '../components/page-display-brat';
 import { generateOptionColors } from '../lib/util';
@@ -12,6 +12,7 @@ export default function AdjudicateClient() {
   const router = useRouter();
   const folder = searchParams.get('project');
   const file = searchParams.get('file');
+  const id = searchParams.get('id');
 
   const [loading, setLoading] = useState(true);
   const [fileData, setFileData] = useState<FileData | null>(null);
@@ -31,9 +32,13 @@ export default function AdjudicateClient() {
     setUser(JSON.parse(storedUser));
 
     const load = async () => {
-      if (!folder || !file) return;
+      if (!folder || (!file && !id)) return;
       setLoading(true);
-      const data = await getHistoryFile(file, folder);
+      
+      const data = id 
+        ? await getCaseById(id, folder)
+        : await getHistoryFile(file!, folder);
+
       if (data) {
         setFileData(data);
         const initialAdj: Record<number, any> = {};
@@ -53,7 +58,7 @@ export default function AdjudicateClient() {
       setLoading(false);
     };
     load();
-  }, [folder, file, router]);
+  }, [folder, file, id, router]);
 
   const humanAnnotations = useMemo(() => {
     if (!fileData) return [];
