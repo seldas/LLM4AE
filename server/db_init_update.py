@@ -17,7 +17,7 @@ def add_column_if_missing(cursor, table_name, column_name, column_definition):
     columns = [row['name'] for row in cursor.fetchall()]
     if column_name not in columns:
         print(f"Adding column '{column_name}' to table '{table_name}'...")
-        cursor.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_definition}")
+        cursor.execute(f'ALTER TABLE "{table_name}" ADD COLUMN "{column_name}" {column_definition}')
 
 def init_update_db():
     """Initializes the database and updates schema to latest version."""
