@@ -32,6 +32,7 @@ yarn-error.log*
 #train data folder
 development/train_data.xlsx
 development/train_data.header.xlsx
+development/models
 
 # data folder
 /server/history
