@@ -13,21 +13,45 @@ def load_data_from_db(db_path="../../server/database/llm4ae.db", include_ai=Fals
     if not os.path.exists(db_path):
         # Try absolute path or relative to current script
         script_dir = os.path.dirname(os.path.abspath(__file__))
-        db_path = os.path.join(script_dir, "../../server/database/llm4ae.db")
-        if not os.path.exists(db_path):
-            raise FileNotFoundError(f"Database not found at {db_path}")
+        alt_db_path = os.path.join(script_dir, "../../server/database/llm4ae.db")
+        if os.path.exists(alt_db_path):
+            db_path = alt_db_path
+        else:
+            # Try from current directory
+            alt_db_path = "server/database/llm4ae.db"
+            if os.path.exists(alt_db_path):
+                db_path = alt_db_path
+            else:
+                raise FileNotFoundError(f"Database not found at {db_path}")
 
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     
-    # Fetch all cases
-    cases = conn.execute("SELECT id, narrative FROM cases").fetchall()
+    # Fetch all cases with narrative and pages
+    cases = conn.execute("SELECT id, narrative, pages FROM cases").fetchall()
     
     all_data = []
     for case in cases:
         case_id = case["id"]
-        narrative = case["narrative"]
+        # Use narrative column first, then try pages if empty
+        narrative = (case["narrative"] or "").strip()
+        pages_raw = case["pages"]
         
+        if not narrative and pages_raw:
+            try:
+                pages_list = json.loads(pages_raw)
+                if isinstance(pages_list, list) and len(pages_list) > 0:
+                    narrative = pages_list[0]
+                elif isinstance(pages_list, str):
+                    narrative = pages_list
+            except json.JSONDecodeError:
+                # If it's not JSON, maybe it's just raw text
+                narrative = pages_raw
+        
+        if not narrative:
+            # Skip if still no narrative text
+            continue
+            
         # Build query for annotations
         query = "SELECT a.label, a.start_offset, a.end_offset, a.text_content, u.role_id FROM annotations a JOIN users u ON a.user_id = u.id WHERE a.case_id = ?"
         if not include_ai:
