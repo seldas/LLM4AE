@@ -33,6 +33,7 @@ yarn-error.log*
 development/BERT/Error_analysis/model
 development/BERT/new_results/model
 development/BERT/new_results/data
+development/NER/output/model-best/transformer/model
 
 # data folder
 /server/history

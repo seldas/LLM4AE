@@ -3,7 +3,7 @@ from spacy.tokens import DocBin
 from spacy.training import Example
 from pathlib import Path
 import json
-import sys
+import sys, os
 
 # Import custom scorer logic
 # We can either import it if it's in the same directory, or just provide the logic here.
@@ -51,7 +51,7 @@ def evaluate():
         print(f"  {label:10}: P={metrics['p']:.4f}, R={metrics['r']:.4f}, F={metrics['f']:.4f}")
 
     # Save results to file
-    output_file = Path("development/NER/output/evaluation_results.json")
+    output_file = os.path.join(NER_DIR, "output/evaluation_results.json")
     with open(output_file, "w") as f:
         json.dump(results, f, indent=2)
     print(f"\nFull results saved to {output_file}")
