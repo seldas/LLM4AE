@@ -82,5 +82,7 @@ docker compose -f docker-compose.prod.yaml up --build -d
 
 
 ## BERT update (new records in DB)
-implemented by batch_annotate.py;
-need 
+implemented by NER/scripts/batch_annotate.py;
+
+the BERT/ folder was developed earlier and rewrote into the NER/ folder; kept for further references.
+in NER/, the current data/ and output/ were fetched from previous training results.
