@@ -30,9 +30,9 @@ yarn-debug.log*
 yarn-error.log*
 
 #train data folder
-development/train_data.xlsx
-development/train_data.header.xlsx
-development/models
+development/BERT/Error_analysis/model
+development/BERT/new_results/model
+development/BERT/new_results/data
 
 # data folder
 /server/history
