@@ -13,7 +13,7 @@ from ner_client import get_ner_client
 # --- Configuration ---
 DB_PATH = project_root / 'server' / 'database' / 'llm4ae.db'
 
-def batch_annotate(force=False):
+def batch_annotate(force=False, limit=None):
     # 1. Connect to DB
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
@@ -39,6 +39,10 @@ def batch_annotate(force=False):
     skipped_count = 0
 
     for case in cases:
+        if limit is not None and processed_count >= limit:
+            print(f"Reached limit of {limit} processed cases. Stopping.")
+            break
+
         case_id = case['id']
         meta = json.loads(case['meta']) if case['meta'] else {}
         
@@ -73,7 +77,7 @@ def batch_annotate(force=False):
                 conn.execute('''
                     INSERT INTO annotations (case_id, user_id, label, start_offset, end_offset, text_content, note, relationships, adjudication)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ''', (case_id, bert_user_id, ent['label'], ent['start'], ent['end'], ent['text'], 'BioBERT', '{}', None))
+                ''', (case_id, bert_user_id, ent['label'], ent['start'], ent['end'], ent['text'], 'BERT', '{}', None))
             
             # Update meta
             meta["bert_processed"] = "Done"
@@ -94,6 +98,7 @@ def batch_annotate(force=False):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Batch annotate ICSR narratives using BioBERT.")
     parser.add_argument("--force", action="store_true", help="Re-annotate cases even if already processed.")
+    parser.add_argument("--limit", type=int, default=None, help="Limit the number of processed records (e.g., 50).")
     args = parser.parse_args()
 
-    batch_annotate(force=args.force)
+    batch_annotate(force=args.force, limit=args.limit)
