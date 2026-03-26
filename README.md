@@ -79,3 +79,8 @@ docker compose -f docker-compose.prod.yaml up --build -d
 1. Copy `server/.env.template` to `server/.env`.
 2. Configure your AI model preferences and API keys in the `.env` file.
 3. (Optional) Adjust NGINX ports in the `docker-compose` files if needed.
+
+
+## BERT update (new records in DB)
+implemented by batch_annotate.py;
+need 

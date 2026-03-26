@@ -34,6 +34,7 @@ development/BERT/Error_analysis/model
 development/BERT/new_results/model
 development/BERT/new_results/data
 development/NER/output/model-best/transformer/model
+development/NER/data
 
 # data folder
 /server/history
