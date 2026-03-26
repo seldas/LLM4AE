@@ -81,8 +81,19 @@ docker compose -f docker-compose.prod.yaml up --build -d
 3. (Optional) Adjust NGINX ports in the `docker-compose` files if needed.
 
 
-## BERT update (new records in DB)
-implemented by NER/scripts/batch_annotate.py;
+## 🤖 BERT Annotation (BioBERT)
+The platform now includes a high-performance **BioBERT-based NER model** for automated medical entity extraction. This feature is fully implemented and ready for batch processing or real-time inference.
 
-the BERT/ folder was developed earlier and rewrote into the NER/ folder; kept for further references.
-in NER/, the current data/ and output/ were fetched from previous training results.
+### Key Capabilities:
+- **Transformer-based NER**: Uses a fine-tuned BioBERT model to detect Drugs, Adverse Events, Lab Tests, and other clinical entities.
+- **Long-Text Handling**: Automatically chunks long narratives into manageable segments for transformer models, merging results while maintaining character offset integrity.
+- **Multi-GPU Batch Processing**: A dedicated script (`development/NER/scripts/batch_annotate.py`) allows for high-speed annotation of the entire database using parallel GPU workers.
+
+### Usage:
+- **Batch Processing**: Run the following command from the project root to annotate all cases in the database:
+  ```bash
+  python development/NER/scripts/batch_annotate.py --num-gpus 8
+  ```
+- **Direct Integration**: The `NERClient` in `development/NER/scripts/ner_client.py` provides a simple interface for ad-hoc text annotation.
+
+*Note: The `BERT/` legacy folder is retained for historical reference; all active development is within the `development/NER/` directory.*
