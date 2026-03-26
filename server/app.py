@@ -12,7 +12,6 @@ from text_processing import *  # noqa: F403
 from llm_annotation import run_llm_annotation, call_llm  # noqa: F401
 from database_manager import get_db_connection, get_project_by_name, get_case, upsert_case, get_annotations, get_user_by_note, authenticate_user
 from ai_client import call_ai as ai_call
-from ner_client import get_ner_client
 
 # -----------------------------------------------------------------------------
 # App + Logging
@@ -231,70 +230,6 @@ def trigger_llm_annotation():
         return jsonify({"message": f"LLM annotation started", "file_locked": file_name}), 200
 
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-# -----------------------------------------------------------------------------
-# API: Trigger BERT (BioBERT) annotation (synchronous)
-# -----------------------------------------------------------------------------
-@app.route("/api/annotate/bert", methods=["POST"])
-@cross_origin()
-def trigger_bert_annotation():
-    try:
-        req = request.get_json(silent=True) or {}
-        file_name = (req.get("file") or "").strip()
-        folder = (req.get("folder") or "").strip()
-
-        if not file_name or not folder:
-            return jsonify({"error": "Missing file or folder name"}), 400
-
-        project = get_project_by_name(folder)
-        if not project:
-            return jsonify({"error": f"Project not found: {folder}"}), 404
-
-        doc = get_case(project_id=project['id'], filename=file_name)
-        if not doc:
-            return jsonify({"error": f"Document not found: {file_name}"}), 404
-
-        doc_id = doc['id']
-        conn = get_db_connection()
-        
-        # Get BioBERT user
-        cursor = conn.execute('SELECT id FROM users WHERE migration_key = "BERT"')
-        user_row = cursor.fetchone()
-        if not user_row:
-            conn.close()
-            return jsonify({"error": "BioBERT user not found in database"}), 500
-        bert_user_id = user_row['id']
-
-        # Get narrative
-        case_data = conn.execute('SELECT pages, meta FROM cases WHERE id = ?', (doc_id,)).fetchone()
-        pages = json.loads(case_data['pages']) if case_data['pages'] else [""]
-        narrative = pages[0]
-        meta = json.loads(case_data['meta']) if case_data['meta'] else {}
-
-        # Run annotation
-        client = get_ner_client()
-        entities = client.annotate_text(narrative)
-
-        # Clear existing BERT annotations for this case
-        conn.execute('DELETE FROM annotations WHERE case_id = ? AND user_id = ?', (doc_id, bert_user_id))
-
-        # Save new annotations
-        for ent in entities:
-            conn.execute('''
-                INSERT INTO annotations (case_id, user_id, label, start_offset, end_offset, text_content, note, relationships, adjudication)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ''', (doc_id, bert_user_id, ent['label'], ent['start'], ent['end'], ent['text'], 'BioBERT', '{}', None))
-
-        meta["bert_processed"] = "Done"
-        conn.execute('UPDATE cases SET meta = ? WHERE id = ?', (json.dumps(meta), doc_id))
-        conn.commit()
-        conn.close()
-
-        return jsonify({"message": "BERT annotation complete", "entities_count": len(entities)}), 200
-
-    except Exception as e:
-        logging.error(f"BERT annotation error: {e}")
         return jsonify({"error": str(e)}), 500
 
 # -----------------------------------------------------------------------------

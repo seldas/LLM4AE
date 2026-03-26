@@ -12,17 +12,17 @@ project_blueprint = Blueprint('project', __name__)
 
 COL_MAP = {
     "mcn_or_ctu": ["MCN or CTU", "Manufacturer Control #"],
-    "report_type": ["Report Type"],
+    "report_type": ["Report Type", "Report Type.1"],
     "form_type": ["Form Type"],
     "initial_fda_received_date": ["Initial FDA Received Date"],
-    "latest_fda_received_date": ["Latest FDA Received Date", "Latest FDA Received date"],
+    "latest_fda_received_date": ["Latest FDA Received Date", "Latest FDA Received date", "Latest MFR Received Date"],
     "completeness_score": ["Completeness Score"],
     "patient_id": ["Patient ID", "Patient Id"],
-    "age_in_years": ["Age in Years"],
+    "age_in_years": ["Age in Years", "Age in Years (Original)", "Age in Years (Original OR Modified)"],
     "dob": ["DOB"],
     "sex": ["Sex"],
     "weight_in_kg": ["Weight In kg", "Weight (kg)"],
-    "race": ["Race"],
+    "race": ["Race/Ethnicity", "Race"],
     "medical_history_and_comments": ["Medical History and Comments", "Medical History/Medical History Comments"],
     "sender_mfr_organization": ["Sender Mfr Organization"],
     "reporter_organization": ["Reporter Organization"],
@@ -30,11 +30,11 @@ COL_MAP = {
     "reporter_qualifications": ["Reporter Qualifications"],
     "health_professional": ["Health Professional"],
     "report_source": ["Report Source"],
-    "narrative": ["Narrative"],
-    "seriousness": ["Seriousness"],
+    "narrative": ["Narrative", "Narrative Medical History (Pre-morbidity)"],
+    "seriousness": ["Serious Outcome ?", "Seriousness"],
     "all_outcomes": ["All Outcomes"],
-    "all_suspect_products": ["ALL Suspect Products", "All Suspect Product Names"],
-    "all_suspect_pais": ["All Suspect PAIs", "ALL Suspect PAIs"],
+    "all_suspect_products": ["ALL Suspect Products", "All Suspect Product Names", "ALL Suspect Verbatim Products", "ALL Suspect Product Active Ingredients", "ALL Suspect Active Ingredients", "ALL Suspect Verbatim Products"],
+    "all_suspect_pais": ["All Suspect PAIs", "ALL Suspect PAIs", "ALL Suspect Active Ingredients"],
     "all_concomitant_products": ["All Concomitant Products"],
     "all_llts": ["All LLTs"],
     "all_pts": ["All PTs"],
@@ -52,13 +52,18 @@ def get_mapped_value(row, internal_key):
         c_lower = c.lower()
         if c_lower in row_keys:
             val = row[row_keys[c_lower]]
-            return str(val).strip() if pd.notna(val) else ""
+            if pd.isna(val):
+                return ""
+            elif isinstance(val, str):
+                return val.strip()
+            else:
+                return str(val)
     return ""
 
 def find_header_row(file_bytes, sheet_name, engine='openpyxl'):
     df_preview = pd.read_excel(io.BytesIO(file_bytes), sheet_name=sheet_name, header=None, nrows=20, engine=engine)
     for idx, row in df_preview.iterrows():
-        vals = [str(v).strip().lower() for v in row.values]
+        vals = [str(v).strip().lower() if isinstance(v, str) else str(v).lower() for v in row.values]
         if "case number" in vals or "faers case #" in vals: return idx
     return 0
 
@@ -163,7 +168,7 @@ def create_project_from_excel():
         df = pd.read_excel(io.BytesIO(file_bytes), sheet_name=target_sheet, header=h_idx, engine='openpyxl')
         
         file_mode = 'InfoVIP' if any('FAERS Case #' in str(c) for c in df.columns) else 'RxLogix'
-        df.columns = [str(c).strip() for c in df.columns]
+        df.columns = [str(c).strip() if isinstance(c, str) else str(c) for c in df.columns]
         if file_mode == 'InfoVIP':
             df = df.rename(columns={"FAERS Case #": "Case Number"})
 
@@ -188,7 +193,12 @@ def create_project_from_excel():
                 "outcomes": generate_outcomes_content(row, mode=file_mode),
                 "products": generate_products_content(row, columns=df.columns, mode=file_mode)
             })
-            attrs['full_data'] = json.dumps(row.to_dict())
+            # Convert any Timestamp objects to string before JSON serialization
+            row_dict = row.to_dict()
+            for k, v in row_dict.items():
+                if isinstance(v, pd.Timestamp):
+                    row_dict[k] = v.isoformat()
+            attrs['full_data'] = json.dumps(row_dict)
 
             case_id = upsert_case(case_num, ver_num, attrs)
             link_case_to_project(project_id, case_id)
@@ -209,3 +219,55 @@ def delete_project():
         conn.close()
         return jsonify({'message': 'Deleted'})
     except: return jsonify({'error': 'Fail'}), 500
+
+def test_import_excel(file_path, project_name):
+    try:
+        with open(file_path, 'rb') as f:
+            file_bytes = f.read()
+        xl = pd.ExcelFile(io.BytesIO(file_bytes), engine='openpyxl')
+        target_sheet = "Case Detail" if "Case Detail" in xl.sheet_names else ("Case Details" if "Case Details" in xl.sheet_names else xl.sheet_names[0])
+        h_idx = find_header_row(file_bytes, target_sheet)
+        df = pd.read_excel(io.BytesIO(file_bytes), sheet_name=target_sheet, header=h_idx, engine='openpyxl')
+        
+        file_mode = 'InfoVIP' if any('FAERS Case #' in str(c) for c in df.columns) else 'RxLogix'
+        df.columns = [str(c).strip() if isinstance(c, str) else str(c) for c in df.columns]
+        if file_mode == 'InfoVIP':
+            df = df.rename(columns={"FAERS Case #": "Case Number"})
+
+        df = df.fillna('')
+        project_id = create_project(project_name, source_file=file_path, source_blob=file_bytes)
+
+        for _, row in df.iterrows():
+            raw_case = str(row.get("Case Number", "0"))
+            try: case_num = str(int(float(raw_case))) if raw_case else "0"
+            except: case_num = raw_case or "0"
+
+            raw_ver = str(row.get("Version Number", "1"))
+            try: ver_num = str(int(float(raw_ver))) if raw_ver else "1"
+            except: ver_num = raw_ver or "1"
+
+            attrs = {k: get_mapped_value(row, k) for k in COL_MAP.keys()}
+            if not attrs['annotate_filename']: attrs['annotate_filename'] = f"{case_num}-{ver_num}.json"
+
+            attrs['pages'] = json.dumps([attrs['narrative']])
+            attrs['meta'] = json.dumps({
+                "demographic": generate_demographic_content(row, mode=file_mode),
+                "outcomes": generate_outcomes_content(row, mode=file_mode),
+                "products": generate_products_content(row, columns=df.columns, mode=file_mode)
+            })
+            # Convert any Timestamp objects to string before JSON serialization
+            row_dict = row.to_dict()
+            for k, v in row_dict.items():
+                if isinstance(v, pd.Timestamp):
+                    row_dict[k] = v.isoformat()
+            attrs['full_data'] = json.dumps(row_dict)
+
+            case_id = upsert_case(case_num, ver_num, attrs)
+            link_case_to_project(project_id, case_id)
+
+        print("Import successful")
+    except Exception as e:
+        print(f"Import failed: {str(e)}")
+
+if __name__ == "__main__":
+    test_import_excel('server/history/Meta/InfoVIP_export_1_Meta.xlsx', 'Test Project')

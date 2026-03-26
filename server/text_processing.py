@@ -2,6 +2,7 @@ import fitz, re
 from docx import Document
 from charset_normalizer import from_path
 import json
+import pandas as pd
 
 def sectionize_texts(text):
     pattern = re.compile(r'(?=\b(\d+\.\d+ [A-Z][a-z]+(?: [A-Z][a-z]+)*|\d+ [A-Z\s]+)\b)')
@@ -75,7 +76,10 @@ def generate_demographic_content(row, mode='RxLogix'):
     demographic_html = "<div class='mb-4 space-y-4 text-sm text-gray-800'>"
 
     for key in demographic_keys:
-        value = str(row.get(key, "")).strip()
+        val = row.get(key, "")
+        if pd.isna(val):
+            continue
+        value = str(val).strip() if isinstance(val, str) else str(val)
         if not value:
             continue
 
@@ -160,8 +164,12 @@ def generate_outcomes_content(row, mode='RxLogix'):
             pt = next((item[1] for item in parsed_data['All PTs'] if item[0] == i+1), '')
             llt = next((item[1] for item in parsed_data['All LLTs'] if item[0] == i+1), '')
             term_id = i + 1
-            term = row.get(f"PT Term Event {term_id}", "").strip()
-            date = row.get(f"Start Date Event {term_id}", "").strip()
+            
+            term_val = row.get(f"PT Term Event {term_id}", "")
+            term = term_val.strip() if isinstance(term_val, str) else str(term_val)
+            
+            date_val = row.get(f"Start Date Event {term_id}", "")
+            date = date_val.strip() if isinstance(date_val, str) else str(date_val)
 
         if any([soc, hlgt, hlt, pt, llt]):
             row_html = [
@@ -227,24 +235,28 @@ def generate_products_content(row, columns, mode='RxLogix'):
     def render_product(product_data):
         rows = ""
         for key in product_keys:
-            value = str(product_data.get(key, "")).strip()
-            if value:
-                rows += f"""
-                <tr>
-                <td class='pr-4 font-medium text-gray-700'>{key}:</td>
-                <td class='text-gray-900'>{value}</td>
-                </tr>
-                """
-        return f"""
-            <div class='mb-4 border border-gray-200 rounded-lg bg-white p-3 shadow-sm'>
-            <h4 class='font-semibold text-blue-800 mb-2'>{product_data.get("Product Name", "(Unnamed Product)")}</h4>
-            <table class='text-sm table-auto'>
-                <tbody>
-                {rows}
-                </tbody>
-            </table>
-            </div>
+            val = product_data.get(key, "")
+            if pd.isna(val):
+                continue
+            value = str(val).strip() if isinstance(val, str) else str(val)
+            if not value:
+                continue
+            rows += f"""
+            <tr>
+            <td class='pr-4 font-medium text-gray-700'>{key}:</td>
+            <td class='text-gray-900'>{value}</td>
+            </tr>
             """
+        return f"""
+        <div class='mb-4 border border-gray-200 rounded-lg bg-white p-3 shadow-sm'>
+        <h4 class='font-semibold text-blue-800 mb-2'>{product_data.get("Product Name", "(Unnamed Product)")}</h4>
+        <table class='text-sm table-auto'>
+            <tbody>
+            {rows}
+            </tbody>
+        </table>
+        </div>
+        """
 
     # Final HTML output
     products_html = ""
