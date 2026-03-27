@@ -69,7 +69,29 @@ export default function Annotate_Panel({ overrideProject, overrideId}: Props) {
   const [userRole, setUserRole] = useState<string>("Anonymous");
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [isReadOnly, setIsReadOnly] = useState(false);
+  const META_DATA_OPTIONS: Array<{ key: 'demographic' | 'products' | 'outcomes'; label: string }> = [
+    { key: 'demographic', label: 'Demographic' },
+    { key: 'products', label: 'Products' },
+    { key: 'outcomes', label: 'Outcomes' },
+  ];
   const [metaView, setMetaView] = useState<'none' | 'demographic' | 'products' | 'outcomes'>('none');
+  const availableMetaEntries = useMemo(() => {
+    const meta = doc.meta || {};
+    return META_DATA_OPTIONS.map(({ key, label }) => {
+      const raw = meta[key];
+      const content = typeof raw === 'string' ? raw : raw ? JSON.stringify(raw) : '';
+      const trimmed = (content || '').trim();
+      return trimmed ? { key, label, content: trimmed } : null;
+    }).filter((entry): entry is { key: 'demographic' | 'products' | 'outcomes'; label: string; content: string } => Boolean(entry));
+  }, [doc.meta]);
+
+  const activeMetaEntry = useMemo(() => availableMetaEntries.find(entry => entry.key === metaView) || null, [availableMetaEntries, metaView]);
+
+  useEffect(() => {
+    if (metaView !== 'none' && !availableMetaEntries.some(entry => entry.key === metaView)) {
+      setMetaView('none');
+    }
+  }, [availableMetaEntries, metaView]);
 
   useEffect(() => {
     const storedUser = localStorage.getItem('user');
@@ -609,9 +631,19 @@ export default function Annotate_Panel({ overrideProject, overrideId}: Props) {
             </div>
             <div className="flex flex-wrap items-center gap-1.5 mt-3">
               <span className="text-[10px] font-bold text-slate-400 uppercase mr-1">Data:</span>
-              {['Demographic', 'Products', 'Outcomes'].map(v => (
-                <button key={v} onClick={() => setMetaView(metaView === v.toLowerCase() ? 'none' : v.toLowerCase() as any)} className={`px-2 py-0.5 rounded text-[10px] font-bold transition-all border ${metaView === v.toLowerCase() ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-400 border-slate-200 hover:border-slate-300'}`}>{v}</button>
-              ))}
+              {availableMetaEntries.length > 0 ? (
+                availableMetaEntries.map(entry => (
+                  <button
+                    key={entry.key}
+                    onClick={() => setMetaView(metaView === entry.key ? 'none' : entry.key)}
+                    className={`px-2 py-0.5 rounded text-[10px] font-bold transition-all border ${metaView === entry.key ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300'}`}
+                  >
+                    {entry.label}
+                  </button>
+                ))
+              ) : (
+                <span className="text-[9px] font-black uppercase tracking-[0.3em] text-slate-500">No metadata</span>
+              )}
             </div>
             <div className="text-[10px] font-bold text-slate-300 uppercase tracking-tighter whitespace-nowrap mt-3">
               Record ID: {overrideId || 'Ad-hoc'}
@@ -665,13 +697,15 @@ export default function Annotate_Panel({ overrideProject, overrideId}: Props) {
           )}
 
           {/* Bottom Drawer: Metadata */}
-          {metaView !== 'none' && (
-            <div className="h-1/3 bg-slate-900 text-slate-300 border-t border-slate-800 overflow-y-auto p-8 animate-in slide-in-from-bottom-full duration-300 shadow-2xl">
-              <div className="flex items-center justify-between mb-6">
-                <h3 className="text-xs font-bold text-white uppercase tracking-[0.2em]">{metaView} Reference</h3>
-                <button onClick={() => setMetaView('none')} className="text-slate-500 hover:text-white font-bold p-2 transition-colors">✕</button>
+          {activeMetaEntry && (
+            <div className="h-1/3 bg-gradient-to-br from-slate-900/95 to-slate-900 text-slate-100 border-t border-slate-800 overflow-y-auto p-6 animate-in slide-in-from-bottom-full duration-300 shadow-2xl">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-200">{activeMetaEntry.label} Reference</h3>
+                <button onClick={() => setMetaView('none')} className="text-slate-400 hover:text-white font-bold p-2 transition-colors">✕</button>
               </div>
-              <div className="prose prose-invert prose-sm max-w-none bg-slate-800/50 p-8 rounded border border-slate-700/50 shadow-inner leading-relaxed" dangerouslySetInnerHTML={{ __html: doc.meta[metaView] || 'No data available' }} />
+              <div className="space-y-4 text-sm leading-relaxed text-slate-100 prose prose-invert max-w-none">
+                <div className="bg-slate-800/60 p-4 rounded-2xl border border-slate-700 shadow-inner shadow-slate-900/60" dangerouslySetInnerHTML={{ __html: activeMetaEntry.content }} />
+              </div>
             </div>
           )}
         </main>
