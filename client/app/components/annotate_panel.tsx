@@ -668,7 +668,7 @@ export default function Annotate_Panel({ overrideProject, overrideId}: Props) {
       </header>
 
       {/* --- Main Area --- */}
-      <div className="flex-1 flex overflow-hidden">
+      <div className="flex-1 flex min-h-0 overflow-hidden">
         
         {/* Left Sidebar */}
         <aside className="w-[400px] flex flex-col border-r border-slate-200 bg-white shrink-0 shadow-sm overflow-hidden">
@@ -741,127 +741,143 @@ export default function Annotate_Panel({ overrideProject, overrideId}: Props) {
           </div>
         </aside>
 
-        {/* Center Canvas */}
-        <main className="flex-1 flex flex-col overflow-hidden bg-white">
-          <div className="px-8 py-3 border-b border-slate-100 bg-white shrink-0">
-            <div className="flex flex-wrap items-center gap-4 sm:justify-between">
-              <div className="flex flex-wrap items-center gap-3 min-w-0 flex-1">
-                <div className="flex items-center gap-3 bg-slate-100 rounded-full px-3 py-1 shrink-0">
-                  <button onClick={() => setRelationshipBuilderMode(false)} className={`px-3 py-0.5 rounded-full text-[10px] font-bold transition-all ${!relationshipBuilderMode ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400'}`}>STANDARD</button>
-                  <button onClick={() => setRelationshipBuilderMode(true)} className={`px-3 py-0.5 rounded-full text-[10px] font-bold transition-all ${relationshipBuilderMode ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400'}`}>LINK MODE</button>
+        <div className="flex flex-1 min-w-0 overflow-hidden">
+
+          {/* Center Canvas */}
+          <main className="flex-1 flex flex-col min-h-0 overflow-hidden bg-white">
+            <div className="px-8 py-3 border-b border-slate-100 bg-white shrink-0">
+              <div className="flex flex-wrap items-center gap-4 sm:justify-between">
+                <div className="flex flex-wrap items-center gap-3 min-w-0 flex-1">
+                  <div className="flex items-center gap-3 bg-slate-100 rounded-full px-3 py-1 shrink-0">
+                    <button onClick={() => setRelationshipBuilderMode(false)} className={`px-3 py-0.5 rounded-full text-[10px] font-bold transition-all ${!relationshipBuilderMode ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400'}`}>STANDARD</button>
+                    <button onClick={() => setRelationshipBuilderMode(true)} className={`px-3 py-0.5 rounded-full text-[10px] font-bold transition-all ${relationshipBuilderMode ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400'}`}>LINK MODE</button>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Layers:</span>
+                    <div className="flex bg-slate-100 p-0.5 rounded-full gap-0.5">
+                      {['Human', 'LLM', 'BERT'].map(layer => (
+                      <button
+                        key={layer}
+                        onClick={() => handleLayerToggle(layer)}
+                        className={`px-3 py-0.5 rounded-full text-[9px] font-bold uppercase transition-all ${activeLayers.includes(layer) ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                      >
+                        {layer}
+                      </button>
+                    ))}
+                    </div>
+                  </div>
                 </div>
                 <div className="flex items-center gap-1.5">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Layers:</span>
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Theme:</span>
                   <div className="flex bg-slate-100 p-0.5 rounded-full gap-0.5">
-                    {['Human', 'LLM', 'BERT'].map(layer => (
+                    {['light', 'dark', 'soft'].map(t => (
                     <button
-                      key={layer}
-                      onClick={() => handleLayerToggle(layer)}
-                      className={`px-3 py-0.5 rounded-full text-[9px] font-bold uppercase transition-all ${activeLayers.includes(layer) ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                      key={t}
+                      onClick={() => setTheme(t as any)}
+                      className={`px-3 py-0.5 rounded-full text-[9px] font-bold uppercase transition-all ${theme === t ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
                     >
-                      {layer}
+                      {t}
                     </button>
                   ))}
                   </div>
                 </div>
               </div>
-              <div className="flex items-center gap-1.5">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Theme:</span>
-                <div className="flex bg-slate-100 p-0.5 rounded-full gap-0.5">
-                  {['light', 'dark', 'soft'].map(t => (
-                  <button
-                    key={t}
-                    onClick={() => setTheme(t as any)}
-                    className={`px-3 py-0.5 rounded-full text-[9px] font-bold uppercase transition-all ${theme === t ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
-                  >
-                    {t}
-                  </button>
-                ))}
-                </div>
+              <div className="flex flex-wrap items-center gap-1.5 mt-3">
+                <span className="text-[10px] font-bold text-slate-400 uppercase mr-1">Data:</span>
+                {availableMetaEntries.length > 0 ? (
+                  availableMetaEntries.map(entry => (
+                    <button
+                      key={entry.key}
+                      onClick={() => setMetaView(metaView === entry.key ? 'none' : entry.key)}
+                      className={`px-2 py-0.5 rounded text-[10px] font-bold transition-all border ${metaView === entry.key ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300'}`}
+                    >
+                      {entry.label}
+                    </button>
+                  ))
+                ) : (
+                  <span className="text-[9px] font-black uppercase tracking-[0.3em] text-slate-500">No metadata</span>
+                )}
+              </div>
+              <div className="text-[10px] font-bold text-slate-300 uppercase tracking-tighter whitespace-nowrap mt-3">
+                Record ID: {overrideId || 'Ad-hoc'}
               </div>
             </div>
-            <div className="flex flex-wrap items-center gap-1.5 mt-3">
-              <span className="text-[10px] font-bold text-slate-400 uppercase mr-1">Data:</span>
-              {availableMetaEntries.length > 0 ? (
-                availableMetaEntries.map(entry => (
-                  <button
-                    key={entry.key}
-                    onClick={() => setMetaView(metaView === entry.key ? 'none' : entry.key)}
-                    className={`px-2 py-0.5 rounded text-[10px] font-bold transition-all border ${metaView === entry.key ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300'}`}
-                  >
-                    {entry.label}
-                  </button>
-                ))
-              ) : (
-                <span className="text-[9px] font-black uppercase tracking-[0.3em] text-slate-500">No metadata</span>
-              )}
-            </div>
-            <div className="text-[10px] font-bold text-slate-300 uppercase tracking-tighter whitespace-nowrap mt-3">
-              Record ID: {overrideId || 'Ad-hoc'}
-            </div>
-          </div>
 
-          {relationshipBuilderMode ? (
-            <div className="flex-1 flex flex-col overflow-hidden">
+            {relationshipBuilderMode ? (
+              <div className="flex-1 flex flex-col overflow-hidden">
+                <div className={`flex-1 overflow-y-auto p-12 transition-colors duration-300 ${theme === 'dark' ? 'bg-slate-950' : theme === 'soft' ? 'bg-[#eee8d5]' : 'bg-slate-50/30'}`}>
+                  <div className={`max-w-4xl mx-auto shadow-sm border min-h-full transition-colors duration-300 ${theme === 'dark' ? 'bg-slate-900 border-slate-800' : theme === 'soft' ? 'bg-[#fdf6e3] border-[#eee8d5]' : 'bg-white border-slate-200'}`}>
+                    <PageDisplayBuilder
+                      annotations={filteredLinkAnnotations}
+                      currentPage={doc.currentPageIndex}
+                      pageData={currentPageData || ''}
+                      currentAnnotationRelation={currentAnnotationRelation}
+                      optionColors={{...optionColors, ...linkModeColors}}
+                      handleTextSelection={handleTextSelection}
+                      userRole={userRole as any}
+                      isReadOnly={isReadOnly}
+                      onClickAnnotation={onClickLinkAnnotation}
+                      theme={theme}
+                      selectedTermContext={selectedTermContext}
+                      temporalTerms={temporalTerms}
+                      showTemporalHighlights={relationshipBuilderMode}
+                    />
+                  </div>
+                </div>
+              </div>
+            ) : (
               <div className={`flex-1 overflow-y-auto p-12 transition-colors duration-300 ${theme === 'dark' ? 'bg-slate-950' : theme === 'soft' ? 'bg-[#eee8d5]' : 'bg-slate-50/30'}`}>
-                <div className={`max-w-4xl mx-auto shadow-sm border min-h-full transition-colors duration-300 ${theme === 'dark' ? 'bg-slate-900 border-slate-800' : theme === 'soft' ? 'bg-[#fdf6e3] border-[#eee8d5]' : 'bg-white border-slate-200'}`}>
-                  <PageDisplayBuilder
-                    annotations={filteredLinkAnnotations}
+                <div className={`max-w-4xl mx-auto shadow-sm border min-h-full pb-32 transition-colors duration-300 ${theme === 'dark' ? 'bg-slate-900 border-slate-800' : theme === 'soft' ? 'bg-[#fdf6e3] border-[#eee8d5]' : 'bg-white border-slate-200'}`}>
+                  <PageDisplay
+                    annotations={visibleAnnotations}
+                    updateAnnotationNote={handleVerifyAnnotation}
+                    userRole={userRole as any}
                     currentPage={doc.currentPageIndex}
                     pageData={currentPageData || ''}
-                    currentAnnotationRelation={currentAnnotationRelation}
-                    optionColors={{...optionColors, ...linkModeColors}}
+                    optionColors={optionColors}
                     handleTextSelection={handleTextSelection}
-                    userRole={userRole as any}
-                    isReadOnly={isReadOnly}
-                    onClickAnnotation={onClickLinkAnnotation}
-                    theme={theme}
+                    activeLabelFilters={activeLabelFilters}
+                    disableFilter={false}
+                    annotationSet="SME"
+                    onClickAnnotation={onClickAnnotation}
                     selectedTermContext={selectedTermContext}
-                    temporalTerms={temporalTerms}
-                    showTemporalHighlights={relationshipBuilderMode}
+                    setSelectedTermContext={setSelectedTermContext}
+                    isReadOnly={isReadOnly}
+                    theme={theme}
                   />
                 </div>
               </div>
-            </div>
-          ) : (
-            <div className={`flex-1 overflow-y-auto p-12 transition-colors duration-300 ${theme === 'dark' ? 'bg-slate-950' : theme === 'soft' ? 'bg-[#eee8d5]' : 'bg-slate-50/30'}`}>
-              <div className={`max-w-4xl mx-auto shadow-sm border min-h-full pb-32 transition-colors duration-300 ${theme === 'dark' ? 'bg-slate-900 border-slate-800' : theme === 'soft' ? 'bg-[#fdf6e3] border-[#eee8d5]' : 'bg-white border-slate-200'}`}>
-                <PageDisplay
-                  annotations={visibleAnnotations}
-                  updateAnnotationNote={handleVerifyAnnotation}
-                  userRole={userRole as any}
-                  currentPage={doc.currentPageIndex}
-                  pageData={currentPageData || ''}
-                  optionColors={optionColors}
-                  handleTextSelection={handleTextSelection}
-                  activeLabelFilters={activeLabelFilters}
-                  disableFilter={false}
-                  annotationSet="SME"
-                  onClickAnnotation={onClickAnnotation}
-                  selectedTermContext={selectedTermContext}
-                  setSelectedTermContext={setSelectedTermContext}
-                  isReadOnly={isReadOnly}
-                  theme={theme}
-                />
-              </div>
-            </div>
-          )}
+            )}
+          </main>
 
-          {/* Bottom Drawer: Metadata */}
-          {activeMetaEntry && (
-            <div className="w-full bg-white border-t border-slate-200 px-8 py-6">
-              <div className="max-w-4xl mx-auto">
-                <div className="flex items-center justify-between gap-4 mb-4">
-                  <h3 className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-500">{activeMetaEntry.label} Reference</h3>
-                  <button onClick={() => setMetaView('none')} className="text-slate-500 hover:text-slate-900 font-semibold text-[10px] uppercase tracking-[0.4em] transition-colors px-4 py-2 rounded-full border border-slate-200 bg-white">Close</button>
-                </div>
-                <div className="bg-slate-50 border border-slate-200 rounded-3xl shadow-sm p-5 text-slate-800 leading-relaxed text-sm space-y-4 min-h-[120px]">
+          {/* Metadata Side Panel */}
+          <aside className="w-[360px] shrink-0 flex flex-col border-l border-slate-200 bg-slate-50/60">
+            <div className="px-6 py-5 border-b border-slate-200 flex items-start justify-between gap-3">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-600">Annotation Inventory</p>
+                <p className="text-[11px] font-semibold text-slate-800">{activeMetaEntry ? activeMetaEntry.label : 'Select metadata to preview'}</p>
+              </div>
+              <button
+                onClick={() => setMetaView('none')}
+                className="w-8 h-8 rounded-full bg-white text-slate-500 hover:text-slate-900 transition-colors flex items-center justify-center"
+                aria-label="Close metadata panel"
+              >
+                ×
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-6 space-y-6">
+              {activeMetaEntry ? (
+                <div className="bg-white border border-slate-200 rounded-[2rem] shadow-sm p-5 text-slate-900">
                   {renderMetaEntryContent(activeMetaEntry)}
                 </div>
-              </div>
+              ) : (
+                <div className="text-sm text-slate-500 uppercase tracking-[0.35em] text-center">
+                  Choose a data source from the top controls
+                </div>
+              )}
             </div>
-          )}
-        </main>
+          </aside>
+        </div>
       </div>
 
       {/* --- Modals & Context --- */}

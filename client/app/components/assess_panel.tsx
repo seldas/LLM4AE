@@ -722,22 +722,32 @@ const renderOutcomesEntries = (data: OutcomesMeta): React.ReactNode => {
           ))}
         </div>
       )}
-      {rows.map((row, idx) => (
-        <div key={`outcome-row-${idx}`} className="bg-gray-50 border border-gray-200 rounded-2xl p-4">
-          <div className="flex items-center justify-between text-[10px] uppercase tracking-[0.3em] text-gray-400 mb-2">
-            <span>Term {row.term_id || idx + 1}</span>
-            <span>{row.start_date ? `Start: ${row.start_date}` : 'Start date unknown'}</span>
+      {rows.map((row, idx) => {
+        const attributes: [string, string | undefined][] = [
+          ['SOC', row.soc],
+          ['HLGT', row.hlgt],
+          ['HLT', row.hlt],
+          ['PT', row.pt],
+          ['LLT', row.llt],
+        ];
+        return (
+          <div key={`outcome-row-${idx}`} className="bg-gray-50 border border-gray-200 rounded-2xl p-4 space-y-3">
+            <div className="flex items-center justify-between text-[10px] uppercase tracking-[0.3em] text-gray-400">
+              <span>Term {row.term_id || idx + 1}</span>
+              <span>{row.start_date ? `Start: ${row.start_date}` : 'Start date unknown'}</span>
+            </div>
+            <div className="text-sm font-semibold text-gray-900">{row.term_label || row.term_event || '—'}</div>
+            <ul className="space-y-1 text-sm text-gray-600">
+              {attributes.map(([label, value]) => (
+                <li key={label} className="flex justify-between">
+                  <span className="font-semibold text-gray-500">{label}:</span>
+                  <span>{value || 'Not provided'}</span>
+                </li>
+              ))}
+            </ul>
           </div>
-          <div className="text-sm font-semibold text-gray-900 mb-1">{row.term_label || row.term_event || '—'}</div>
-          <div className="grid grid-cols-2 gap-3 text-[12px] text-gray-600">
-            <div>SOC: {row.soc || '—'}</div>
-            <div>HLGT: {row.hlgt || '—'}</div>
-            <div>HLT: {row.hlt || '—'}</div>
-            <div>PT: {row.pt || '—'}</div>
-            <div>LLT: {row.llt || '—'}</div>
-          </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 };
