@@ -55,19 +55,62 @@ const normalizeLabelName = (label: string | undefined): string => {
   return LABEL_CANONICAL_OVERRIDES[upper] ?? trimmed;
 };
 
-const aggregateLabelDistribution = (distribution: Stats['label_distribution']): { label: string; counts: LabelCounts; }[] => {
-  const map: Record<string, { label: string; counts: LabelCounts }> = {};
+const LABEL_CATEGORY_ORDER = [
+  'Drug & Therapy',
+  'Medical Events',
+  'Temporal',
+  'Demographic',
+  'History & Context',
+  'Other'
+];
+
+const LABEL_CATEGORY_DEFINITIONS: { name: string; matcher: RegExp }[] = [
+  { name: 'History & Context', matcher: /(MEDICAL HISTORY|FAMILY HISTORY|HISTORY)/ },
+  { name: 'Demographic', matcher: /(AGE|SEX)/ },
+  { name: 'Drug & Therapy', matcher: /(DRUG|DOSE|VACCINE)/ },
+  { name: 'Medical Events', matcher: /(AE|MAE|SYMPTOM|TREATMENT|DIAGNOSTIC|STATUS|DISPOSITION|RULE OUT|RULE_OUT|R\/O|RO|COD|CAUSE OF DEATH|CAUSE|IND|OUTCOME)/ },
+  { name: 'Temporal', matcher: /(TEMPORAL|DATE|TIME|LATENCY|DURATION|RELATIVE)/ }
+];
+
+const categorizeLabel = (label: string): string => {
+  const upper = label.toUpperCase();
+  for (const def of LABEL_CATEGORY_DEFINITIONS) {
+    if (def.matcher.test(upper)) {
+      return def.name;
+    }
+  }
+  return 'Other';
+};
+
+interface AggregatedLabel {
+  label: string;
+  counts: LabelCounts;
+  category: string;
+}
+
+const aggregateLabelDistribution = (distribution: Stats['label_distribution']): AggregatedLabel[] => {
+  const map: Record<string, AggregatedLabel> = {};
   Object.entries(distribution).forEach(([label, counts]) => {
     const canonical = normalizeLabelName(label);
+    const category = categorizeLabel(canonical);
     if (!map[canonical]) {
-      map[canonical] = { label: canonical, counts: { Human: 0, LLM: 0, BERT: 0, Total: 0 } };
+      map[canonical] = {
+        label: canonical,
+        counts: { Human: 0, LLM: 0, BERT: 0, Total: 0 },
+        category
+      };
     }
     map[canonical].counts.Human += counts?.Human ?? 0;
     map[canonical].counts.LLM += counts?.LLM ?? 0;
     map[canonical].counts.BERT += counts?.BERT ?? 0;
     map[canonical].counts.Total += counts?.Total ?? 0;
   });
-  return Object.values(map).sort((a, b) => (b.counts.Total ?? 0) - (a.counts.Total ?? 0));
+  return Object.values(map).sort((a, b) => {
+    const idxA = LABEL_CATEGORY_ORDER.indexOf(a.category);
+    const idxB = LABEL_CATEGORY_ORDER.indexOf(b.category);
+    if (idxA !== idxB) return idxA - idxB;
+    return (b.counts.Total ?? 0) - (a.counts.Total ?? 0);
+  });
 };
 
 export default function AdminDashboardPage() {
@@ -78,6 +121,9 @@ export default function AdminDashboardPage() {
   const [error, setError] = useState('');
   const [adminUser, setAdminUser] = useState<any>(null);
   const [isProcessingBert, setIsProcessingBert] = useState(false);
+  const [categoryExpanded, setCategoryExpanded] = useState<Record<string, boolean>>(() =>
+    LABEL_CATEGORY_ORDER.reduce((acc, name) => ({ ...acc, [name]: true }), {})
+  );
   const router = useRouter();
 
   // Table State
@@ -220,6 +266,10 @@ export default function AdminDashboardPage() {
     }));
   };
 
+  const toggleCategory = (name: string) => {
+    setCategoryExpanded(prev => ({ ...prev, [name]: !prev[name] }));
+  };
+
   // Processed Users List
   const processedUsers = useMemo(() => {
     const enriched = users.map(u => ({
@@ -242,7 +292,12 @@ export default function AdminDashboardPage() {
 
   const maxUserAnnotations = Math.max(...processedUsers.map(u => u.annotation_count || 0), 1);
   const sortedLabels = stats ? aggregateLabelDistribution(stats.label_distribution) : [];
-  const maxLabelCount = sortedLabels.length > 0 ? sortedLabels[0].counts.Total : 1;
+  const maxLabelCount = sortedLabels.reduce((prev, curr) => Math.max(prev, curr.counts.Total ?? 0), 1);
+  const groupedLabelSections = LABEL_CATEGORY_ORDER.map(name => {
+    const items = sortedLabels.filter(entry => entry.category === name);
+    const total = items.reduce((sum, entry) => sum + (entry.counts.Total ?? 0), 0);
+    return { name, items, total };
+  }).filter(section => section.items.length > 0);
 
   if (loading) return (
     <div className="flex items-center justify-center h-screen bg-slate-50">
@@ -260,7 +315,7 @@ export default function AdminDashboardPage() {
           <p className="text-slate-500 font-bold text-[10px] uppercase tracking-widest mt-1">System Monitoring & Database Control</p>
         </div>
         
-        <div className="flex gap-2">
+        <div className="flex gap-2 items-center">
           <button 
             onClick={handleTriggerBert}
             disabled={isProcessingBert}
@@ -268,6 +323,12 @@ export default function AdminDashboardPage() {
           >
             {isProcessingBert ? 'Running...' : 'BERT Annotate'}
           </button>
+          <div className="flex items-center gap-1 px-3 py-1.5 bg-emerald-500 text-white rounded-lg text-[8px] font-black uppercase tracking-widest">
+            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 12l5 5L20 7" />
+            </svg>
+            DB Ready
+          </div>
           <button 
             onClick={() => { fetchStats(); fetchData(); }}
             className="px-3 py-1.5 bg-white border border-slate-200 text-slate-600 rounded-lg font-black text-[8px] uppercase tracking-widest hover:bg-slate-50 transition-all shadow-sm"
@@ -406,84 +467,107 @@ export default function AdminDashboardPage() {
         </div>
 
         {/* Sidebar Column */}
-        <div className="col-span-12 lg:col-span-3 space-y-6">
+        <div className="col-span-12 lg:col-span-3 space-y-6 flex justify-center">
           
           {/* Annotation Inventory - Sorted Bar Chart */}
-          <div className="bg-slate-900 text-white p-8 rounded-[2rem] shadow-xl">
-            <div className="flex items-center justify-between mb-6">
-              <h3 className="text-xs font-black uppercase tracking-[0.2em] text-slate-400">Annotation Inventory</h3>
-              <div className="flex gap-2 text-[9px] uppercase tracking-[0.3em]">
-                <span className="flex items-center gap-1">
-                  <span className="w-2 h-2 bg-white rounded-full" /> Human
-                </span>
-                <span className="flex items-center gap-1">
-                  <span className="w-2 h-2 bg-blue-400 rounded-full" /> LLM
-                </span>
-                <span className="flex items-center gap-1">
-                  <span className="w-2 h-2 bg-amber-400 rounded-full" /> BERT
-                </span>
-              </div>
+          <div className="w-full max-w-[360px] bg-white rounded-[2rem] shadow-sm border border-slate-200/60 overflow-hidden">
+            <div className="px-8 py-5 border-b border-slate-50 flex items-center justify-center">
+              <h3 className="text-xs font-black text-slate-900 uppercase tracking-widest">Inventory</h3>
             </div>
-            <div className="space-y-6">
-              {sortedLabels.map(({ label, counts }) => {
-                const total = counts?.Total ?? 0;
-                const humanCount = counts?.Human ?? 0;
-                const llmCount = counts?.LLM ?? 0;
-                const bertCount = counts?.BERT ?? 0;
-                const barWidthPercent = (total / maxLabelCount) * 100;
-                const humanPct = total ? (humanCount / total) * 100 : 0;
-                const llmPct = total ? (llmCount / total) * 100 : 0;
-                const bertPct = total ? (bertCount / total) * 100 : 0;
-                return (
-                  <div key={label} className="group">
-                    <div className="flex justify-between text-[9px] font-black uppercase tracking-widest mb-2 text-slate-400">
-                      <span>{label}</span>
-                      <span className="text-white">{total.toLocaleString()}</span>
-                    </div>
-                    <div className="h-1.5 bg-slate-800 rounded-full overflow-hidden">
-                      <div
-                        className="h-full flex transition-all duration-700 ease-out"
-                        style={{ width: `${barWidthPercent}%` }}
-                      >
-                        {humanCount > 0 && (
-                          <div
-                            className="h-full bg-white"
-                            style={{ width: `${humanPct}%` }}
-                          />
-                        )}
-                        {llmCount > 0 && (
-                          <div
-                            className="h-full bg-blue-400"
-                            style={{ width: `${llmPct}%` }}
-                          />
-                        )}
-                        {bertCount > 0 && (
-                          <div
-                            className="h-full bg-amber-400"
-                            style={{ width: `${bertPct}%` }}
-                          />
-                        )}
+            <div className="p-6 space-y-6 max-h-[420px] overflow-y-auto pr-2 sm:pr-0">
+              {groupedLabelSections.length > 0 ? (
+                groupedLabelSections.map(section => {
+                  const isExpanded = categoryExpanded[section.name] ?? true;
+                  return (
+                    <div key={section.name} className="space-y-3">
+                      <div className="flex flex-col gap-1 text-[10px] font-black uppercase tracking-[0.3em] text-slate-500 sm:flex-row sm:items-center sm:justify-between">
+                        <div className="flex flex-col gap-1 leading-tight">
+                          <span>{section.name}</span>
+                          <span className="text-[9px] font-bold text-slate-400">{section.items.length} sub-categories</span>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <span className="text-slate-700">{section.total.toLocaleString()} total</span>
+                          <button
+                            onClick={() => toggleCategory(section.name)}
+                            className="flex h-6 w-6 items-center justify-center rounded-full border border-slate-200 bg-slate-50 text-slate-600 hover:border-slate-400 hover:text-slate-900 transition-colors"
+                            aria-label={`${isExpanded ? 'Collapse' : 'Expand'} ${section.name}`}
+                          >
+                            {isExpanded ? (
+                              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 12 12">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M2 6h8" />
+                              </svg>
+                            ) : (
+                              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 12 12">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 2v8m4-4H2" />
+                              </svg>
+                            )}
+                          </button>
+                        </div>
                       </div>
+                      {isExpanded ? (
+                        <div className="space-y-3">
+                          {section.items.map(({ label, counts }) => {
+                            const total = counts?.Total ?? 0;
+                            const humanCount = counts?.Human ?? 0;
+                            const llmCount = counts?.LLM ?? 0;
+                            const bertCount = counts?.BERT ?? 0;
+                            const barWidthPercent = (total / maxLabelCount) * 100;
+                            const humanPct = total ? (humanCount / total) * 100 : 0;
+                            const llmPct = total ? (llmCount / total) * 100 : 0;
+                            const bertPct = total ? (bertCount / total) * 100 : 0;
+                            return (
+                              <div key={label} className="bg-slate-50/80 rounded-2xl p-4 border border-slate-100 shadow-[0_12px_24px_-14px_rgba(15,23,42,0.8)]">
+                                <div className="flex flex-col gap-3">
+                                  <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                                    <span className="text-[11px] font-semibold text-slate-900 uppercase tracking-[0.25em]">{label}</span>
+                                    <span className="text-[11px] font-black text-slate-700">{total.toLocaleString()}</span>
+                                  </div>
+                                  <div className="h-1.5 bg-slate-200 rounded-full overflow-hidden">
+                                    <div
+                                      className="h-full flex rounded-full transition-all duration-700 ease-out"
+                                      style={{ width: `${barWidthPercent}%` }}
+                                    >
+                                      {humanCount > 0 && (
+                                        <div
+                                          className="h-full bg-slate-700"
+                                          style={{ width: `${humanPct}%` }}
+                                        />
+                                      )}
+                                      {llmCount > 0 && (
+                                        <div
+                                          className="h-full bg-blue-500"
+                                          style={{ width: `${llmPct}%` }}
+                                        />
+                                      )}
+                                      {bertCount > 0 && (
+                                        <div
+                                          className="h-full bg-amber-400"
+                                          style={{ width: `${bertPct}%` }}
+                                        />
+                                      )}
+                                    </div>
+                                  </div>
+                                  <div className="flex flex-col gap-1 text-[9px] font-black uppercase tracking-[0.3em] text-slate-500 sm:flex-row sm:items-center sm:justify-between">
+                                    <span className="text-slate-900">{humanCount.toLocaleString()} Human</span>
+                                    <span className="text-blue-500">{llmCount.toLocaleString()} LLM</span>
+                                    <span className="text-amber-500">{bertCount.toLocaleString()} BERT</span>
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <div className="text-[9px] uppercase tracking-[0.3em] text-slate-400">
+                          {section.items.length} sub-categories hidden • click the icon to expand
+                        </div>
+                      )}
                     </div>
-                    <div className="flex justify-between text-[9px] font-bold uppercase tracking-[0.3em] mt-2 text-slate-400">
-                      <span className="text-white">{humanCount.toLocaleString()} Human</span>
-                      <span className="text-blue-200">{llmCount.toLocaleString()} LLM</span>
-                      <span className="text-amber-200">{bertCount.toLocaleString()} BERT</span>
-                    </div>
-                  </div>
-                );
-              })}
-              {sortedLabels.length === 0 && (
+                  );
+                })
+              ) : (
                 <div className="text-center py-12 text-slate-600 text-xs font-bold uppercase italic">No data</div>
               )}
-            </div>
-          </div>
-
-          <div className="bg-blue-600 p-8 rounded-[2rem] shadow-xl text-white">
-            <h3 className="text-xs font-black uppercase tracking-[0.2em] mb-4">System Status</h3>
-            <p className="text-[10px] font-bold text-blue-100 leading-relaxed mb-6">Database connected via SQLite. Annotation offsets and user mapping are synchronized across all project partitions.</p>
-            <div className="w-full h-1 bg-blue-400 rounded-full overflow-hidden">
-              <div className="w-full h-full bg-white animate-pulse"></div>
             </div>
           </div>
 

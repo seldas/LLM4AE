@@ -326,14 +326,15 @@ export default function HomePage() {
                         handleDeleteProject(name);
                       }}
                       disabled={deletingProject === name}
-                      className="flex-shrink-0 flex items-center gap-1 px-2.5 py-1.5 text-[9px] font-bold uppercase tracking-[0.3em] text-red-500 border border-red-500/60 rounded bg-white hover:bg-red-500 hover:text-white transition-colors disabled:opacity-40 disabled:hover:bg-white"
+                      className="flex-shrink-0 h-8 w-8 flex items-center justify-center text-red-500 border border-red-500/60 rounded bg-white hover:bg-red-500 hover:text-white transition-colors disabled:opacity-40 disabled:hover:bg-white"
+                      title="Remove project"
                     >
                       {deletingProject === name ? (
                         <span className="w-3 h-3 border-2 border-red-500 border-t-transparent rounded-full animate-spin"></span>
                       ) : (
                         <IconTrash />
                       )}
-                      <span>Remove</span>
+                      <span className="sr-only">Remove project</span>
                     </button>
                   )}
                 </div>
