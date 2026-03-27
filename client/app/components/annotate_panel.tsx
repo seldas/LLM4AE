@@ -109,7 +109,7 @@ export default function Annotate_Panel({ overrideProject, overrideId}: Props) {
   
   const [llmPopup, setLlmPopup] = useState<{ 
     visible: boolean; x: number; y: number; text: string; start: number; end: number; 
-    type?: 'AI' | 'SME' | 'NEW'; label?: string; isVerified?: boolean;
+    type?: 'LLM' | 'BERT' | 'SME' | 'NEW'; label?: string; isVerified?: boolean;
     note?: string;
   }>({ visible: false, x: 0, y: 0, text: '', start: 0, end: 0 });
 

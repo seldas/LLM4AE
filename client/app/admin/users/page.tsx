@@ -122,7 +122,7 @@ export default function AdminDashboardPage() {
   const [adminUser, setAdminUser] = useState<any>(null);
   const [isProcessingBert, setIsProcessingBert] = useState(false);
   const [categoryExpanded, setCategoryExpanded] = useState<Record<string, boolean>>(() =>
-    LABEL_CATEGORY_ORDER.reduce((acc, name) => ({ ...acc, [name]: true }), {})
+    LABEL_CATEGORY_ORDER.reduce((acc, name) => ({ ...acc, [name]: false }), {})
   );
   const router = useRouter();
 
@@ -467,14 +467,14 @@ export default function AdminDashboardPage() {
         </div>
 
         {/* Sidebar Column */}
-        <div className="col-span-12 lg:col-span-3 space-y-6 flex justify-center">
+        <div className="col-span-12 lg:col-span-3 space-y-6 flex flex-col justify-start h-full">
           
           {/* Annotation Inventory - Sorted Bar Chart */}
-          <div className="w-full max-w-[360px] bg-white rounded-[2rem] shadow-sm border border-slate-200/60 overflow-hidden">
+          <div className="w-full max-w-[360px] h-full bg-white rounded-[2rem] shadow-sm border border-slate-200/60 overflow-hidden flex flex-col">
             <div className="px-8 py-5 border-b border-slate-50 flex items-center justify-center">
               <h3 className="text-xs font-black text-slate-900 uppercase tracking-widest">Inventory</h3>
             </div>
-            <div className="p-6 space-y-6 max-h-[420px] overflow-y-auto pr-2 sm:pr-0">
+            <div className="p-6 space-y-6 flex-1 overflow-y-auto pr-2 sm:pr-0">
               {groupedLabelSections.length > 0 ? (
                 groupedLabelSections.map(section => {
                   const isExpanded = categoryExpanded[section.name] ?? true;
