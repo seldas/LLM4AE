@@ -349,6 +349,8 @@ def parse_annotation_guidelines():
         label = columns[0]
         description = columns[1]
         rule = columns[2]
+        if all(ch in '- ' for ch in label):
+            continue
         guidelines.append({'label': label, 'description': description, 'rule': rule})
     return guidelines
 
