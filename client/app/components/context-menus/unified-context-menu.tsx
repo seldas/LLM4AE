@@ -1,10 +1,11 @@
-import React, { useEffect, useRef } from 'react';
-import { AnnotationOptions, ContextMenu } from "../../lib/interfaces";
+import React, { useEffect, useRef, useState } from 'react';
+import { AnnotationGuideline, AnnotationOptions, ContextMenu } from "../../lib/interfaces";
 
 interface Props {
   contextMenu: ContextMenu & { type: 'annotation' | 'relationship' | 'verification'; options?: string[] };
   annotationOptions: AnnotationOptions;
   optionColors: { [key: string]: string };
+  annotationGuidelines: AnnotationGuideline[];
   addAnnotation: (label: string) => void;
   handleAddRelationship: (label: string) => void;
   closeContextMenu: () => void;
@@ -15,12 +16,14 @@ const UnifiedContextMenuDisplay = ({
   contextMenu,
   annotationOptions,
   optionColors,
+  annotationGuidelines,
   addAnnotation,
   handleAddRelationship,
   closeContextMenu,
   isReadOnly
 }: Props) => {
   const menuRef = useRef<HTMLDivElement>(null);
+  const [selectedGuideline, setSelectedGuideline] = useState<AnnotationGuideline | null>(null);
 
   useEffect(() => {
     const handleClickOutsideOrEscape = (event: MouseEvent | KeyboardEvent) => {
@@ -63,43 +66,38 @@ const UnifiedContextMenuDisplay = ({
       }}
     >
       {contextMenu.type === 'annotation' && (
-        <div
-          style={{
-            display: 'flex',
-            flexWrap: 'wrap',
-            gap: '6px',
-            padding: '4px',
-            maxWidth: '240px', // adjust based on your layout
-          }}
-        >
-          {Object.keys(annotationOptions).map((option) => (
-            <div
-              key={option}
-              onClick={() => {
-                addAnnotation(option);
-                closeContextMenu();
+        <div className="space-y-3">
+          <label className="text-[9px] font-black uppercase tracking-[0.3em] text-slate-500">Annotation Category</label>
+            <select
+              value={selectedGuideline?.label || ''}
+              onChange={(e) => {
+                const matched = annotationGuidelines.find(item => item.label === e.target.value);
+                setSelectedGuideline(matched || null);
               }}
-              style={{
-                cursor: 'pointer',
-                padding: '4px 8px',
-                borderRadius: '4px',
-                backgroundColor: optionColors[option] || '#f2f2f2',
-                color: '#333',
-                fontSize: '11px',
-                fontWeight: 500,
-                transition: 'background-color 0.2s ease',
-                whiteSpace: 'nowrap',
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.backgroundColor = '#e0e0e0';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.backgroundColor = optionColors[option] || '#f2f2f2';
-              }}
+              className="w-full rounded border border-slate-200 px-3 py-2 text-[11px] font-semibold text-slate-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
             >
-              {option}
-            </div>
-          ))}
+              <option value="" disabled>Select category</option>
+              {annotationGuidelines.map((item) => (
+                <option key={item.label} value={item.label}>{item.label}</option>
+              ))}
+            </select>
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-[10px] text-slate-600 min-h-[64px]">
+            {selectedGuideline ? (
+              <>
+                <p className="font-semibold text-slate-900 mb-1">{selectedGuideline.description}</p>
+                <p className="text-[9px] text-slate-500 italic">{selectedGuideline.rule}</p>
+              </>
+            ) : (
+              <p className="text-[9px] text-slate-500 italic">Choose a category to see its definition.</p>
+            )}
+          </div>
+          <button
+            onClick={() => selectedGuideline && addAnnotation(selectedGuideline.label)}
+            disabled={!selectedGuideline}
+            className="w-full py-2 rounded-lg bg-blue-600 text-white text-xs font-bold uppercase tracking-[0.3em] transition-all hover:bg-blue-700 disabled:bg-slate-300"
+          >
+            OK
+          </button>
         </div>
       )}
 

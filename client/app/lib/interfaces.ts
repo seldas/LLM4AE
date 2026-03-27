@@ -52,6 +52,13 @@ export interface AnnotationOptionSet {
     [key: string]: AnnotationOptions
 }
 
+export interface AnnotationGuideline {
+    label: string;
+    description: string;
+    rule: string;
+    color?: string;
+}
+
 export interface HighlightedTerms {
     [key: string]: boolean
 }

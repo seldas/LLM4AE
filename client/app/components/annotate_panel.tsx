@@ -7,7 +7,8 @@ import {
   Annotation,
   AnnotationOptions,
   AnnotationRelationships,
-  TextContext
+  TextContext,
+  AnnotationGuideline
 } from '../lib/interfaces';
 import { getHistoryFile, getCaseById, saveAnnotationsToDb } from '../lib/api';
 import {  
@@ -86,6 +87,7 @@ export default function Annotate_Panel({ overrideProject, overrideId}: Props) {
   const [currentRelationType, setCurrentRelationType] = useState<keyof AnnotationRelationships | ''>('');
   
   const [annotationOptions, setAnnotationOptions] = useState<AnnotationOptions>({});
+  const [annotationGuidelines, setAnnotationGuidelines] = useState<AnnotationGuideline[]>([]);
   const [optionColors, setOptionColors] = useState<{ [key: string]: string }>({});
   const [activeLabelFilters, setActiveLabelFilters] = useState<string[]>([]);
   const [showRejected, setShowRejected] = useState(false);
@@ -264,6 +266,7 @@ export default function Annotate_Panel({ overrideProject, overrideId}: Props) {
       const absoluteEnd = absoluteStart + text.length;
       setSelectedText(text);
       if (!relationshipBuilderMode) {
+        if (!annotationGuidelines.length) return;
         setUnifiedContextMenu({ visible: true, x: rect.left + window.scrollX, y: rect.top + window.scrollY, type: 'annotation', start: absoluteStart, end: absoluteEnd });
       } else if (currentAnnotationRelation) {
           setUnifiedContextMenu({ visible: true, x: rect.left + window.scrollX, y: rect.top + window.scrollY, type: 'relationship', start: absoluteStart, end: absoluteEnd, options: ['Set', 'Delete'] });
@@ -406,6 +409,20 @@ export default function Annotate_Panel({ overrideProject, overrideId}: Props) {
     });
   }, [doc.annotations]);
 
+  useEffect(() => {
+    const loadGuidelines = async () => {
+      try {
+        const res = await fetch('/api/annotation-guidelines');
+        if (!res.ok) throw new Error('Guidelines fetch failed');
+        const data: AnnotationGuideline[] = await res.json();
+        setAnnotationGuidelines(data);
+      } catch (err) {
+        console.error('Unable to load annotation guidelines', err);
+      }
+    };
+    loadGuidelines();
+  }, []);
+
   return (
     <div className="app-container h-screen overflow-hidden flex flex-col bg-slate-50 text-slate-900 antialiased">
       
@@ -502,17 +519,18 @@ export default function Annotate_Panel({ overrideProject, overrideId}: Props) {
 
         {/* Center Canvas */}
         <main className="flex-1 flex flex-col overflow-hidden bg-white">
-          <div className="px-8 py-3 border-b border-slate-100 flex items-center justify-between bg-white shrink-0">
-            <div className="flex items-center gap-6">
-              <div className="flex items-center gap-3 bg-slate-100 rounded-full px-3 py-1 shrink-0">
-                <button onClick={() => setRelationshipBuilderMode(false)} className={`px-3 py-0.5 rounded-full text-[10px] font-bold transition-all ${!relationshipBuilderMode ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400'}`}>STANDARD</button>
-                <button onClick={() => setRelationshipBuilderMode(true)} className={`px-3 py-0.5 rounded-full text-[10px] font-bold transition-all ${relationshipBuilderMode ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400'}`}>LINK MODE</button>
-              </div>
+          <div className="px-8 py-3 border-b border-slate-100 bg-white shrink-0">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="flex items-center gap-3 bg-slate-100 rounded-full px-3 py-1 shrink-0">
+                  <button onClick={() => setRelationshipBuilderMode(false)} className={`px-3 py-0.5 rounded-full text-[10px] font-bold transition-all ${!relationshipBuilderMode ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400'}`}>STANDARD</button>
+                  <button onClick={() => setRelationshipBuilderMode(true)} className={`px-3 py-0.5 rounded-full text-[10px] font-bold transition-all ${relationshipBuilderMode ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400'}`}>LINK MODE</button>
+                </div>
 
-              <div className="flex items-center gap-1.5 ml-2 mr-4">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Layers:</span>
-                <div className="flex bg-slate-100 p-0.5 rounded-full gap-0.5">
-                  {['Human', 'LLM', 'BERT'].map(layer => (
+                <div className="flex items-center gap-1.5 ml-2 mr-0">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Layers:</span>
+                  <div className="flex bg-slate-100 p-0.5 rounded-full gap-0.5">
+                    {['Human', 'LLM', 'BERT'].map(layer => (
                     <button 
                       key={layer} 
                       onClick={() => handleLayerToggle(layer)} 
@@ -524,10 +542,10 @@ export default function Annotate_Panel({ overrideProject, overrideId}: Props) {
                 </div>
               </div>
 
-              <div className="flex items-center gap-1.5 mr-4">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Theme:</span>
-                <div className="flex bg-slate-100 p-0.5 rounded-full gap-0.5">
-                  {['light', 'dark', 'soft'].map(t => (
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Theme:</span>
+                  <div className="flex bg-slate-100 p-0.5 rounded-full gap-0.5">
+                    {['light', 'dark', 'soft'].map(t => (
                     <button 
                       key={t} 
                       onClick={() => setTheme(t as any)} 
@@ -539,17 +557,16 @@ export default function Annotate_Panel({ overrideProject, overrideId}: Props) {
                 </div>
               </div>
 
-              <div className="flex gap-1.5 items-center">
-                <span className="text-[10px] font-bold text-slate-400 uppercase mr-1">Data:</span>
-                {['Demographic', 'Products', 'Outcomes'].map(v => (
-                  <button key={v} onClick={() => setMetaView(metaView === v.toLowerCase() ? 'none' : v.toLowerCase() as any)} className={`px-2 py-0.5 rounded text-[10px] font-bold transition-all border ${metaView === v.toLowerCase() ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-400 border-slate-200 hover:border-slate-300'}`}>{v}</button>
-                ))}
+                <div className="flex gap-1.5 items-center">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase mr-1">Data:</span>
+                  {['Demographic', 'Products', 'Outcomes'].map(v => (
+                    <button key={v} onClick={() => setMetaView(metaView === v.toLowerCase() ? 'none' : v.toLowerCase() as any)} className={`px-2 py-0.5 rounded text-[10px] font-bold transition-all border ${metaView === v.toLowerCase() ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-400 border-slate-200 hover:border-slate-300'}`}>{v}</button>
+                  ))}
+                </div>
               </div>
-            </div>
-
-
-            <div className="text-[10px] font-bold text-slate-300 uppercase tracking-tighter">
-              Record ID: {overrideId || 'Ad-hoc'}
+              <div className="text-[10px] font-bold text-slate-300 uppercase tracking-tighter">
+                Record ID: {overrideId || 'Ad-hoc'}
+              </div>
             </div>
           </div>
 
@@ -656,7 +673,10 @@ export default function Annotate_Panel({ overrideProject, overrideId}: Props) {
 
       {unifiedContextMenu.visible && !isReadOnly && (
         <UnifiedContextMenuDisplay
-          contextMenu={unifiedContextMenu} annotationOptions={annotationOptions} optionColors={optionColors}
+          contextMenu={unifiedContextMenu}
+          annotationOptions={annotationOptions}
+          optionColors={optionColors}
+          annotationGuidelines={annotationGuidelines}
           addAnnotation={handleAddAnnotation}
           handleAddRelationship={(opt) => {
              if (isReadOnly || !currentAnnotationRelation || !currentRelationType) return;

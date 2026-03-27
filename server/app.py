@@ -11,6 +11,7 @@ from project_management import project_blueprint
 from text_processing import *  # noqa: F403
 from llm_annotation import run_llm_annotation, call_llm  # noqa: F401
 from database_manager import get_db_connection, get_project_by_name, get_case, upsert_case, get_annotations, get_user_by_note, authenticate_user
+from llm_prompts import annotation_guideline
 from ai_client import call_ai as ai_call
 
 # -----------------------------------------------------------------------------
@@ -336,6 +337,29 @@ def adjudicate():
 # -----------------------------------------------------------------------------
 # API: Trigger LLM annotation (background)
 # -----------------------------------------------------------------------------
+def parse_annotation_guidelines():
+    guidelines = []
+    lines = [line.strip() for line in annotation_guideline.splitlines()]
+    for line in lines:
+        if not line.startswith('|'):
+            continue
+        columns = [col.strip() for col in line.strip('|').split('|')]
+        if len(columns) < 4 or columns[0].lower().startswith('clinical concept'):
+            continue
+        label = columns[0]
+        description = columns[1]
+        rule = columns[2]
+        guidelines.append({'label': label, 'description': description, 'rule': rule})
+    return guidelines
+
+@app.route("/api/annotation-guidelines", methods=["GET"])
+@cross_origin()
+def get_annotation_guidelines():
+    try:
+        return jsonify(parse_annotation_guidelines()), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 @app.route("/api/llm-annotate", methods=["POST"])
 @cross_origin()
 def trigger_llm_annotation():
