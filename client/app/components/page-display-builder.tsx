@@ -162,19 +162,29 @@ const PageDisplayBuilder = ({
         });
       }
 
-        if (showTemporalHighlights && temporalTerms?.length) {
-          const seen = new Set<string>();
-          temporalTerms.forEach(term => {
-            const start = term.textContext.start ?? 0;
-            const end = term.textContext.end ?? 0;
-            if (end <= start) return;
-            const key = `${start}-${end}`;
-            if (seen.has(key)) return;
-            seen.add(key);
-            const color = TIMELINE_HIGHLIGHT_COLOR;
-            addBox(start, end, term.label, color, false, term.note || "", false, true, term, true);
-          });
-        }
+      const relationRanges = new Set<string>();
+      if (currentAnnotationRelation) {
+        Object.values(currentAnnotationRelation.relationships).forEach(relCtx => {
+          if (relCtx.start === undefined || relCtx.end === undefined) return;
+          if (relCtx.start === relCtx.end) return;
+          relationRanges.add(`${relCtx.start}-${relCtx.end}`);
+        });
+      }
+
+      if (showTemporalHighlights && temporalTerms?.length) {
+        const seen = new Set<string>();
+        temporalTerms.forEach(term => {
+          const start = term.textContext.start ?? 0;
+          const end = term.textContext.end ?? 0;
+          if (end <= start) return;
+          const key = `${start}-${end}`;
+          if (seen.has(key)) return;
+          if (relationRanges.has(key)) return;
+          seen.add(key);
+          const color = TIMELINE_HIGHLIGHT_COLOR;
+          addBox(start, end, term.label, color, false, term.note || "", false, true, term, true);
+        });
+      }
 
       if (selectedTermContext && (!currentAnnotationRelation || selectedTermContext.start !== currentAnnotationRelation.textContext.start || selectedTermContext.end !== currentAnnotationRelation.textContext.end)) {
         addBox(selectedTermContext.start, selectedTermContext.end, "Temporal", "hsl(48, 95%, 70%)", false, "", true);

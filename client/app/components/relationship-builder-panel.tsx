@@ -34,6 +34,7 @@ const RELATIONSHIP_TYPES: Array<{ key: keyof AnnotationRelationships; label: str
 const RelationshipBuilderPanel = (props: Props) => {
     const annotations = props.annotations
         .sort((a,b) => (a.textContext.start||0) - (b.textContext.start||0));
+    const currentAnnotation = props.currentAnnotation;
     return (
         <div className="relationship-builder-panel h-full flex flex-col gap-4">
           <div>
@@ -44,7 +45,9 @@ const RelationshipBuilderPanel = (props: Props) => {
           </div>
 
           <div className="space-y-3 overflow-y-auto pr-1 flex-1">
-            {annotations.map((annotation, idx) => {
+            {annotations
+              .filter(annotation => !currentAnnotation || annotation.textContext.start === currentAnnotation.textContext.start)
+              .map((annotation, idx) => {
                 const isActiveEntity = props.currentAnnotation?.textContext.start === annotation.textContext.start;
                 const rel = annotation.relationships || {};
                 return (
