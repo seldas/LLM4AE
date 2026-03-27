@@ -701,53 +701,94 @@ const renderProductGroups = (data: ProductsMeta): React.ReactNode => {
   );
 };
 
+const splitColonSegments = (value?: string): string[] =>
+  (value || '')
+    .split(':')
+    .map(segment => segment.trim())
+    .filter(Boolean);
+
 const renderOutcomesEntries = (data: OutcomesMeta): React.ReactNode => {
   const rows = Array.isArray(data.rows) ? data.rows : [];
   const categories = data.categories || {};
   if (!rows.length && !Object.keys(categories).length) {
     return <p className="text-sm text-gray-500 italic">No outcomes listed.</p>;
   }
-  return (
-    <div className="space-y-4">
-      {Object.entries(categories).length > 0 && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          {Object.entries(categories).map(([category, items]) => (
-            <div key={category} className="bg-white border border-gray-200 rounded-2xl p-3 text-[10px] uppercase tracking-[0.3em] text-gray-500">
-              <div className="font-semibold text-gray-800 mb-1">{category}</div>
-              <p className="text-[12px] text-gray-600">
-                {(Array.isArray(items) ? items.map(item => item?.text || '').filter(Boolean) : []).join(', ') ||
-                  'Not provided'}
-              </p>
-            </div>
-          ))}
-        </div>
-      )}
-      {rows.map((row, idx) => {
-        const attributes: [string, string | undefined][] = [
-          ['SOC', row.soc],
-          ['HLGT', row.hlgt],
-          ['HLT', row.hlt],
-          ['PT', row.pt],
-          ['LLT', row.llt],
-        ];
+
+  const renderCategoryList = () => (
+    <div className="space-y-2">
+      {Object.entries(categories).map(([category, items]) => {
+        const segments = (Array.isArray(items) ? items : [])
+          .flatMap(item => splitColonSegments(item?.text))
+          .filter(Boolean);
         return (
-          <div key={`outcome-row-${idx}`} className="bg-gray-50 border border-gray-200 rounded-2xl p-4 space-y-3">
-            <div className="flex items-center justify-between text-[10px] uppercase tracking-[0.3em] text-gray-400">
-              <span>Term {row.term_id || idx + 1}</span>
-              <span>{row.start_date ? `Start: ${row.start_date}` : 'Start date unknown'}</span>
-            </div>
-            <div className="text-sm font-semibold text-gray-900">{row.term_label || row.term_event || '—'}</div>
-            <ul className="space-y-1 text-sm text-gray-600">
-              {attributes.map(([label, value]) => (
-                <li key={label} className="flex justify-between">
-                  <span className="font-semibold text-gray-500">{label}:</span>
-                  <span>{value || 'Not provided'}</span>
-                </li>
-              ))}
+          <div key={category} className="border border-gray-200 rounded-2xl bg-white px-4 py-3">
+            <p className="text-[11px] uppercase tracking-[0.4em] text-gray-500 mb-2">{category}</p>
+            <ul className="list-disc list-inside text-sm text-gray-600 space-y-1">
+              {segments.length > 0 ? segments.map((segment, idx) => (
+                <li key={`${category}-${idx}`}>{segment}</li>
+              )) : <li>Not provided</li>}
             </ul>
           </div>
         );
       })}
+    </div>
+  );
+
+  const formatColonList = (value?: string): string[] =>
+    (value || '')
+      .split(':')
+      .map(segment => segment.trim())
+      .filter(Boolean);
+
+  const renderColonLines = (value?: string) => {
+    const segments = formatColonList(value);
+    if (!segments.length) return <span>—</span>;
+    return (
+      <div className="space-y-1">
+        {segments.map((segment, idx) => (
+          <p key={`${segment}-${idx}`} className="text-[11px] text-gray-600 leading-tight">
+            {segment}
+          </p>
+        ))}
+      </div>
+    );
+  };
+
+  const renderRowsTable = () => (
+    <div className="overflow-x-auto">
+      <table className="min-w-full text-sm border-collapse">
+        <thead>
+          <tr className="bg-slate-100 text-[10px] uppercase tracking-[0.3em] text-gray-500">
+            <th className="px-3 py-2 text-left">Term</th>
+            <th className="px-3 py-2 text-left">Start Date</th>
+            <th className="px-3 py-2 text-left">SOC</th>
+            <th className="px-3 py-2 text-left">HLGT</th>
+            <th className="px-3 py-2 text-left">HLT</th>
+            <th className="px-3 py-2 text-left">PT</th>
+            <th className="px-3 py-2 text-left">LLT</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row, idx) => (
+            <tr key={`row-${idx}`} className="border-b border-slate-100 last:border-none">
+              <td className="px-3 py-2 text-gray-800 font-semibold">{row.term_label || row.term_event || `Term ${row.term_id || idx + 1}`}</td>
+              <td className="px-3 py-2 text-gray-600">{row.start_date || 'Unknown'}</td>
+              <td className="px-3 py-2">{renderColonLines(row.soc)}</td>
+              <td className="px-3 py-2">{renderColonLines(row.hlgt)}</td>
+              <td className="px-3 py-2">{renderColonLines(row.hlt)}</td>
+              <td className="px-3 py-2">{renderColonLines(row.pt)}</td>
+              <td className="px-3 py-2">{renderColonLines(row.llt)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+
+  return (
+    <div className="space-y-4">
+      {Object.entries(categories).length > 0 && renderCategoryList()}
+      {rows.length > 0 && renderRowsTable()}
     </div>
   );
 };

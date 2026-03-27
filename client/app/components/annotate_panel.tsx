@@ -124,23 +124,38 @@ export default function Annotate_Panel({ overrideProject, overrideId}: Props) {
     }
     return (
       <div className="space-y-4">
-        {sanitized.map((entry, index) => (
-          <div key={`${entry.label}-${index}`} className="bg-white border border-slate-200 rounded-[1.5rem] p-4">
-            <p className="text-[9px] uppercase tracking-[0.4em] text-slate-400 mb-2">{entry.label}</p>
-            {entry.type === 'list' ? (
-              <div className="space-y-1 text-sm text-slate-700">
-                {(entry.items || []).map((item: string, idx: number) => (
-                  <p key={idx} className="leading-snug flex items-start gap-1">
-                    <span className="text-slate-400">•</span>
-                    <span>{item}</span>
-                  </p>
-                ))}
-              </div>
-            ) : (
-              <p className="text-sm text-slate-700">{entry.value}</p>
-            )}
-          </div>
-        ))}
+        {sanitized.map((entry, index) => {
+          const lowerLabel = entry.label?.toLowerCase() || '';
+          const isMedicalHistory = lowerLabel.includes('medical history');
+          const isAttachment = lowerLabel.includes('attachment');
+          return (
+            <div key={`${entry.label}-${index}`} className="bg-white border border-slate-200 rounded-[1.5rem] p-4">
+              {entry.type === 'list' ? (
+                <details
+                  className="space-y-3"
+                  open={!isMedicalHistory && !isAttachment}
+                >
+                  <summary className="text-[9px] uppercase tracking-[0.4em] text-slate-400 cursor-pointer">
+                    {entry.label}
+                  </summary>
+                  <div className="space-y-1 text-sm text-slate-700">
+                    {(entry.items || []).map((item: string, idx: number) => (
+                      <p key={idx} className="leading-snug flex items-start gap-1">
+                        <span className="text-slate-400">•</span>
+                        <span>{item}</span>
+                      </p>
+                    ))}
+                  </div>
+                </details>
+              ) : (
+                <>
+                  <p className="text-[9px] uppercase tracking-[0.4em] text-slate-400 mb-2">{entry.label}</p>
+                  <p className="text-sm text-slate-700">{entry.value}</p>
+                </>
+              )}
+            </div>
+          );
+        })}
       </div>
     );
   };
@@ -151,22 +166,21 @@ export default function Annotate_Panel({ overrideProject, overrideId}: Props) {
       return <p className="text-sm text-slate-500 italic">No product data available.</p>;
     }
     return (
-      <div className="space-y-5">
+      <div className="space-y-4">
         {groups.map((group: any) => (
           <div key={group.role} className="space-y-3">
-            <div className="flex items-center justify-between text-[10px] uppercase tracking-[0.3em] text-slate-500">
-              <span>{group.role} Products</span>
-              <span>{group.count ?? group.items?.length ?? 0} items</span>
-            </div>
-            <div className="space-y-3">
+            <div className="text-[10px] uppercase tracking-[0.3em] text-slate-500">{group.role} Products</div>
+            <div className="space-y-2">
               {(group.items || []).map((item: any, index: number) => (
-                <div key={`${group.role}-${index}`} className="bg-slate-50 border border-slate-200 rounded-[1.5rem] p-4">
-                  <div className="text-sm font-semibold text-slate-900 mb-3">{item.display_name}</div>
-                  <div className="grid grid-cols-2 gap-3 text-[12px] text-slate-700">
+                <div key={`${group.role}-${index}`} className="border border-slate-200 rounded-[1.5rem] bg-white">
+                  <div className="px-4 py-3 border-b border-slate-100">
+                    <p className="text-sm font-semibold text-slate-900">{item.display_name}</p>
+                  </div>
+                  <div className="px-4 py-3 space-y-1 text-[12px] text-slate-700">
                     {(item.fields || []).map((field: any) => (
-                      <div key={`${field.label}-${field.value}`} className="space-y-1">
-                        <p className="text-[9px] uppercase tracking-[0.4em] text-slate-400">{field.label}</p>
-                        <p className="font-semibold text-slate-800">{field.value}</p>
+                      <div key={`${field.label}-${field.value}`} className="flex justify-between">
+                        <span className="text-[10px] uppercase tracking-[0.3em] text-slate-400">{field.label}</span>
+                        <span className="font-semibold text-slate-800">{field.value}</span>
                       </div>
                     ))}
                   </div>
@@ -181,42 +195,61 @@ export default function Annotate_Panel({ overrideProject, overrideId}: Props) {
 
   const renderOutcomesStructured = (data: any): ReactNode => {
     const rows = Array.isArray(data?.rows) ? data.rows : [];
-    const categories = data?.categories || {};
-    if (!rows.length && !Object.keys(categories).length) {
+    if (!rows.length) {
       return <p className="text-sm text-slate-500 italic">No outcomes data available.</p>;
     }
-    return (
+
+    const formatColonSegments = (value?: string) =>
+      (value || '')
+        .split(':')
+        .map(segment => segment.trim())
+        .filter(Boolean);
+
+    const buildPaths = (row: any) => {
+      const segments = {
+        soc: formatColonSegments(row.soc),
+        hlgt: formatColonSegments(row.hlgt),
+        hlt: formatColonSegments(row.hlt),
+        pt: formatColonSegments(row.pt),
+        llt: formatColonSegments(row.llt),
+      };
+      const maxSegments = Math.max(
+        segments.soc.length,
+        segments.hlgt.length,
+        segments.hlt.length,
+        segments.pt.length,
+        segments.llt.length,
+        1
+      );
+      return Array.from({ length: maxSegments }, (_, idx) => ({
+        soc: segments.soc[idx] || '',
+        hlgt: segments.hlgt[idx] || '',
+        hlt: segments.hlt[idx] || '',
+        pt: segments.pt[idx] || '',
+        llt: segments.llt[idx] || '',
+      }));
+    };
+
+    const renderRowsList = () => (
       <div className="space-y-4">
-        {Object.entries(categories).length > 0 && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {Object.entries(categories).map(([category, items]) => (
-              <div key={category} className="bg-white border border-slate-200 rounded-2xl p-3 text-[10px] uppercase tracking-[0.3em] text-slate-500">
-                <div className="font-semibold text-slate-800 mb-2">{category}</div>
-                <p className="text-[12px] text-slate-600">
-                  {(Array.isArray(items) ? items.map((item: any) => item?.text || '').filter(Boolean) : []).join(', ') || 'Not provided'}
-                </p>
-              </div>
-            ))}
-          </div>
-        )}
-        {rows.map((row: any) => (
-          <div key={`row-${row.term_id}-${row.term_label}`} className="bg-slate-50 border border-slate-200 rounded-[1.5rem] p-4">
-            <div className="flex items-center justify-between text-[10px] uppercase tracking-[0.3em] text-slate-400">
-              <span>Term {row.term_id}</span>
-              <span>{row.start_date ? `Start: ${row.start_date}` : 'Start date unknown'}</span>
-            </div>
-            <div className="mt-2 space-y-2">
-              <div className="text-sm font-semibold text-slate-900">{row.term_label || row.term_event || '—'}</div>
-              <div className="grid grid-cols-2 gap-3 text-[11px] text-slate-600">
-                <div>SOC: {row.soc || '—'}</div>
-                <div>HLGT: {row.hlgt || '—'}</div>
-                <div>HLT: {row.hlt || '—'}</div>
-                <div>PT: {row.pt || '—'}</div>
-                <div>LLT: {row.llt || '—'}</div>
-              </div>
-            </div>
+        {rows.map((row: any, idx: number) => (
+          <div
+            key={row.term_id ? `term-${row.term_id}-${idx}` : `term-${idx}`}
+            className="px-4 py-3 space-y-2 text-[12px] text-slate-700"
+          >
+              <p><span className="text-[10px] uppercase tracking-[0.3em] text-slate-500">SOC:</span> {formatColonSegments(row.soc).join(' / ') || '—'}</p>
+              <p><span className="text-[10px] uppercase tracking-[0.3em] text-slate-500">HLGT:</span> {formatColonSegments(row.hlgt).join(' / ') || '—'}</p>
+              <p><span className="text-[10px] uppercase tracking-[0.3em] text-slate-500">HLT:</span> {formatColonSegments(row.hlt).join(' / ') || '—'}</p>
+              <p><span className="text-[10px] uppercase tracking-[0.3em] text-slate-500">PT:</span> {formatColonSegments(row.pt).join(' / ') || '—'}</p>
+              <p><span className="text-[10px] uppercase tracking-[0.3em] text-slate-500">LLT:</span> {formatColonSegments(row.llt).join(' / ') || '—'}</p>
           </div>
         ))}
+      </div>
+    );
+
+    return (
+      <div className="space-y-2">
+        {renderRowsList()}
       </div>
     );
   };
@@ -852,9 +885,9 @@ export default function Annotate_Panel({ overrideProject, overrideId}: Props) {
 
           {/* Metadata Side Panel */}
           <aside className="w-[360px] shrink-0 flex flex-col border-l border-slate-200 bg-slate-50/60">
-            <div className="px-6 py-5 border-b border-slate-200 flex items-start justify-between gap-3">
+          <div className="px-6 py-5 border-b border-slate-200 flex items-start justify-between gap-3">
               <div>
-                <p className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-600">Annotation Inventory</p>
+                <p className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-600">Meta Inventory</p>
                 <p className="text-[11px] font-semibold text-slate-800">{activeMetaEntry ? activeMetaEntry.label : 'Select metadata to preview'}</p>
               </div>
               <button
