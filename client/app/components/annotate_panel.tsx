@@ -280,24 +280,6 @@ export default function Annotate_Panel({ overrideProject, overrideId}: Props) {
       }
   };
 
-  const handleTemporalTermSelect = (term: Annotation) => {
-    if (isReadOnly) return;
-    const panelRect = document.querySelector('.relationship-builder-panel')?.getBoundingClientRect();
-    const x = (panelRect?.left ?? window.innerWidth / 2) + 30;
-    const y = (panelRect?.top ?? window.innerHeight / 2) + 30;
-    setSelectedText(term.textContext.text);
-    setSelectedTermContext({ text: term.textContext.text, start: term.textContext.start || 0, end: term.textContext.end || 0 });
-    setUnifiedContextMenu({
-      visible: true,
-      x,
-      y,
-      type: 'relationship',
-      start: term.textContext.start || 0,
-      end: term.textContext.end || 0,
-      options: ['Set', 'Delete']
-    });
-  };
-
   const handleAddAnnotation = (label: string) => {
       if (isReadOnly) return;
       const newAnnotation: Annotation = {
@@ -554,7 +536,6 @@ export default function Annotate_Panel({ overrideProject, overrideId}: Props) {
                     isReadOnly={isReadOnly}
                     temporalTerms={temporalTerms}
                     currentAnnotationIsPrimary={isPrimaryEntitySelected}
-                    onTemporalSelect={handleTemporalTermSelect}
                     selectedTermContext={selectedTermContext}
                   />
                 </div>

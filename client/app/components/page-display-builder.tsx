@@ -88,7 +88,7 @@ const PageDisplayBuilder = ({
 
   const getAnnotatorDisplay = (note: string) => {
     const upperNote = note.toUpperCase();
-    if (['SME1', 'SME2', 'ADJUDICATOR'].includes(upperNote)) return 'DevUser';
+    if (['SME1', 'SME2', 'ADJUDICATOR'].includes(upperNote) || upperNote.includes('MJ.L')) return 'DEVUSER';
     return note;
   };
 
@@ -114,13 +114,14 @@ const PageDisplayBuilder = ({
     if (lh > 0) setLineCount(Math.round(container.offsetHeight / lh));
   }, []);
     
+  const TIMELINE_HIGHLIGHT_COLOR = "hsl(52, 100%, 70%)";
   const computeHighlightBoxes = useCallback(() => {
       const container = textRef.current;
       if (!container) return;
       const containerRect = container.getBoundingClientRect();
       const boxes: any[] = [];
 
-      const addBox = (start: number, end: number, label: string, color: string, isRelation: boolean, note: string = "", isSelected: boolean = false, isFirstBox: boolean = true, annotation?: Annotation) => {
+      const addBox = (start: number, end: number, label: string, color: string, isRelation: boolean, note: string = "", isSelected: boolean = false, isFirstBox: boolean = true, annotation?: Annotation, isTemporalHighlight = false) => {
         const startInfo = getNodeAndOffsetForIndex(container, start);
         const endInfo = getNodeAndOffsetForIndex(container, end);
         if (startInfo && endInfo) {
@@ -137,8 +138,9 @@ const PageDisplayBuilder = ({
                 width: r.width,
                 height: r.height,
                 label, color, isRelation, start, end, note, isSelected,
-                isFirstBox: isFirstBox && idx === 0
-                , annotationRef: annotation
+                isFirstBox: isFirstBox && idx === 0,
+                annotationRef: annotation,
+                isTemporalHighlight
               });
             }
           } catch (e) {}
@@ -160,19 +162,19 @@ const PageDisplayBuilder = ({
         });
       }
 
-      if (showTemporalHighlights && temporalTerms?.length) {
-        const seen = new Set<string>();
-        temporalTerms.forEach(term => {
-          const start = term.textContext.start ?? 0;
-          const end = term.textContext.end ?? 0;
-          if (end <= start) return;
-          const key = `${start}-${end}`;
-          if (seen.has(key)) return;
-          seen.add(key);
-          const color = optionColors[term.label.toUpperCase()] || "hsl(48, 95%, 70%)";
-          addBox(start, end, term.label, color, false, term.note || "", false, true, term);
-        });
-      }
+        if (showTemporalHighlights && temporalTerms?.length) {
+          const seen = new Set<string>();
+          temporalTerms.forEach(term => {
+            const start = term.textContext.start ?? 0;
+            const end = term.textContext.end ?? 0;
+            if (end <= start) return;
+            const key = `${start}-${end}`;
+            if (seen.has(key)) return;
+            seen.add(key);
+            const color = TIMELINE_HIGHLIGHT_COLOR;
+            addBox(start, end, term.label, color, false, term.note || "", false, true, term, true);
+          });
+        }
 
       if (selectedTermContext && (!currentAnnotationRelation || selectedTermContext.start !== currentAnnotationRelation.textContext.start || selectedTermContext.end !== currentAnnotationRelation.textContext.end)) {
         addBox(selectedTermContext.start, selectedTermContext.end, "Temporal", "hsl(48, 95%, 70%)", false, "", true);
@@ -214,30 +216,30 @@ const PageDisplayBuilder = ({
           const isPureAI = isAI && !isVerified;
 
           return (
-            <div
-              key={i}
-              id={`ann-match-${box.start}`}
-              onMouseEnter={() => setHoveredBox({ start: box.start, end: box.end })}
-              onMouseLeave={() => setHoveredBox(null)}
-              onClick={() => {
-                if (box.isRelation) return;
-                const annotation = box.annotationRef ?? annotations.find(a => a.textContext.start === box.start && a.textContext.end === box.end);
-                if (annotation) onClickAnnotation?.(annotation);
-              }}
-              style={{
-                position: "absolute",
-                top: (box.top ?? 0) - 2,
-                left: (box.left ?? 0) - 2,
-                width: (box.width ?? 0) + 4,
-                height: (box.height ?? 0) + 4,
-                backgroundColor: box.isRelation || isPureAI ? "transparent" : (box.isSelected ? getTransparentColor(box.color, 0.3) : getTransparentColor(box.color, 0.15)),
-                opacity: 1,
-                zIndex: box.isSelected ? 10 : 2,
-                pointerEvents: "auto",
-                borderRadius: "4px",
-                borderBottom: box.isRelation
-                  ? `2px solid ${darkenHSLColor(box.color)}`
-                  : (isPureAI ? `2px dashed ${darkenHSLColor(box.color)}` : (box.isSelected ? `2px solid ${currentTheme.boxBorder}` : "none")),
+          <div
+            key={i}
+            id={`ann-match-${box.start}`}
+            onMouseEnter={() => setHoveredBox({ start: box.start, end: box.end })}
+            onMouseLeave={() => setHoveredBox(null)}
+            onClick={() => {
+              if (box.isRelation) return;
+              const annotation = box.annotationRef ?? annotations.find(a => a.textContext.start === box.start && a.textContext.end === box.end);
+              if (annotation) onClickAnnotation?.(annotation);
+            }}
+            style={{
+              position: "absolute",
+              top: (box.top ?? 0) - 2,
+              left: (box.left ?? 0) - 2,
+              width: (box.width ?? 0) + 4,
+              height: (box.height ?? 0) + 4,
+              backgroundColor: box.isRelation || isPureAI ? "transparent" : (box.isTemporalHighlight ? getTransparentColor(box.color, 0.5) : (box.isSelected ? getTransparentColor(box.color, 0.3) : getTransparentColor(box.color, 0.15))),
+              opacity: 1,
+              zIndex: box.isSelected ? 10 : 2,
+              pointerEvents: box.isTemporalHighlight ? "none" : "auto",
+              borderRadius: "4px",
+              borderBottom: box.isRelation
+                ? `2px solid ${darkenHSLColor(box.color)}`
+                : (isPureAI ? `2px dashed ${darkenHSLColor(box.color)}` : (box.isSelected ? `2px solid ${currentTheme.boxBorder}` : "none")),
                 boxShadow: isHovered
                   ? "0 0 6px 2px rgba(0,0,0,0.1)"
                   : "none",
