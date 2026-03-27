@@ -23,12 +23,52 @@ interface Stats {
   case_count: number;
   bert_processed_count: number;
   user_count: number;
-  label_distribution: Record<string, number>;
+  label_distribution: Record<string, { Human: number; LLM: number; BERT: number; Total: number; }>;
   user_distribution: Record<string, number>;
 }
 
 type SortKey = 'username' | 'role_name' | 'annotation_count';
 type SortOrder = 'asc' | 'desc';
+
+type LabelCounts = Stats['label_distribution'][string];
+
+const LABEL_CANONICAL_OVERRIDES: Record<string, string> = {
+  'CAUSE OF DEATH': 'Cause of Death',
+  'CAUSE_OF_DEATH': 'Cause of Death',
+  'COD': 'Cause of Death',
+  'RULE OUT': 'Rule Out',
+  'RULE_OUT': 'Rule Out',
+  'R/O': 'Rule Out',
+  'RO': 'Rule Out',
+  'MEDICAL HISTORY': 'Medical History',
+  'MEDICAL_HISTORY': 'Medical History',
+  'HISTORY': 'Medical History',
+  'FAMILY HISTORY': 'Family History',
+  'FAMILY_HISTORY': 'Family History',
+  'FHX': 'Family History'
+};
+
+const normalizeLabelName = (label: string | undefined): string => {
+  if (!label) return 'Unknown';
+  const trimmed = label.trim();
+  const upper = trimmed.toUpperCase();
+  return LABEL_CANONICAL_OVERRIDES[upper] ?? trimmed;
+};
+
+const aggregateLabelDistribution = (distribution: Stats['label_distribution']): { label: string; counts: LabelCounts; }[] => {
+  const map: Record<string, { label: string; counts: LabelCounts }> = {};
+  Object.entries(distribution).forEach(([label, counts]) => {
+    const canonical = normalizeLabelName(label);
+    if (!map[canonical]) {
+      map[canonical] = { label: canonical, counts: { Human: 0, LLM: 0, BERT: 0, Total: 0 } };
+    }
+    map[canonical].counts.Human += counts?.Human ?? 0;
+    map[canonical].counts.LLM += counts?.LLM ?? 0;
+    map[canonical].counts.BERT += counts?.BERT ?? 0;
+    map[canonical].counts.Total += counts?.Total ?? 0;
+  });
+  return Object.values(map).sort((a, b) => (b.counts.Total ?? 0) - (a.counts.Total ?? 0));
+};
 
 export default function AdminDashboardPage() {
   const [users, setUsers] = useState<User[]>([]);
@@ -201,8 +241,8 @@ export default function AdminDashboardPage() {
   const paginatedUsers = processedUsers.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
 
   const maxUserAnnotations = Math.max(...processedUsers.map(u => u.annotation_count || 0), 1);
-  const sortedLabels = stats ? Object.entries(stats.label_distribution).sort((a, b) => b[1] - a[1]) : [];
-  const maxLabelCount = sortedLabels.length > 0 ? sortedLabels[0][1] : 1;
+  const sortedLabels = stats ? aggregateLabelDistribution(stats.label_distribution) : [];
+  const maxLabelCount = sortedLabels.length > 0 ? sortedLabels[0].counts.Total : 1;
 
   if (loading) return (
     <div className="flex items-center justify-center h-screen bg-slate-50">
@@ -370,22 +410,69 @@ export default function AdminDashboardPage() {
           
           {/* Annotation Inventory - Sorted Bar Chart */}
           <div className="bg-slate-900 text-white p-8 rounded-[2rem] shadow-xl">
-            <h3 className="text-xs font-black uppercase tracking-[0.2em] mb-8 text-slate-400">Annotation Inventory</h3>
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="text-xs font-black uppercase tracking-[0.2em] text-slate-400">Annotation Inventory</h3>
+              <div className="flex gap-2 text-[9px] uppercase tracking-[0.3em]">
+                <span className="flex items-center gap-1">
+                  <span className="w-2 h-2 bg-white rounded-full" /> Human
+                </span>
+                <span className="flex items-center gap-1">
+                  <span className="w-2 h-2 bg-blue-400 rounded-full" /> LLM
+                </span>
+                <span className="flex items-center gap-1">
+                  <span className="w-2 h-2 bg-amber-400 rounded-full" /> BERT
+                </span>
+              </div>
+            </div>
             <div className="space-y-6">
-              {sortedLabels.map(([label, count]) => (
-                <div key={label} className="group">
-                  <div className="flex justify-between text-[9px] font-black uppercase tracking-widest mb-2 text-slate-400">
-                    <span>{label}</span>
-                    <span className="text-white">{count.toLocaleString()}</span>
+              {sortedLabels.map(({ label, counts }) => {
+                const total = counts?.Total ?? 0;
+                const humanCount = counts?.Human ?? 0;
+                const llmCount = counts?.LLM ?? 0;
+                const bertCount = counts?.BERT ?? 0;
+                const barWidthPercent = (total / maxLabelCount) * 100;
+                const humanPct = total ? (humanCount / total) * 100 : 0;
+                const llmPct = total ? (llmCount / total) * 100 : 0;
+                const bertPct = total ? (bertCount / total) * 100 : 0;
+                return (
+                  <div key={label} className="group">
+                    <div className="flex justify-between text-[9px] font-black uppercase tracking-widest mb-2 text-slate-400">
+                      <span>{label}</span>
+                      <span className="text-white">{total.toLocaleString()}</span>
+                    </div>
+                    <div className="h-1.5 bg-slate-800 rounded-full overflow-hidden">
+                      <div
+                        className="h-full flex transition-all duration-700 ease-out"
+                        style={{ width: `${barWidthPercent}%` }}
+                      >
+                        {humanCount > 0 && (
+                          <div
+                            className="h-full bg-white"
+                            style={{ width: `${humanPct}%` }}
+                          />
+                        )}
+                        {llmCount > 0 && (
+                          <div
+                            className="h-full bg-blue-400"
+                            style={{ width: `${llmPct}%` }}
+                          />
+                        )}
+                        {bertCount > 0 && (
+                          <div
+                            className="h-full bg-amber-400"
+                            style={{ width: `${bertPct}%` }}
+                          />
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex justify-between text-[9px] font-bold uppercase tracking-[0.3em] mt-2 text-slate-400">
+                      <span className="text-white">{humanCount.toLocaleString()} Human</span>
+                      <span className="text-blue-200">{llmCount.toLocaleString()} LLM</span>
+                      <span className="text-amber-200">{bertCount.toLocaleString()} BERT</span>
+                    </div>
                   </div>
-                  <div className="h-1.5 bg-slate-800 rounded-full overflow-hidden">
-                    <div 
-                      className="h-full bg-blue-500 rounded-full transition-all duration-1000 ease-out group-hover:bg-blue-400 shadow-[0_0_8px_rgba(59,130,246,0.5)]" 
-                      style={{ width: `${(count / maxLabelCount) * 100}%` }}
-                    />
-                  </div>
-                </div>
-              ))}
+                );
+              })}
               {sortedLabels.length === 0 && (
                 <div className="text-center py-12 text-slate-600 text-xs font-bold uppercase italic">No data</div>
               )}

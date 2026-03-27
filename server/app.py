@@ -47,9 +47,39 @@ def get_admin_stats():
                 if meta.get("bert_processed") == "Done":
                     bert_cases += 1
         
-        # Annotations per type
-        label_stats = conn.execute('SELECT label, COUNT(*) as count FROM annotations GROUP BY label ORDER BY count DESC').fetchall()
-        label_distribution = {row['label']: row['count'] for row in label_stats}
+        # Annotations per type and source
+        label_stats = conn.execute('''
+            SELECT 
+                a.label, 
+                u.username,
+                r.name as role_name,
+                COUNT(*) as count 
+            FROM annotations a
+            JOIN users u ON a.user_id = u.id
+            JOIN roles r ON u.role_id = r.id
+            GROUP BY a.label, u.username, r.name
+        ''').fetchall()
+        
+        label_distribution = {}
+        for row in label_stats:
+            label = row['label']
+            count = row['count']
+            username = row['username']
+            role_name = row['role_name']
+            
+            if role_name == 'AI':
+                if 'BERT' in username.upper():
+                    source = 'BERT'
+                else:
+                    source = 'LLM'
+            else:
+                source = 'Human'
+                
+            if label not in label_distribution:
+                label_distribution[label] = {'Human': 0, 'LLM': 0, 'BERT': 0, 'Total': 0}
+            
+            label_distribution[label][source] += count
+            label_distribution[label]['Total'] += count
         
         # Annotations per user (Top 10)
         user_stats = conn.execute('''

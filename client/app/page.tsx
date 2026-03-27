@@ -19,6 +19,11 @@ const IconPlus = () => <svg className="w-4 h-4" fill="none" stroke="currentColor
 const IconRefresh = () => <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>;
 const IconSearch = () => <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>;
 const IconFolder = () => <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/></svg>;
+const IconTrash = () => (
+  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 7l1-2h10l1 2m-10 0v10m4-10v10m-7-6h14m-4-4V4H9v3"/>
+  </svg>
+);
 
 const NewProjectUploader = ({
   fetchProjectList,
@@ -112,6 +117,7 @@ export default function HomePage() {
   const [loadedProject, setLoadedProject] = useState<ProjectEntry | null>(null);
   const [loading, setLoading] = useState(false);
   const [showUploader, setShowUploader] = useState(false);
+  const [deletingProject, setDeletingProject] = useState<string | null>(null);
   
   const [sorting, setSorting] = useState<SortingState>([])
   const [pagination, setPagination] = useState({ pageIndex: 0, pageSize: 15 });
@@ -172,6 +178,36 @@ export default function HomePage() {
       console.error(err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleDeleteProject = async (projectName: string) => {
+    if (!window.confirm(`Delete project "${projectName}"? This keeps the underlying cases.`)) return;
+    setDeletingProject(projectName);
+    try {
+      const res = await fetch('/api/delete-project', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ projectName })
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data?.error || 'Failed to delete');
+      }
+      const updatedList = await fetchProjectList();
+      if (selectedProjectName === projectName) {
+        setLoadedProject(null);
+        if (updatedList.length > 0) {
+          handleProjectClick(updatedList[0]);
+        } else {
+          setSelectedProjectName(null);
+        }
+      }
+    } catch (err: any) {
+      console.error(err);
+      alert(`Unable to remove project: ${err?.message || err}`);
+    } finally {
+      setDeletingProject(null);
     }
   };
 
@@ -244,6 +280,7 @@ export default function HomePage() {
   });
 
   if (!user) return null;
+  const isAdminUser = user.username === 'admin';
 
   return (
     <div className="flex h-screen bg-slate-50 overflow-hidden text-slate-900 antialiased">
@@ -271,16 +308,35 @@ export default function HomePage() {
               const isActive = selectedProjectName === name;
               const isPlayground = name.toLowerCase() === 'playground';
               return (
-                <button
-                  key={name}
-                  onClick={() => handleProjectClick(name)}
-                  className={`w-full flex items-center gap-3 px-4 py-2.5 rounded text-[12px] font-medium transition-all ${
-                    isActive ? 'bg-slate-800 text-white' : 'text-slate-400 hover:bg-slate-800/50 hover:text-slate-200'
-                  }`}
-                >
-                  <span className={isActive ? 'text-blue-400' : 'text-slate-600'}><IconFolder /></span>
-                  <span className="truncate uppercase tracking-tight">{isPlayground ? 'Ad-hoc Review' : name}</span>
-                </button>
+                <div key={name} className="w-full flex items-center gap-2">
+                  <button
+                    onClick={() => handleProjectClick(name)}
+                    className={`flex-1 flex items-center gap-3 px-4 py-2.5 rounded text-[12px] font-medium transition-all ${
+                      isActive ? 'bg-slate-800 text-white' : 'text-slate-400 hover:bg-slate-800/50 hover:text-slate-200'
+                    }`}
+                  >
+                    <span className={isActive ? 'text-blue-400' : 'text-slate-600'}><IconFolder /></span>
+                    <span className="truncate uppercase tracking-tight">{isPlayground ? 'Ad-hoc Review' : name}</span>
+                  </button>
+                  {isAdminUser && !isPlayground && (
+                    <button
+                      type="button"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        handleDeleteProject(name);
+                      }}
+                      disabled={deletingProject === name}
+                      className="flex-shrink-0 flex items-center gap-1 px-2.5 py-1.5 text-[9px] font-bold uppercase tracking-[0.3em] text-red-500 border border-red-500/60 rounded bg-white hover:bg-red-500 hover:text-white transition-colors disabled:opacity-40 disabled:hover:bg-white"
+                    >
+                      {deletingProject === name ? (
+                        <span className="w-3 h-3 border-2 border-red-500 border-t-transparent rounded-full animate-spin"></span>
+                      ) : (
+                        <IconTrash />
+                      )}
+                      <span>Remove</span>
+                    </button>
+                  )}
+                </div>
               );
             })}
           </nav>
