@@ -32,6 +32,9 @@ interface Props {
   overrideId?: string;
 }
 
+const PRIMARY_ENTITY_LABELS = new Set(['AE','SDRUG','CDRUG','ODRUG','TREATMENT','SDRUG','CDrug','SDrug','Treatment']);
+const TEMPORAL_LABELS = new Set(['TEMPORAL','DATE','TIME','DURATION','RELATIVE','LATENCY']);
+
 // Icons
 const IconSave = () => <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"/></svg>;
 const IconExport = () => <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a2 2 0 002 2h12a2 2 0 002-2v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>;
@@ -82,7 +85,6 @@ export default function Annotate_Panel({ overrideProject, overrideId}: Props) {
   }, []);
 
   const [relationshipBuilderMode, setRelationshipBuilderMode] = useState(false);
-  const [showAllLinkRows, setShowAllLinkRows] = useState(false);
   const [currentAnnotationRelation, setCurrentAnnotationRelation] = useState<Annotation | null>(null);
   const [currentRelationType, setCurrentRelationType] = useState<keyof AnnotationRelationships | ''>('');
   
@@ -90,6 +92,7 @@ export default function Annotate_Panel({ overrideProject, overrideId}: Props) {
   const [annotationGuidelines, setAnnotationGuidelines] = useState<AnnotationGuideline[]>([]);
   const [optionColors, setOptionColors] = useState<{ [key: string]: string }>({});
   const [activeLabelFilters, setActiveLabelFilters] = useState<string[]>([]);
+  const [temporalTerms, setTemporalTerms] = useState<Annotation[]>([]);
   const [showRejected, setShowRejected] = useState(false);
   
   const [unifiedContextMenu, setUnifiedContextMenu] = useState<{
@@ -168,6 +171,10 @@ export default function Annotate_Panel({ overrideProject, overrideId}: Props) {
       return isHuman && isAEDrug;
     });
   }, [visibleAnnotations]);
+
+  const isPrimaryEntitySelected = currentAnnotationRelation
+    ? PRIMARY_ENTITY_LABELS.has(labelNormalizer[currentAnnotationRelation.label.toUpperCase()] || currentAnnotationRelation.label.toUpperCase())
+    : false;
 
   const linkModeColors: Record<string, string> = {
     'AE': 'hsl(0, 70%, 50%)', 
@@ -271,6 +278,23 @@ export default function Annotate_Panel({ overrideProject, overrideId}: Props) {
       } else if (currentAnnotationRelation) {
           setUnifiedContextMenu({ visible: true, x: rect.left + window.scrollX, y: rect.top + window.scrollY, type: 'relationship', start: absoluteStart, end: absoluteEnd, options: ['Set', 'Delete'] });
       }
+  };
+
+  const handleTemporalTermSelect = (term: Annotation) => {
+    if (isReadOnly) return;
+    const panelRect = document.querySelector('.relationship-builder-panel')?.getBoundingClientRect();
+    const x = (panelRect?.left ?? window.innerWidth / 2) + 30;
+    const y = (panelRect?.top ?? window.innerHeight / 2) + 30;
+    setSelectedText(term.textContext.text);
+    setUnifiedContextMenu({
+      visible: true,
+      x,
+      y,
+      type: 'relationship',
+      start: term.textContext.start || 0,
+      end: term.textContext.end || 0,
+      options: ['Set', 'Delete']
+    });
   };
 
   const handleAddAnnotation = (label: string) => {
@@ -410,6 +434,16 @@ export default function Annotate_Panel({ overrideProject, overrideId}: Props) {
   }, [doc.annotations]);
 
   useEffect(() => {
+    const terms = doc.annotations
+      .filter(a => {
+        const normalized = labelNormalizer[a.label.toUpperCase()] || a.label.toUpperCase();
+        return TEMPORAL_LABELS.has(normalized);
+      })
+      .sort((a, b) => (a.textContext.start || 0) - (b.textContext.start || 0));
+    setTemporalTerms(terms);
+  }, [doc.annotations]);
+
+  useEffect(() => {
     const loadGuidelines = async () => {
       try {
         const res = await fetch('/api/annotation-guidelines');
@@ -490,22 +524,55 @@ export default function Annotate_Panel({ overrideProject, overrideId}: Props) {
             </div>
           </div>
 
-          <div className="flex-[3] border-b border-slate-100 overflow-hidden">
-            <AnnotationPanel
-              annotations={visibleAnnotations}
-              annotationOptions={annotationOptions}
-              setAnnotationOptions={setAnnotationOptions}
-              optionColors={optionColors}
-              setOptionColors={setOptionColors}
-              handleRemoveAnnotation={(a) => !isReadOnly && dispatch({ type: DocActionTypes.REMOVE_ANNOTATION, payload: { annotation: a } })}
-              activeLabelFilters={activeLabelFilters}
-              setActiveLabelFilters={setActiveLabelFilters}
-              selectedTermContext={selectedTermContext}
-              setSelectedTermContext={setSelectedTermContext}
-              handleExtendMatch={() => {}}
-              isReadOnly={isReadOnly}
-              pageData={currentPageData || ""}
-            />
+          <div className="flex-[3] overflow-hidden border-b border-slate-100">
+            {relationshipBuilderMode ? (
+              <div className="flex flex-col h-full p-4">
+                <div className="flex justify-between items-center mb-4 gap-3">
+                  {currentAnnotationRelation && (
+                    <div className="text-[10px] font-bold text-blue-600 px-3 py-1.5 rounded bg-blue-50 border border-blue-100 uppercase tracking-tight">
+                      Active: {currentAnnotationRelation.textContext.text}
+                    </div>
+                  )}
+                </div>
+                <div className="flex-1 overflow-y-auto">
+                  <RelationshipBuilderPanel
+                    annotations={filteredLinkAnnotations}
+                    handleSelectCell={(a, type) => {
+                      if (isReadOnly) return;
+                      if (currentAnnotationRelation?.textContext.start === a.textContext.start && currentRelationType === type) {
+                        setCurrentAnnotationRelation(null);
+                        setCurrentRelationType('');
+                      } else {
+                        setCurrentAnnotationRelation(a);
+                        setCurrentRelationType(type);
+                      }
+                    }}
+                    currentAnnotation={currentAnnotationRelation}
+                    currentRelationshipType={currentRelationType}
+                    isReadOnly={isReadOnly}
+                    temporalTerms={temporalTerms}
+                    currentAnnotationIsPrimary={isPrimaryEntitySelected}
+                    onTemporalSelect={handleTemporalTermSelect}
+                  />
+                </div>
+              </div>
+            ) : (
+              <AnnotationPanel
+                annotations={visibleAnnotations}
+                annotationOptions={annotationOptions}
+                setAnnotationOptions={setAnnotationOptions}
+                optionColors={optionColors}
+                setOptionColors={setOptionColors}
+                handleRemoveAnnotation={(a) => !isReadOnly && dispatch({ type: DocActionTypes.REMOVE_ANNOTATION, payload: { annotation: a } })}
+                activeLabelFilters={activeLabelFilters}
+                setActiveLabelFilters={setActiveLabelFilters}
+                selectedTermContext={selectedTermContext}
+                setSelectedTermContext={setSelectedTermContext}
+                handleExtendMatch={() => {}}
+                isReadOnly={isReadOnly}
+                pageData={currentPageData || ""}
+              />
+            )}
           </div>
           
           <div className="flex-[2] overflow-hidden bg-slate-50/20">
@@ -585,34 +652,6 @@ export default function Annotate_Panel({ overrideProject, overrideId}: Props) {
                     isReadOnly={isReadOnly}
                     onClickAnnotation={onClickLinkAnnotation}
                     theme={theme}
-                  />
-                </div>
-              </div>
-              <div className="h-[350px] overflow-y-auto p-8 bg-white border-t border-slate-200 shadow-[0_-4px_12px_rgba(0,0,0,0.03)]">
-                <div className="max-w-5xl mx-auto">
-                  <div className="flex justify-between items-center mb-6">
-                    <button onClick={() => setShowAllLinkRows(!showAllLinkRows)} className={`px-4 py-1.5 rounded text-[10px] font-bold transition-all border uppercase tracking-wider ${showAllLinkRows ? 'bg-blue-600 text-white border-blue-600 shadow-lg shadow-blue-100' : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300 shadow-sm'}`}>
-                      {showAllLinkRows ? '✓ Displaying All Entries' : 'Show Complete Inventory'}
-                    </button>
-                    {currentAnnotationRelation && (
-                      <div className="text-[10px] font-bold text-blue-600 px-3 py-1.5 rounded bg-blue-50 border border-blue-100 uppercase tracking-tight">Active: {currentAnnotationRelation.textContext.text}</div>
-                    )}
-                  </div>
-                  <RelationshipBuilderPanel
-                    annotations={showAllLinkRows ? filteredLinkAnnotations : (currentAnnotationRelation ? [currentAnnotationRelation] : [])}
-                    handleSelectCell={(a, type) => {
-                      if (isReadOnly) return;
-                      if (currentAnnotationRelation?.textContext.start === a.textContext.start && currentRelationType === type) {
-                        setCurrentAnnotationRelation(null);
-                        setCurrentRelationType('');
-                      } else {
-                        setCurrentAnnotationRelation(a);
-                        setCurrentRelationType(type);
-                      }
-                    }}
-                    currentAnnotation={currentAnnotationRelation}
-                    currentRelationshipType={currentRelationType}
-                    isReadOnly={isReadOnly}
                   />
                 </div>
               </div>

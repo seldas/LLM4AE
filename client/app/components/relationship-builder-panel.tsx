@@ -8,6 +8,9 @@ interface Props {
     currentAnnotation: Annotation | null;
     currentRelationshipType: keyof AnnotationRelationships | '';
     isReadOnly?: boolean;
+    temporalTerms: Annotation[];
+    currentAnnotationIsPrimary: boolean;
+    onTemporalSelect: (term: Annotation) => void;
 };
 
 interface CellProps {
@@ -20,113 +23,83 @@ interface CellProps {
     isReadOnly?: boolean;
 };
 
-const RelationshipCell = (props: CellProps) => {
-    const isSelected = props.currentAnnotation?.textContext.start === props.annotation.textContext.start && 
-                       props.currentRelationshipType === props.relationshipType;
-
-    return (
-        <td 
-            onClick={() => !props.isReadOnly && props.handleSelectCell(props.annotation, props.relationshipType)}
-            className={`p-2 border text-center cursor-pointer transition-colors duration-200
-                ${isSelected ? 'bg-blue-100 border-blue-500' : 'hover:bg-gray-50'}`}
-        >
-            {props.value ? (
-                <span className="text-xs font-medium text-blue-700 bg-blue-50 px-2 py-1 rounded">
-                    {props.value}
-                </span>
-            ) : (
-                <span className="text-xs text-gray-300 italic">Empty</span>
-            )}
-        </td>
-    );
-};
+const RELATIONSHIP_TYPES: Array<{ key: keyof AnnotationRelationships; label: string }> = [
+    { key: 'latency', label: 'Latency' },
+    { key: 'date', label: 'Date' },
+    { key: 'time', label: 'Time' },
+    { key: 'temporal_sequence', label: 'Sequence' },
+    { key: 'relatives', label: 'Related' }
+];
 
 const RelationshipBuilderPanel = (props: Props) => {
+    const annotations = props.annotations
+        .sort((a,b) => (a.textContext.start||0) - (b.textContext.start||0));
     return (
-        <div className="relationship-builder-panel h-full flex flex-col">
-          <div className="mb-4">
+        <div className="relationship-builder-panel h-full flex flex-col gap-4">
+          <div>
             <p className="text-[11px] text-slate-500 font-semibold bg-slate-50 border border-slate-100 p-3 rounded-lg leading-relaxed">
-              <span className="text-blue-600 font-bold">Step 1:</span> Click an empty cell below to activate a link type.<br/>
-              <span className="text-blue-600 font-bold">Step 2:</span> Highlight the corresponding term in the narrative above to link it.
+              <span className="text-blue-600 font-bold">Step 1:</span> Select the entity you want to link below.<br/>
+              <span className="text-blue-600 font-bold">Step 2:</span> Highlight the corresponding term in the narrative above to assign it to the active slot.
             </p>
           </div>
 
-          <table className="w-full border-collapse bg-white rounded-xl shadow-sm overflow-hidden border border-gray-100">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="p-2 border text-left text-[10px] font-black text-gray-500 uppercase">Entity</th>
-                <th className="p-2 border text-[10px] font-black text-gray-500 uppercase">Latency</th>
-                <th className="p-2 border text-[10px] font-black text-gray-500 uppercase">Date</th>
-                <th className="p-2 border text-[10px] font-black text-gray-500 uppercase">Time</th>
-                <th className="p-2 border text-[10px] font-black text-gray-500 uppercase">Seq</th>
-                <th className="p-2 border text-[10px] font-black text-gray-500 uppercase">Rel</th>
-              </tr>
-            </thead>
-            <tbody>
-              {props.annotations
-                .sort((a,b) => (a.textContext.start||0) - (b.textContext.start||0))
-                .map((a, i) => {
-                    const rel = a.relationships || {};
-                    const temporal_sequence = rel.temporal_sequence?.text || "";
-                    
-                    return (
-                      <tr key={i} className="hover:bg-gray-50/50">
-                        <td className="p-2 border">
-                          <div className="flex flex-col gap-0.5 max-w-[100px]">
-                            <span className="text-[10px] font-bold text-gray-700 truncate" title={a.textContext.text}>{a.textContext.text}</span>
-                            <span className="text-[8px] font-black px-1.5 py-0.5 rounded bg-gray-100 text-gray-500 w-fit uppercase">{a.label}</span>
-                          </div>
-                        </td>
-                        <RelationshipCell
-                          value={rel.latency?.text || ""}
-                          annotation={a}
-                          relationshipType="latency"
-                          handleSelectCell={props.handleSelectCell}
-                          currentAnnotation={props.currentAnnotation}
-                          currentRelationshipType={props.currentRelationshipType}
-                          isReadOnly={props.isReadOnly}
-                        />
-                        <RelationshipCell
-                          value={rel.date?.text || ""}
-                          annotation={a}
-                          relationshipType="date"
-                          handleSelectCell={props.handleSelectCell}
-                          currentAnnotation={props.currentAnnotation}
-                          currentRelationshipType={props.currentRelationshipType}
-                          isReadOnly={props.isReadOnly}
-                        />
-                        <RelationshipCell
-                          value={rel.time?.text || ""}
-                          annotation={a}
-                          relationshipType="time"
-                          handleSelectCell={props.handleSelectCell}
-                          currentAnnotation={props.currentAnnotation}
-                          currentRelationshipType={props.currentRelationshipType}
-                          isReadOnly={props.isReadOnly}
-                        />
-                        <RelationshipCell
-                          value={temporal_sequence}
-                          annotation={a}
-                          relationshipType="temporal_sequence"
-                          handleSelectCell={props.handleSelectCell}
-                          currentAnnotation={props.currentAnnotation}
-                          currentRelationshipType={props.currentRelationshipType}
-                          isReadOnly={props.isReadOnly}
-                        />
-                        <RelationshipCell
-                          value={rel.relatives?.text || ""}
-                          annotation={a}
-                          relationshipType="relatives"
-                          handleSelectCell={props.handleSelectCell}
-                          currentAnnotation={props.currentAnnotation}
-                          currentRelationshipType={props.currentRelationshipType}
-                          isReadOnly={props.isReadOnly}
-                        />
-                      </tr>
-                    );
-              })}
-            </tbody>
-          </table>
+          <div className="space-y-3 overflow-y-auto pr-1 flex-1">
+            {annotations.map((annotation, idx) => {
+                const isActiveEntity = props.currentAnnotation?.textContext.start === annotation.textContext.start;
+                const rel = annotation.relationships || {};
+                return (
+                    <div key={idx} className={`p-3 rounded-2xl border ${isActiveEntity ? 'border-blue-300 bg-blue-50' : 'border-slate-100 bg-white'} shadow-[0_8px_24px_rgba(15,23,42,0.05)]`}>
+                        <div className="flex items-center justify-between mb-2 gap-2">
+                            <div className="flex flex-col">
+                                <span className="text-[11px] font-semibold text-slate-800 truncate">{annotation.textContext.text}</span>
+                                <span className="text-[8px] font-black uppercase tracking-[0.3em] text-slate-400">{annotation.label}</span>
+                            </div>
+                            <span className="text-[9px] font-bold text-blue-500">{isActiveEntity ? 'Active' : 'Inactive'}</span>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                            {RELATIONSHIP_TYPES.map(type => {
+                                const value = rel[type.key]?.text || '';
+                                const isSelected = isActiveEntity && props.currentRelationshipType === type.key;
+                                return (
+                                    <button
+                                        key={type.key}
+                                        onClick={() => !props.isReadOnly && props.handleSelectCell(annotation, type.key)}
+                                        className={`text-left text-[10px] font-semibold px-3 py-2 rounded-lg border transition-all ${isSelected ? 'border-blue-500 bg-blue-100 text-blue-800 shadow-inner' : 'border-slate-200 bg-slate-50 hover:border-slate-300'}`}
+                                    >
+                                        <span className="block text-[9px] uppercase tracking-[0.4em] text-slate-400">{type.label}</span>
+                                        <span className={`${value ? 'text-slate-800' : 'text-slate-400 italic'}`}>{value || 'Empty'}</span>
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    </div>
+                );
+            })}
+            {annotations.length === 0 && (
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-[11px] text-slate-500 text-center">
+                    No entities available for linking.
+                </div>
+            )}
+            {props.currentAnnotation && props.currentAnnotationIsPrimary && (
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                    <p className="text-[10px] font-bold uppercase tracking-[0.3em] text-slate-400 mb-2">Temporal candidates</p>
+                    <div className="flex flex-wrap gap-2 max-h-32 overflow-y-auto pr-1">
+                        {props.temporalTerms.length > 0 ? props.temporalTerms.map((term, i) => (
+                            <button
+                                key={term.textContext.start + '-' + i}
+                                onClick={() => props.onTemporalSelect(term)}
+                                className="text-[10px] font-semibold px-3 py-1 rounded-full border border-slate-200 bg-white hover:border-slate-300 transition"
+                                title={term.textContext.text}
+                            >
+                                {term.textContext.text.length > 20 ? `${term.textContext.text.slice(0, 20)}...` : term.textContext.text}
+                            </button>
+                        )) : (
+                            <span className="text-[10px] italic text-slate-400">No temporal terms available</span>
+                        )}
+                    </div>
+                </div>
+            )}
+          </div>
         </div>
     )
 };
