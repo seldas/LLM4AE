@@ -7,7 +7,7 @@ interface Props {
   visible: boolean;
   text: string;
   annotationOptions: AnnotationOptions;
-  type?: 'AI' | 'SME' | 'NEW';
+  type?: 'LLM' | 'BERT' | 'SME' | 'NEW';
   userRole?: string;
   selectedLabel: string;
   isVerified?: boolean;
@@ -71,7 +71,7 @@ const LLMAnnotationPopup: React.FC<Props> = ({
         <div className="pr-4 min-w-0">
           <div className="flex items-center gap-2 mb-1">
             <span className="text-[9px] font-black text-gray-400 uppercase tracking-widest whitespace-nowrap">
-              {type === 'AI' ? 'AI Suggestion' : type === 'SME' ? `Human Tag: ${userRole || ''}` : 'Quick Tag'}
+              {type === 'LLM' ? 'LLM Suggestion' : type === 'BERT' ? 'BERT Suggestion' : type === 'SME' ? `Human Tag: ${userRole || ''}` : 'Quick Tag'}
             </span>
             {selectedLabel && (
                <span className="bg-blue-50 text-blue-700 text-[9px] font-black px-1.5 py-0.5 rounded border border-blue-100 uppercase truncate">
@@ -91,7 +91,7 @@ const LLMAnnotationPopup: React.FC<Props> = ({
 
       {!isReadOnly && (
         <div className="flex flex-col gap-2 mt-3 pt-3 border-t border-gray-100">
-          {type === 'AI' && (
+          {(type === 'LLM' || type === 'BERT') && (
             <>
               <button 
                 onClick={() => isVerified ? onUnverify?.() : onAdd(selectedLabel)} 
@@ -107,7 +107,7 @@ const LLMAnnotationPopup: React.FC<Props> = ({
                 onClick={onReject} 
                 className="w-full py-2 rounded-lg border border-red-200 text-red-600 font-bold text-xs hover:bg-red-50 transition-all"
               >
-                Reject AI
+                Reject {type}
               </button>
             </>
           )}

@@ -11,6 +11,7 @@ interface Props {
   userRole: string; 
   onClickAnnotation?: (anno: Annotation) => void;
   isReadOnly?: boolean;
+  theme?: 'light' | 'dark' | 'soft';
 }
 
 function getNodeAndOffsetForIndex(rootNode: Node, index: number): { node: Node; offset: number } | null {
@@ -52,11 +53,32 @@ const PageDisplayBuilder = ({
   handleTextSelection,
   onClickAnnotation,
   isReadOnly,
+  theme = 'light',
 }: Props) => {
   const textRef = useRef<HTMLPreElement>(null);
   const [highlightBoxes, setHighlightBoxes] = useState<any[]>([]);
   const [hoveredBox, setHoveredBox] = useState<null | { start: number; end: number }>(null);
   const [lineCount, setLineCount] = useState(0);
+
+  const themeStyles = {
+    light: {
+      text: 'text-slate-800',
+      lineNumbers: 'text-slate-300 border-slate-100',
+      boxBorder: '#000'
+    },
+    dark: {
+      text: 'text-slate-100',
+      lineNumbers: 'text-slate-600 border-slate-800',
+      boxBorder: '#fff'
+    },
+    soft: {
+      text: 'text-[#657b83]',
+      lineNumbers: 'text-[#93a1a1] border-[#eee8d5]',
+      boxBorder: '#586e75'
+    }
+  };
+
+  const currentTheme = themeStyles[theme];
 
   const getAnnotatorDisplay = (note: string) => {
     const upperNote = note.toUpperCase();
@@ -149,12 +171,12 @@ const PageDisplayBuilder = ({
 
   return (
     <div className="page flex" style={{ margin: "20px auto" }} onMouseUp={() => !isReadOnly && handleTextSelection()}>
-      <div className="flex-shrink-0 text-right pr-4 text-slate-300 select-none font-mono text-[10px] border-r border-slate-100" style={{ width: '50px', lineHeight: '3.5rem', paddingTop: '14px' }}>
+      <div className={`flex-shrink-0 text-right pr-4 select-none font-mono text-[10px] border-r ${currentTheme.lineNumbers}`} style={{ width: '50px', lineHeight: '3.5rem', paddingTop: '14px' }}>
         {Array.from({ length: lineCount }).map((_, i) => <div key={i}>{i + 1}</div>)}
       </div>
 
       <div className="relative flex-1 min-w-0">
-        <pre className="text-block font-mono whitespace-pre-wrap text-slate-800" ref={textRef} style={{ padding: "14px", whiteSpace: "pre-wrap", wordWrap: "break-word", position: "relative", lineHeight: "3.5rem", zIndex: 1, margin: 0 }}>
+        <pre className={`text-block font-mono whitespace-pre-wrap ${currentTheme.text}`} ref={textRef} style={{ padding: "14px", whiteSpace: "pre-wrap", wordWrap: "break-word", position: "relative", lineHeight: "3.5rem", zIndex: 1, margin: 0 }}>
           {processedPageData}
         </pre>
 
@@ -189,7 +211,7 @@ const PageDisplayBuilder = ({
                 borderRadius: "4px",
                 borderBottom: box.isRelation
                   ? `2px solid ${darkenHSLColor(box.color)}`
-                  : (isPureAI ? `2px dashed ${darkenHSLColor(box.color)}` : (box.isSelected ? "2px solid #000" : "none")),
+                  : (isPureAI ? `2px dashed ${darkenHSLColor(box.color)}` : (box.isSelected ? `2px solid ${currentTheme.boxBorder}` : "none")),
                 boxShadow: isHovered
                   ? "0 0 6px 2px rgba(0,0,0,0.1)"
                   : "none",

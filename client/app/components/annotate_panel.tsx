@@ -59,7 +59,8 @@ export default function Annotate_Panel({ overrideProject, overrideId}: Props) {
   }; 
   
   // Layer Management
-  const [activeLayers, setActiveLayers] = useState<string[]>(['Human', 'AI']);
+  const [activeLayers, setActiveLayers] = useState<string[]>(['Human', 'LLM', 'BERT']);
+  const [theme, setTheme] = useState<'light' | 'dark' | 'soft'>('light');
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [userRole, setUserRole] = useState<string>("Anonymous");
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -113,30 +114,44 @@ export default function Annotate_Panel({ overrideProject, overrideId}: Props) {
   const visibleAnnotations = useMemo(() => {
     const enriched = doc.annotations.map(a => {
       const note = (a.note || "").toUpperCase();
-      const isAI = note.includes('LLM') || note.includes('LLAMA') || note.includes('BERT') || note.includes('AI');
+      const isLLM = note.includes('LLM') || note.includes('LLAMA');
+      const isBERT = note.includes('BERT');
+      const isAI = isLLM || isBERT || note.includes('AI');
       const isVerified = note.includes('VERIFIED');
-      let priority = 3; 
-      if (!isAI) priority = 1;
-      else if (!isVerified) priority = 2;
-      else priority = 3;
+      
+      let layer = 'Human';
+      let priority = 1; // Lower number = Higher priority in our final pick
+
+      if (isLLM && !isVerified) {
+        layer = 'LLM';
+        priority = 2;
+      } else if (isBERT && !isVerified) {
+        layer = 'BERT';
+        priority = 3;
+      } else if (isAI && !isVerified) {
+        layer = 'LLM'; // Default generic AI to LLM for now
+        priority = 2;
+      } else {
+        layer = 'Human'; // Human or Verified AI
+        priority = 1;
+      }
+
       const normalizedLabel = labelNormalizer[a.label.toUpperCase()] || a.label.toUpperCase();
-      return { ...a, priority, normalizedLabel };
+      return { ...a, priority, layer, normalizedLabel };
     });
 
     let filtered = enriched.filter(a => {
       const note = (a.note || "").toUpperCase();
       if (note.includes('REJECTED') && !showRejected) return false;
-      const isPureAI = a.priority === 2;
-      const isHumanLayer = a.priority === 1 || a.priority === 3;
-      if (isPureAI && activeLayers.includes('AI')) return true;
-      if (isHumanLayer && activeLayers.includes('Human')) return true;
-      return false;
+      return activeLayers.includes(a.layer);
     });
 
+    // Display Priority: Human(1) > LLM(2) > BERT(3)
     const positionMap: Record<string, typeof enriched[0]> = {};
-    filtered.sort((a, b) => a.priority - b.priority).forEach(ann => {
+    // Sort by priority DESC so that higher priority (smaller number) overwrites in the map
+    filtered.sort((a, b) => b.priority - a.priority).forEach(ann => {
       const key = `${ann.textContext.start}-${ann.textContext.end}`;
-      if (!positionMap[key]) positionMap[key] = ann;
+      positionMap[key] = ann;
     });
     return Object.values(positionMap);
   }, [doc.annotations, activeLayers, showRejected]);
@@ -302,8 +317,13 @@ export default function Annotate_Panel({ overrideProject, overrideId}: Props) {
       label: label, note: userRole,
       relationships: { latency: { text: '', page: 0 }, date: { text: '', page: 0 }, time: { text: '', page: 0 }, frequency: { text: '', page: 0 }, temporal_sequence: { text: '', page: 0 } },
     };
-    if (type === 'AI') {
-      const existingAI = doc.annotations.find(a => a.textContext.start === start && a.textContext.end === end && (a.label.toUpperCase() === label.toUpperCase() || (labelNormalizer[a.label.toUpperCase()] || a.label.toUpperCase()) === label.toUpperCase()) && (a.note.toUpperCase().includes('LLM') || a.note.toUpperCase().includes('AI') || a.note.toLowerCase().includes('llama') || a.note.toLowerCase().includes('bert')));
+    if (type === 'LLM' || type === 'BERT') {
+      const existingAI = doc.annotations.find(a => 
+        a.textContext.start === start && 
+        a.textContext.end === end && 
+        (a.label.toUpperCase() === label.toUpperCase() || (labelNormalizer[a.label.toUpperCase()] || a.label.toUpperCase()) === label.toUpperCase()) && 
+        (a.note.toUpperCase().includes('LLM') || a.note.toUpperCase().includes('AI') || a.note.toLowerCase().includes('llama') || a.note.toLowerCase().includes('bert'))
+      );
       if (existingAI) {
         const updatedAI = { ...existingAI, note: `${existingAI.note} | VERIFIED BY ${userRole}` };
         dispatch({ type: DocActionTypes.UPDATE_ANNOTATION, payload: { annotation: updatedAI, historyType: 'verify' } });
@@ -319,7 +339,7 @@ export default function Annotate_Panel({ overrideProject, overrideId}: Props) {
   const handleUnverifyAnnotation = (start: number, end: number, label: number | string) => {
     if (isReadOnly) return;
     const labelStr = String(label);
-    const humanAnno = doc.annotations.find(a => a.textContext.start === start && a.textContext.end === end && (a.label.toUpperCase() === labelStr.toUpperCase() || (labelNormalizer[a.label.toUpperCase()] || a.label.toUpperCase()) === labelStr.toUpperCase()) && (a.note.toUpperCase().includes('SME') || a.note.toUpperCase().includes('MJ.L') || a.note.toUpperCase().includes('K.L') || a.note.toUpperCase().includes('ADJUDICATOR')));
+    const humanAnno = doc.annotations.find(a => a.textContext.start === start && a.textContext.end === end && (a.label.toUpperCase() === labelStr.toUpperCase() || (labelNormalizer[a.label.toUpperCase()] || a.label.toUpperCase()) === labelStr.toUpperCase()) && (a.note.toUpperCase().includes('SME') || a.note.toUpperCase().includes('MJ.L') || a.note.toUpperCase().includes('K.L') || a.note.toUpperCase().includes('ADJUDICATOR') || a.note.toUpperCase() === userRole.toUpperCase()));
     const aiAnno = doc.annotations.find(a => a.textContext.start === start && a.textContext.end === end && (a.label.toUpperCase() === labelStr.toUpperCase() || (labelNormalizer[a.label.toUpperCase()] || a.label.toUpperCase()) === labelStr.toUpperCase()) && (a.note.toUpperCase().includes('LLM') || a.note.toUpperCase().includes('AI') || a.note.toLowerCase().includes('llama') || a.note.toLowerCase().includes('bert')) && a.note.toUpperCase().includes('VERIFIED'));
     if (aiAnno) {
       const revertedAiNote = aiAnno.note.split(' | VERIFIED BY')[0];
@@ -332,12 +352,19 @@ export default function Annotate_Panel({ overrideProject, overrideId}: Props) {
   };
 
   const onClickAnnotation = (text: string, start: number, end: number, x: number, y: number, note?: string, label?: string) => {
-    let type: 'AI' | 'SME' | 'NEW' = 'NEW';
+    let type: 'LLM' | 'BERT' | 'SME' | 'NEW' = 'NEW';
     let isVerified = false;
     if (note) {
       const upperNote = note.toUpperCase();
-      const isAI = upperNote.includes('LLM') || upperNote.includes('AI') || upperNote.includes('LLAMA') || upperNote.includes('BERT');
-      if (isAI) { type = 'AI'; isVerified = upperNote.includes('VERIFIED'); } 
+      const isLLM = upperNote.includes('LLM') || upperNote.includes('LLAMA');
+      const isBERT = upperNote.includes('BERT');
+      const isAI = isLLM || isBERT || upperNote.includes('AI');
+      
+      if (isAI) { 
+        if (isBERT) type = 'BERT';
+        else type = 'LLM';
+        isVerified = upperNote.includes('VERIFIED'); 
+      } 
       else { type = 'SME'; }
     }
     setLlmPopup({ visible: true, x, y, text, start, end, type, label, isVerified, note });
@@ -440,16 +467,6 @@ export default function Annotate_Panel({ overrideProject, overrideId}: Props) {
         <aside className="w-[400px] flex flex-col border-r border-slate-200 bg-white shrink-0 shadow-sm overflow-hidden">
           <div className="p-4 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">
             <div className="flex items-center gap-4">
-              <div className="flex items-center gap-1.5">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Visibility:</span>
-                <div className="flex bg-slate-200/50 p-0.5 rounded gap-0.5">
-                  {['Human', 'AI'].map(layer => (
-                    <button key={layer} onClick={() => handleLayerToggle(layer)} className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase transition-all ${activeLayers.includes(layer) ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>
-                      {layer}
-                    </button>
-                  ))}
-                </div>
-              </div>
               <button onClick={() => setShowRejected(!showRejected)} className={`text-[9px] font-bold uppercase px-2 py-1 rounded transition-colors ${showRejected ? 'bg-red-50 text-red-600' : 'text-slate-400 hover:text-slate-600'}`}>
                 {showRejected ? 'Hiding Rejected' : 'Show Rejected'}
               </button>
@@ -492,6 +509,36 @@ export default function Annotate_Panel({ overrideProject, overrideId}: Props) {
                 <button onClick={() => setRelationshipBuilderMode(true)} className={`px-3 py-0.5 rounded-full text-[10px] font-bold transition-all ${relationshipBuilderMode ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400'}`}>LINK MODE</button>
               </div>
 
+              <div className="flex items-center gap-1.5 ml-2 mr-4">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Layers:</span>
+                <div className="flex bg-slate-100 p-0.5 rounded-full gap-0.5">
+                  {['Human', 'LLM', 'BERT'].map(layer => (
+                    <button 
+                      key={layer} 
+                      onClick={() => handleLayerToggle(layer)} 
+                      className={`px-3 py-0.5 rounded-full text-[9px] font-bold uppercase transition-all ${activeLayers.includes(layer) ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                    >
+                      {layer}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="flex items-center gap-1.5 mr-4">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Theme:</span>
+                <div className="flex bg-slate-100 p-0.5 rounded-full gap-0.5">
+                  {['light', 'dark', 'soft'].map(t => (
+                    <button 
+                      key={t} 
+                      onClick={() => setTheme(t as any)} 
+                      className={`px-3 py-0.5 rounded-full text-[9px] font-bold uppercase transition-all ${theme === t ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                    >
+                      {t}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
               <div className="flex gap-1.5 items-center">
                 <span className="text-[10px] font-bold text-slate-400 uppercase mr-1">Data:</span>
                 {['Demographic', 'Products', 'Outcomes'].map(v => (
@@ -508,8 +555,8 @@ export default function Annotate_Panel({ overrideProject, overrideId}: Props) {
 
           {relationshipBuilderMode ? (
             <div className="flex-1 flex flex-col overflow-hidden">
-              <div className="flex-1 overflow-y-auto p-12 bg-slate-50/30">
-                <div className="max-w-4xl mx-auto bg-white shadow-sm border border-slate-200 min-h-full">
+              <div className={`flex-1 overflow-y-auto p-12 transition-colors duration-300 ${theme === 'dark' ? 'bg-slate-950' : theme === 'soft' ? 'bg-[#eee8d5]' : 'bg-slate-50/30'}`}>
+                <div className={`max-w-4xl mx-auto shadow-sm border min-h-full transition-colors duration-300 ${theme === 'dark' ? 'bg-slate-900 border-slate-800' : theme === 'soft' ? 'bg-[#fdf6e3] border-[#eee8d5]' : 'bg-white border-slate-200'}`}>
                   <PageDisplayBuilder
                     annotations={filteredLinkAnnotations}
                     currentPage={doc.currentPageIndex}
@@ -520,6 +567,7 @@ export default function Annotate_Panel({ overrideProject, overrideId}: Props) {
                     userRole={userRole as any}
                     isReadOnly={isReadOnly}
                     onClickAnnotation={onClickLinkAnnotation}
+                    theme={theme}
                   />
                 </div>
               </div>
@@ -553,8 +601,8 @@ export default function Annotate_Panel({ overrideProject, overrideId}: Props) {
               </div>
             </div>
           ) : (
-            <div className="flex-1 overflow-y-auto p-12 bg-slate-50/30">
-              <div className="max-w-4xl mx-auto bg-white shadow-sm border border-slate-200 min-h-full pb-32">
+            <div className={`flex-1 overflow-y-auto p-12 transition-colors duration-300 ${theme === 'dark' ? 'bg-slate-950' : theme === 'soft' ? 'bg-[#eee8d5]' : 'bg-slate-50/30'}`}>
+              <div className={`max-w-4xl mx-auto shadow-sm border min-h-full pb-32 transition-colors duration-300 ${theme === 'dark' ? 'bg-slate-900 border-slate-800' : theme === 'soft' ? 'bg-[#fdf6e3] border-[#eee8d5]' : 'bg-white border-slate-200'}`}>
                 <PageDisplay
                   annotations={visibleAnnotations}
                   updateAnnotationNote={handleVerifyAnnotation}
@@ -570,6 +618,7 @@ export default function Annotate_Panel({ overrideProject, overrideId}: Props) {
                   selectedTermContext={selectedTermContext}
                   setSelectedTermContext={setSelectedTermContext}
                   isReadOnly={isReadOnly}
+                  theme={theme}
                 />
               </div>
             </div>
