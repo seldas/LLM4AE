@@ -26,6 +26,124 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 HISTORY_FOLDER = os.path.join(BASE_DIR, "history")
 
 # -----------------------------------------------------------------------------
+# Admin Dashboard / Stats
+# -----------------------------------------------------------------------------
+@app.route("/api/admin/stats", methods=["GET"])
+@cross_origin()
+def get_admin_stats():
+    conn = get_db_connection()
+    try:
+        # Total counts
+        project_count = conn.execute('SELECT COUNT(*) FROM projects').fetchone()[0]
+        case_count = conn.execute('SELECT COUNT(*) FROM cases').fetchone()[0]
+        user_count = conn.execute('SELECT COUNT(*) FROM users').fetchone()[0]
+        
+        # BERT Processed Cases
+        bert_cases = 0
+        all_cases = conn.execute('SELECT meta FROM cases').fetchall()
+        for c in all_cases:
+            if c['meta']:
+                meta = json.loads(c['meta'])
+                if meta.get("bert_processed") == "Done":
+                    bert_cases += 1
+        
+        # Annotations per type
+        label_stats = conn.execute('SELECT label, COUNT(*) as count FROM annotations GROUP BY label ORDER BY count DESC').fetchall()
+        label_distribution = {row['label']: row['count'] for row in label_stats}
+        
+        # Annotations per user (Top 10)
+        user_stats = conn.execute('''
+            SELECT u.username, COUNT(a.id) as count 
+            FROM users u
+            JOIN annotations a ON u.id = a.user_id
+            GROUP BY u.id
+            ORDER BY count DESC
+            LIMIT 10
+        ''').fetchall()
+        user_distribution = {row['username']: row['count'] for row in user_stats}
+        
+        return jsonify({
+            "project_count": project_count,
+            "case_count": case_count,
+            "bert_processed_count": bert_cases,
+            "user_count": user_count,
+            "label_distribution": label_distribution,
+            "user_distribution": user_distribution
+        }), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        conn.close()
+
+@app.route("/api/admin/bert-annotate", methods=["POST"])
+@cross_origin()
+def trigger_batch_bert_annotation():
+    # Only admin should trigger this
+    # (Simple check for demo, real app would use token/session)
+    
+    def run_batch_bert():
+        try:
+            logging.info("Starting background batch BERT annotation")
+            # We use a simplified single-process version for the server
+            # to avoid complex multiprocessing/CUDA issues in Flask
+            
+            # Import NERClient here to avoid issues if not needed
+            import sys
+            from pathlib import Path
+            sys.path.append(str(Path(__file__).resolve().parent.parent / "development" / "NER" / "scripts"))
+            from ner_client import get_ner_client
+            
+            client = get_ner_client()
+            conn = get_db_connection()
+            
+            # Get BERT user ID
+            bert_user = conn.execute("SELECT id FROM users WHERE migration_key = 'BERT'").fetchone()
+            if not bert_user:
+                logging.error("BERT user not found")
+                return
+            bert_user_id = bert_user['id']
+            
+            # Get cases to process (narrative not empty and not processed)
+            cases_to_process = conn.execute("SELECT id, pages, meta FROM cases").fetchall()
+            
+            for c in cases_to_process:
+                meta = json.loads(c['meta']) if c['meta'] else {}
+                if meta.get("bert_processed") == "Done":
+                    continue
+                
+                pages = json.loads(c['pages']) if c['pages'] else [""]
+                narrative = pages[0] if pages else ""
+                if not narrative or not narrative.strip():
+                    continue
+                
+                try:
+                    entities = client.annotate_text(narrative)
+                    
+                    # Save results
+                    with conn:
+                        conn.execute("DELETE FROM annotations WHERE case_id = ? AND user_id = ?", (c['id'], bert_user_id))
+                        for ent in entities:
+                            conn.execute("""
+                                INSERT INTO annotations 
+                                (case_id, user_id, label, start_offset, end_offset, text_content, note, relationships)
+                                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                            """, (c['id'], bert_user_id, ent['label'], ent['start'], ent['end'], ent['text'], "BERT", "{}"))
+                        
+                        meta["bert_processed"] = "Done"
+                        conn.execute("UPDATE cases SET meta = ? WHERE id = ?", (json.dumps(meta), c['id']))
+                except Exception as ex:
+                    logging.error(f"Error processing case {c['id']}: {ex}")
+            
+            conn.close()
+            logging.info("Background batch BERT annotation finished")
+            
+        except Exception as e:
+            logging.error(f"Batch BERT error: {e}")
+
+    threading.Thread(target=run_batch_bert, daemon=True).start()
+    return jsonify({"message": "Batch BERT annotation started in background"}), 200
+
+# -----------------------------------------------------------------------------
 # Auth
 # -----------------------------------------------------------------------------
 @app.route("/api/login", methods=["POST"])
