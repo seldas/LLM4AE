@@ -11,6 +11,7 @@ interface Props {
     temporalTerms: Annotation[];
     currentAnnotationIsPrimary: boolean;
     onTemporalSelect: (term: Annotation) => void;
+    selectedTermContext: { text: string; start: number; end: number } | null;
 };
 
 interface CellProps {
@@ -80,25 +81,30 @@ const RelationshipBuilderPanel = (props: Props) => {
                     No entities available for linking.
                 </div>
             )}
-            {props.currentAnnotation && props.currentAnnotationIsPrimary && (
-                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
-                    <p className="text-[10px] font-bold uppercase tracking-[0.3em] text-slate-400 mb-2">Temporal candidates</p>
-                    <div className="flex flex-wrap gap-2 max-h-32 overflow-y-auto pr-1">
-                        {props.temporalTerms.length > 0 ? props.temporalTerms.map((term, i) => (
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                <p className="text-[10px] font-bold uppercase tracking-[0.3em] text-slate-400 mb-2">Temporal candidates</p>
+                <div className="flex flex-wrap gap-2 max-h-32 overflow-y-auto pr-1">
+                    {props.temporalTerms.length > 0 ? props.temporalTerms.map((term, i) => {
+                        const disabled = !(props.currentAnnotation && props.currentAnnotationIsPrimary);
+                        return (
                             <button
-                                key={term.textContext.start + '-' + i}
+                                key={`${term.textContext.start || 0}-${i}`}
                                 onClick={() => props.onTemporalSelect(term)}
-                                className="text-[10px] font-semibold px-3 py-1 rounded-full border border-slate-200 bg-white hover:border-slate-300 transition"
+                                className={`text-[10px] font-semibold px-3 py-1 rounded-full border transition ${disabled ? 'border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed' : 'border-slate-200 bg-white hover:border-slate-300 text-slate-800'}`}
                                 title={term.textContext.text}
+                                disabled={disabled}
                             >
                                 {term.textContext.text.length > 20 ? `${term.textContext.text.slice(0, 20)}...` : term.textContext.text}
                             </button>
-                        )) : (
-                            <span className="text-[10px] italic text-slate-400">No temporal terms available</span>
-                        )}
-                    </div>
+                        );
+                    }) : (
+                        <span className="text-[10px] italic text-slate-400">No temporal terms available</span>
+                    )}
                 </div>
-            )}
+                {!props.currentAnnotationIsPrimary && (
+                    <p className="text-[9px] italic text-slate-500 mt-2">Select a primary AE/Drug entity above to activate linking.</p>
+                )}
+            </div>
           </div>
         </div>
     )

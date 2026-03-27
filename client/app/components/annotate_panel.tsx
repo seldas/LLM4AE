@@ -286,6 +286,7 @@ export default function Annotate_Panel({ overrideProject, overrideId}: Props) {
     const x = (panelRect?.left ?? window.innerWidth / 2) + 30;
     const y = (panelRect?.top ?? window.innerHeight / 2) + 30;
     setSelectedText(term.textContext.text);
+    setSelectedTermContext({ text: term.textContext.text, start: term.textContext.start || 0, end: term.textContext.end || 0 });
     setUnifiedContextMenu({
       visible: true,
       x,
@@ -539,6 +540,7 @@ export default function Annotate_Panel({ overrideProject, overrideId}: Props) {
                     annotations={filteredLinkAnnotations}
                     handleSelectCell={(a, type) => {
                       if (isReadOnly) return;
+                      setSelectedTermContext(null);
                       if (currentAnnotationRelation?.textContext.start === a.textContext.start && currentRelationType === type) {
                         setCurrentAnnotationRelation(null);
                         setCurrentRelationType('');
@@ -553,6 +555,7 @@ export default function Annotate_Panel({ overrideProject, overrideId}: Props) {
                     temporalTerms={temporalTerms}
                     currentAnnotationIsPrimary={isPrimaryEntitySelected}
                     onTemporalSelect={handleTemporalTermSelect}
+                    selectedTermContext={selectedTermContext}
                   />
                 </div>
               </div>
@@ -587,53 +590,50 @@ export default function Annotate_Panel({ overrideProject, overrideId}: Props) {
         {/* Center Canvas */}
         <main className="flex-1 flex flex-col overflow-hidden bg-white">
           <div className="px-8 py-3 border-b border-slate-100 bg-white shrink-0">
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-              <div className="flex flex-wrap items-center gap-3">
+            <div className="flex flex-wrap items-center gap-4 sm:justify-between">
+              <div className="flex flex-wrap items-center gap-3 min-w-0 flex-1">
                 <div className="flex items-center gap-3 bg-slate-100 rounded-full px-3 py-1 shrink-0">
                   <button onClick={() => setRelationshipBuilderMode(false)} className={`px-3 py-0.5 rounded-full text-[10px] font-bold transition-all ${!relationshipBuilderMode ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400'}`}>STANDARD</button>
                   <button onClick={() => setRelationshipBuilderMode(true)} className={`px-3 py-0.5 rounded-full text-[10px] font-bold transition-all ${relationshipBuilderMode ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400'}`}>LINK MODE</button>
                 </div>
-
-                <div className="flex items-center gap-1.5 ml-2 mr-0">
+                <div className="flex items-center gap-1.5">
                   <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Layers:</span>
                   <div className="flex bg-slate-100 p-0.5 rounded-full gap-0.5">
                     {['Human', 'LLM', 'BERT'].map(layer => (
-                    <button 
-                      key={layer} 
-                      onClick={() => handleLayerToggle(layer)} 
+                    <button
+                      key={layer}
+                      onClick={() => handleLayerToggle(layer)}
                       className={`px-3 py-0.5 rounded-full text-[9px] font-bold uppercase transition-all ${activeLayers.includes(layer) ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
                     >
                       {layer}
                     </button>
                   ))}
+                  </div>
                 </div>
               </div>
-
-                <div className="flex items-center gap-1.5">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Theme:</span>
-                  <div className="flex bg-slate-100 p-0.5 rounded-full gap-0.5">
-                    {['light', 'dark', 'soft'].map(t => (
-                    <button 
-                      key={t} 
-                      onClick={() => setTheme(t as any)} 
-                      className={`px-3 py-0.5 rounded-full text-[9px] font-bold uppercase transition-all ${theme === t ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
-                    >
-                      {t}
-                    </button>
-                  ))}
+              <div className="flex items-center gap-1.5">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Theme:</span>
+                <div className="flex bg-slate-100 p-0.5 rounded-full gap-0.5">
+                  {['light', 'dark', 'soft'].map(t => (
+                  <button
+                    key={t}
+                    onClick={() => setTheme(t as any)}
+                    className={`px-3 py-0.5 rounded-full text-[9px] font-bold uppercase transition-all ${theme === t ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                  >
+                    {t}
+                  </button>
+                ))}
                 </div>
               </div>
-
-                <div className="flex gap-1.5 items-center">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase mr-1">Data:</span>
-                  {['Demographic', 'Products', 'Outcomes'].map(v => (
-                    <button key={v} onClick={() => setMetaView(metaView === v.toLowerCase() ? 'none' : v.toLowerCase() as any)} className={`px-2 py-0.5 rounded text-[10px] font-bold transition-all border ${metaView === v.toLowerCase() ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-400 border-slate-200 hover:border-slate-300'}`}>{v}</button>
-                  ))}
-                </div>
-              </div>
-              <div className="text-[10px] font-bold text-slate-300 uppercase tracking-tighter">
-                Record ID: {overrideId || 'Ad-hoc'}
-              </div>
+            </div>
+            <div className="flex flex-wrap items-center gap-1.5 mt-3">
+              <span className="text-[10px] font-bold text-slate-400 uppercase mr-1">Data:</span>
+              {['Demographic', 'Products', 'Outcomes'].map(v => (
+                <button key={v} onClick={() => setMetaView(metaView === v.toLowerCase() ? 'none' : v.toLowerCase() as any)} className={`px-2 py-0.5 rounded text-[10px] font-bold transition-all border ${metaView === v.toLowerCase() ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-400 border-slate-200 hover:border-slate-300'}`}>{v}</button>
+              ))}
+            </div>
+            <div className="text-[10px] font-bold text-slate-300 uppercase tracking-tighter whitespace-nowrap mt-3">
+              Record ID: {overrideId || 'Ad-hoc'}
             </div>
           </div>
 
@@ -652,6 +652,9 @@ export default function Annotate_Panel({ overrideProject, overrideId}: Props) {
                     isReadOnly={isReadOnly}
                     onClickAnnotation={onClickLinkAnnotation}
                     theme={theme}
+                    selectedTermContext={selectedTermContext}
+                    temporalTerms={temporalTerms}
+                    showTemporalHighlights={relationshipBuilderMode}
                   />
                 </div>
               </div>

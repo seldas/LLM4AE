@@ -12,6 +12,9 @@ interface Props {
   onClickAnnotation?: (anno: Annotation) => void;
   isReadOnly?: boolean;
   theme?: 'light' | 'dark' | 'soft';
+  selectedTermContext?: { text: string; start: number; end: number } | null;
+  temporalTerms?: Annotation[];
+  showTemporalHighlights?: boolean;
 }
 
 function getNodeAndOffsetForIndex(rootNode: Node, index: number): { node: Node; offset: number } | null {
@@ -54,6 +57,9 @@ const PageDisplayBuilder = ({
   onClickAnnotation,
   isReadOnly,
   theme = 'light',
+  selectedTermContext,
+  temporalTerms,
+  showTemporalHighlights
 }: Props) => {
   const textRef = useRef<HTMLPreElement>(null);
   const [highlightBoxes, setHighlightBoxes] = useState<any[]>([]);
@@ -114,7 +120,7 @@ const PageDisplayBuilder = ({
       const containerRect = container.getBoundingClientRect();
       const boxes: any[] = [];
 
-      const addBox = (start: number, end: number, label: string, color: string, isRelation: boolean, note: string = "", isSelected: boolean = false, isFirstBox: boolean = true) => {
+      const addBox = (start: number, end: number, label: string, color: string, isRelation: boolean, note: string = "", isSelected: boolean = false, isFirstBox: boolean = true, annotation?: Annotation) => {
         const startInfo = getNodeAndOffsetForIndex(container, start);
         const endInfo = getNodeAndOffsetForIndex(container, end);
         if (startInfo && endInfo) {
@@ -132,6 +138,7 @@ const PageDisplayBuilder = ({
                 height: r.height,
                 label, color, isRelation, start, end, note, isSelected,
                 isFirstBox: isFirstBox && idx === 0
+                , annotationRef: annotation
               });
             }
           } catch (e) {}
@@ -141,19 +148,38 @@ const PageDisplayBuilder = ({
       if (!currentAnnotationRelation) {
         annotations.forEach(ann => {
           const color = optionColors[ann.label.toUpperCase()] || "hsl(210, 10%, 50%)";
-          addBox(ann.textContext.start ?? 0, ann.textContext.end ?? 0, ann.label, color, false, ann.note);
+          addBox(ann.textContext.start ?? 0, ann.textContext.end ?? 0, ann.label, color, false, ann.note, false, true, ann);
         });
       } else {
         const color = optionColors[currentAnnotationRelation.label.toUpperCase()] || "hsl(210, 10%, 50%)";
-        addBox(currentAnnotationRelation.textContext.start ?? 0, currentAnnotationRelation.textContext.end ?? 0, currentAnnotationRelation.label, color, false, currentAnnotationRelation.note, true);
+        addBox(currentAnnotationRelation.textContext.start ?? 0, currentAnnotationRelation.textContext.end ?? 0, currentAnnotationRelation.label, color, false, currentAnnotationRelation.note, true, true, currentAnnotationRelation);
 
         Object.entries(currentAnnotationRelation.relationships).forEach(([relType, relCtx]) => {
           if (relCtx.start === relCtx.end) return;
-          addBox(relCtx.start ?? 0, relCtx.end ?? 0, relType, color, true, "", false);
+           addBox(relCtx.start ?? 0, relCtx.end ?? 0, relType, color, true, "", false);
         });
       }
+
+      if (showTemporalHighlights && temporalTerms?.length) {
+        const seen = new Set<string>();
+        temporalTerms.forEach(term => {
+          const start = term.textContext.start ?? 0;
+          const end = term.textContext.end ?? 0;
+          if (end <= start) return;
+          const key = `${start}-${end}`;
+          if (seen.has(key)) return;
+          seen.add(key);
+          const color = optionColors[term.label.toUpperCase()] || "hsl(48, 95%, 70%)";
+          addBox(start, end, term.label, color, false, term.note || "", false, true, term);
+        });
+      }
+
+      if (selectedTermContext && (!currentAnnotationRelation || selectedTermContext.start !== currentAnnotationRelation.textContext.start || selectedTermContext.end !== currentAnnotationRelation.textContext.end)) {
+        addBox(selectedTermContext.start, selectedTermContext.end, "Temporal", "hsl(48, 95%, 70%)", false, "", true);
+      }
+
       setHighlightBoxes(boxes);
-  }, [annotations, currentAnnotationRelation, optionColors]);
+    }, [annotations, currentAnnotationRelation, optionColors, selectedTermContext, temporalTerms, showTemporalHighlights]);
 
   useEffect(() => {
     computeHighlightBoxes();
@@ -195,8 +221,8 @@ const PageDisplayBuilder = ({
               onMouseLeave={() => setHoveredBox(null)}
               onClick={() => {
                 if (box.isRelation) return;
-                const ann = annotations.find(a => a.textContext.start === box.start && a.textContext.end === box.end);
-                if (ann) onClickAnnotation?.(ann);
+                const annotation = box.annotationRef ?? annotations.find(a => a.textContext.start === box.start && a.textContext.end === box.end);
+                if (annotation) onClickAnnotation?.(annotation);
               }}
               style={{
                 position: "absolute",
