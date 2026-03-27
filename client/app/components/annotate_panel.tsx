@@ -1,7 +1,7 @@
 // annotate_panel.tsx
 'use client';
 
-import { useState, useReducer, useEffect, useRef, useMemo, JSX } from 'react';
+import { useState, useReducer, useEffect, useRef, useMemo, JSX, ReactNode } from 'react';
 import { docReducer, initialDocState, DocActionTypes } from '../lib/doc-reducer';
 import {
   Annotation,
@@ -74,16 +74,167 @@ export default function Annotate_Panel({ overrideProject, overrideId}: Props) {
     { key: 'products', label: 'Products' },
     { key: 'outcomes', label: 'Outcomes' },
   ];
+  type MetaEntryType = 'demographic-structured' | 'products-structured' | 'outcomes-structured' | 'legacy';
+  interface MetaEntry {
+    key: 'demographic' | 'products' | 'outcomes';
+    label: string;
+    type: MetaEntryType;
+    html?: string;
+    data?: any;
+  }
   const [metaView, setMetaView] = useState<'none' | 'demographic' | 'products' | 'outcomes'>('none');
   const availableMetaEntries = useMemo(() => {
     const meta = doc.meta || {};
-    return META_DATA_OPTIONS.map(({ key, label }) => {
+    const entries: MetaEntry[] = [];
+    META_DATA_OPTIONS.forEach(({ key, label }) => {
       const raw = meta[key];
-      const content = typeof raw === 'string' ? raw : raw ? JSON.stringify(raw) : '';
-      const trimmed = (content || '').trim();
-      return trimmed ? { key, label, content: trimmed } : null;
-    }).filter((entry): entry is { key: 'demographic' | 'products' | 'outcomes'; label: string; content: string } => Boolean(entry));
+      if (key === 'demographic') {
+        if (Array.isArray(raw) && raw.length) {
+          entries.push({ key, label, type: 'demographic-structured', data: raw });
+          return;
+        }
+      } else if (key === 'products') {
+        if (raw && typeof raw === 'object' && Array.isArray(raw.groups) && raw.groups.length) {
+          entries.push({ key, label, type: 'products-structured', data: raw });
+          return;
+        }
+      } else if (key === 'outcomes') {
+        const hasRows = raw && typeof raw === 'object' && Array.isArray(raw.rows) && raw.rows.length > 0;
+        const hasCategories =
+          raw &&
+          typeof raw === 'object' &&
+          raw.categories &&
+          Object.values(raw.categories).some((items: any) => Array.isArray(items) && items.length > 0);
+        if (hasRows || hasCategories) {
+          entries.push({ key, label, type: 'outcomes-structured', data: raw });
+          return;
+        }
+      }
+      if (typeof raw === 'string' && raw.trim()) {
+        entries.push({ key, label, type: 'legacy', html: raw.trim() });
+      }
+    });
+    return entries;
   }, [doc.meta]);
+
+  const renderDemographicStructured = (entries: any[]): ReactNode => {
+    const sanitized = entries?.filter(Boolean) || [];
+    if (!sanitized.length) {
+      return <p className="text-sm text-slate-500 italic">No demographic data available.</p>;
+    }
+    return (
+      <div className="space-y-4">
+        {sanitized.map((entry, index) => (
+          <div key={`${entry.label}-${index}`} className="bg-white border border-slate-200 rounded-[1.5rem] p-4">
+            <p className="text-[9px] uppercase tracking-[0.4em] text-slate-400 mb-2">{entry.label}</p>
+            {entry.type === 'list' ? (
+              <div className="space-y-1 text-sm text-slate-700">
+                {(entry.items || []).map((item: string, idx: number) => (
+                  <p key={idx} className="leading-snug flex items-start gap-1">
+                    <span className="text-slate-400">•</span>
+                    <span>{item}</span>
+                  </p>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-slate-700">{entry.value}</p>
+            )}
+          </div>
+        ))}
+      </div>
+    );
+  };
+
+  const renderProductsStructured = (data: any): ReactNode => {
+    const groups = Array.isArray(data?.groups) ? data.groups : [];
+    if (!groups.length) {
+      return <p className="text-sm text-slate-500 italic">No product data available.</p>;
+    }
+    return (
+      <div className="space-y-5">
+        {groups.map((group: any) => (
+          <div key={group.role} className="space-y-3">
+            <div className="flex items-center justify-between text-[10px] uppercase tracking-[0.3em] text-slate-500">
+              <span>{group.role} Products</span>
+              <span>{group.count ?? group.items?.length ?? 0} items</span>
+            </div>
+            <div className="space-y-3">
+              {(group.items || []).map((item: any, index: number) => (
+                <div key={`${group.role}-${index}`} className="bg-slate-50 border border-slate-200 rounded-[1.5rem] p-4">
+                  <div className="text-sm font-semibold text-slate-900 mb-3">{item.display_name}</div>
+                  <div className="grid grid-cols-2 gap-3 text-[12px] text-slate-700">
+                    {(item.fields || []).map((field: any) => (
+                      <div key={`${field.label}-${field.value}`} className="space-y-1">
+                        <p className="text-[9px] uppercase tracking-[0.4em] text-slate-400">{field.label}</p>
+                        <p className="font-semibold text-slate-800">{field.value}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    );
+  };
+
+  const renderOutcomesStructured = (data: any): ReactNode => {
+    const rows = Array.isArray(data?.rows) ? data.rows : [];
+    const categories = data?.categories || {};
+    if (!rows.length && !Object.keys(categories).length) {
+      return <p className="text-sm text-slate-500 italic">No outcomes data available.</p>;
+    }
+    return (
+      <div className="space-y-4">
+        {Object.entries(categories).length > 0 && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {Object.entries(categories).map(([category, items]) => (
+              <div key={category} className="bg-white border border-slate-200 rounded-2xl p-3 text-[10px] uppercase tracking-[0.3em] text-slate-500">
+                <div className="font-semibold text-slate-800 mb-2">{category}</div>
+                <p className="text-[12px] text-slate-600">
+                  {(Array.isArray(items) ? items.map((item: any) => item?.text || '').filter(Boolean) : []).join(', ') || 'Not provided'}
+                </p>
+              </div>
+            ))}
+          </div>
+        )}
+        {rows.map((row: any) => (
+          <div key={`row-${row.term_id}-${row.term_label}`} className="bg-slate-50 border border-slate-200 rounded-[1.5rem] p-4">
+            <div className="flex items-center justify-between text-[10px] uppercase tracking-[0.3em] text-slate-400">
+              <span>Term {row.term_id}</span>
+              <span>{row.start_date ? `Start: ${row.start_date}` : 'Start date unknown'}</span>
+            </div>
+            <div className="mt-2 space-y-2">
+              <div className="text-sm font-semibold text-slate-900">{row.term_label || row.term_event || '—'}</div>
+              <div className="grid grid-cols-2 gap-3 text-[11px] text-slate-600">
+                <div>SOC: {row.soc || '—'}</div>
+                <div>HLGT: {row.hlgt || '—'}</div>
+                <div>HLT: {row.hlt || '—'}</div>
+                <div>PT: {row.pt || '—'}</div>
+                <div>LLT: {row.llt || '—'}</div>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    );
+  };
+
+  const renderMetaEntryContent = (entry: MetaEntry): ReactNode => {
+    if (!entry) return null;
+    switch (entry.type) {
+      case 'demographic-structured':
+        return renderDemographicStructured(entry.data);
+      case 'products-structured':
+        return renderProductsStructured(entry.data);
+      case 'outcomes-structured':
+        return renderOutcomesStructured(entry.data);
+      case 'legacy':
+      default:
+        return <div className="max-w-none break-words" dangerouslySetInnerHTML={{ __html: entry.html || '' }} />;
+    }
+  };
 
   const activeMetaEntry = useMemo(() => availableMetaEntries.find(entry => entry.key === metaView) || null, [availableMetaEntries, metaView]);
 
@@ -698,13 +849,15 @@ export default function Annotate_Panel({ overrideProject, overrideId}: Props) {
 
           {/* Bottom Drawer: Metadata */}
           {activeMetaEntry && (
-            <div className="h-1/3 bg-gradient-to-br from-slate-900/95 to-slate-900 text-slate-100 border-t border-slate-800 overflow-y-auto p-6 animate-in slide-in-from-bottom-full duration-300 shadow-2xl">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-200">{activeMetaEntry.label} Reference</h3>
-                <button onClick={() => setMetaView('none')} className="text-slate-400 hover:text-white font-bold p-2 transition-colors">✕</button>
-              </div>
-              <div className="space-y-4 text-sm leading-relaxed text-slate-100 prose prose-invert max-w-none">
-                <div className="bg-slate-800/60 p-4 rounded-2xl border border-slate-700 shadow-inner shadow-slate-900/60" dangerouslySetInnerHTML={{ __html: activeMetaEntry.content }} />
+            <div className="w-full bg-white border-t border-slate-200 px-8 py-6">
+              <div className="max-w-4xl mx-auto">
+                <div className="flex items-center justify-between gap-4 mb-4">
+                  <h3 className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-500">{activeMetaEntry.label} Reference</h3>
+                  <button onClick={() => setMetaView('none')} className="text-slate-500 hover:text-slate-900 font-semibold text-[10px] uppercase tracking-[0.4em] transition-colors px-4 py-2 rounded-full border border-slate-200 bg-white">Close</button>
+                </div>
+                <div className="bg-slate-50 border border-slate-200 rounded-3xl shadow-sm p-5 text-slate-800 leading-relaxed text-sm space-y-4 min-h-[120px]">
+                  {renderMetaEntryContent(activeMetaEntry)}
+                </div>
               </div>
             </div>
           )}

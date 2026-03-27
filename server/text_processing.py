@@ -71,10 +71,8 @@ def generate_demographic_content(row, mode='RxLogix'):
             "Weight In kg", "Medical History and Comments", "Reporter Qualifications", "Health Professional", "All Lab Tests",
             "Confirmatory Test Comments", "Seriousness", "All Outcomes"
     ]
-        
-    # Optional: Color cycle (or hardcode per key if needed)
-    demographic_html = "<div class='mb-4 space-y-4 text-sm text-gray-800'>"
 
+    entries = []
     for key in demographic_keys:
         val = row.get(key, "")
         if pd.isna(val):
@@ -83,115 +81,115 @@ def generate_demographic_content(row, mode='RxLogix'):
         if not value:
             continue
 
-        if key in ["Medical History and Comments","Medical History/Medical History Comments"]:
-            # Parse and render as bullet list
+        if key in ["Medical History and Comments", "Medical History/Medical History Comments"]:
             items = [item.strip(' ;)') for item in value.split(';') if item.strip()]
-            formatted = f"<p class='text-gray-900 mt-1'>{'; '.join(items)}</p>"
+            if not items:
+                continue
+            entries.append({
+                "label": key,
+                "type": "list",
+                "items": items
+            })
         else:
-            # Regular paragraph value
-            formatted = f"<p class='text-gray-900 mt-1'>{value}</p>"
+            entries.append({
+                "label": key,
+                "type": "text",
+                "value": value
+            })
 
-        demographic_html += f"""
-            <div>
-            <h4>{key}</h4>
-            {formatted}
-            </div>
-        """
-
-
-    demographic_html += "</div>"
-    return demographic_html
+    return entries
     
 def generate_outcomes_content(row, mode='RxLogix'):
-    # === Build meta.outcomes ===
     if mode == 'InfoVIP':
         categories = ['All LLTs', 'All PTs', 'All HLTs', 'All HLGTs', 'All SOCs']
-        
-        def parse_list(text):
-            return [item.strip() for item in text.split(':') if item.strip()]
-        
         include_start_date = False
-    else:  # RxLogix mode
+
+        def parse_list(text):
+            items = []
+            for item in str(text).split(':'):
+                value = item.strip()
+                if not value:
+                    continue
+                items.append({"rank": None, "text": value})
+            return items
+    else:
         categories = ['All SOCs', 'All HLGTs', 'All HLTs', 'All PTs', 'All LLTs']
-        
+        include_start_date = True
+
         def parse_list(text):
             items = []
             for item in str(text).split(';'):
-                item = item.strip()
-                if not item:
+                value = item.strip()
+                if not value:
                     continue
-                # Try to extract "N) Term Name"
-                match = re.match(r'^(\d+)\)\s*(.*)$', item)
+                match = re.match(r'^(\d+)\)\s*(.*)$', value)
                 if match:
-                    items.append((int(match.group(1)), match.group(2).strip()))
+                    items.append({"rank": int(match.group(1)), "text": match.group(2).strip()})
                 else:
-                    # Fallback for unnumbered items
-                    items.append((0, item))
+                    items.append({"rank": None, "text": value})
             return items
-        
-        include_start_date = True
 
     parsed_data = {category: parse_list(row.get(category, '')) for category in categories}
-    max_items = max(len(parsed_data[category]) for category in categories)
+    max_items = max((len(parsed_data[category]) for category in categories), default=0)
 
-    pt_table_html = [
-        "<div class='mb-4 overflow-hidden'>",
-        "<table class='min-w-full text-sm border border-gray-300 rounded shadow-md'>",
-        "<thead class='bg-gray-100 text-left'><tr>",
-        "<th class='px-4 py-2 border'>Term ID</th>",
-        "<th class='px-4 py-2 border'>MedDRA</th>"
-        "<th class='px-4 py-2 border'>PT</th>",
-        "<th class='px-4 py-2 border'>LLT</th>",
-    ]
-    
-    if include_start_date:
-        pt_table_html.append("<th class='px-4 py-2 border'>Start Date</th>")
-    
-    pt_table_html.append("</tr></thead><tbody>")
+    def fetch_value(category_list, index, rank=None):
+        if rank:
+            for entry in category_list:
+                if entry.get("rank") == rank:
+                    return entry.get("text", "")
+        if index < len(category_list):
+            return category_list[index].get("text", "")
+        return ""
 
-    for i in range(max_items):
-        if mode == 'InfoVIP':
-            soc = parsed_data['All SOCs'][i] if i < len(parsed_data['All SOCs']) else ''
-            hlgt = parsed_data['All HLGTs'][i] if i < len(parsed_data['All HLGTs']) else ''
-            hlt = parsed_data['All HLTs'][i] if i < len(parsed_data['All HLTs']) else ''
-            pt = parsed_data['All PTs'][i] if i < len(parsed_data['All PTs']) else ''
-            llt = parsed_data['All LLTs'][i] if i < len(parsed_data['All LLTs']) else ''
-            term_id = i + 1
-        else:  # RxLogix mode
-            soc = next((item[1] for item in parsed_data['All SOCs'] if item[0] == i+1), '')
-            hlgt = next((item[1] for item in parsed_data['All HLGTs'] if item[0] == i+1), '')
-            hlt = next((item[1] for item in parsed_data['All HLTs'] if item[0] == i+1), '')
-            pt = next((item[1] for item in parsed_data['All PTs'] if item[0] == i+1), '')
-            llt = next((item[1] for item in parsed_data['All LLTs'] if item[0] == i+1), '')
-            term_id = i + 1
-            
-            term_val = row.get(f"PT Term Event {term_id}", "")
-            term = term_val.strip() if isinstance(term_val, str) else str(term_val)
-            
+    rows = []
+    for idx in range(max_items):
+        term_id = idx + 1
+        term_rank = term_id if mode != 'InfoVIP' else None
+        soc = fetch_value(parsed_data['All SOCs'], idx, term_rank)
+        hlgt = fetch_value(parsed_data['All HLGTs'], idx, term_rank)
+        hlt = fetch_value(parsed_data['All HLTs'], idx, term_rank)
+        pt = fetch_value(parsed_data['All PTs'], idx, term_rank)
+        llt = fetch_value(parsed_data['All LLTs'], idx, term_rank)
+
+        term_val = ''
+        date = ''
+        if mode != 'InfoVIP':
+            term_raw = row.get(f"PT Term Event {term_id}", "")
+            term_val = term_raw.strip() if isinstance(term_raw, str) else str(term_raw or "")
             date_val = row.get(f"Start Date Event {term_id}", "")
-            date = date_val.strip() if isinstance(date_val, str) else str(date_val)
+            date = date_val.strip() if isinstance(date_val, str) else str(date_val or "")
 
-        if any([soc, hlgt, hlt, pt, llt]):
-            row_html = [
-                f"<tr class='hover:bg-gray-50'>",
-                f"<td class='px-4 py-2 border'>{term_id}</td>",
-                f"<td class='px-4 py-2 border'>{soc}/{hlgt}/{hlt}</td>",
-                f"<td class='px-4 py-2 border'>{pt or term if mode == 'RxLogix' else pt}</td>",
-                f"<td class='px-4 py-2 border'>{llt}</td>",
-            ]
-            
-            if include_start_date:
-                row_html.append(f"<td class='px-4 py-2 border'>{date}</td>")
-            
-            row_html.append("</tr>")
-            pt_table_html.extend(row_html)
+        if any([soc, hlgt, hlt, pt, llt, term_val]):
+            rows.append({
+                "term_id": term_id,
+                "soc": soc,
+                "hlgt": hlgt,
+                "hlt": hlt,
+                "pt": pt,
+                "llt": llt,
+                "term_label": pt or term_val,
+                "term_event": term_val,
+                "start_date": date,
+            })
 
-    pt_table_html.append("</tbody></table></div>")
-    return "\n".join(pt_table_html)
+    categories_summary = {
+        category: [
+            {"rank": entry.get("rank"), "text": entry.get("text", "")}
+            for entry in parsed_data[category]
+            if entry.get("text")
+        ]
+        for category in categories
+        if parsed_data[category]
+    }
+
+    return {
+        "mode": mode,
+        "rows": rows,
+        "categories": categories_summary
+    }
 
 
 def generate_products_content(row, columns, mode='RxLogix'):
-    # === Build meta.products grouped by Role ===
     if mode == 'RxLogix':
         product_keys = [
             "Product Name", "Product Active Ingredient", "Reported Verbatim", "Compounded Product", "Combination Product",
@@ -209,7 +207,6 @@ def generate_products_content(row, columns, mode='RxLogix'):
             "Application Type", "Application Number", "NDC Number", "Lot Number"
         ]
 
-    # Detect prefixes (Product 1, Product 2, etc.)
     product_prefixes = set()
     for col in columns:
         col_str = str(col)
@@ -217,10 +214,9 @@ def generate_products_content(row, columns, mode='RxLogix'):
             prefix = col_str.split("Product Name")[0].strip()
             product_prefixes.add(prefix)
 
-    # Categorize products by Role
-    grouped_products = {"Suspect": [], "Concomitant":[], "Other": []}
-
+    grouped_products = {"Suspect": [], "Concomitant": [], "Other": []}
     sorted_prefixes = sorted(product_prefixes, key=lambda x: int(x.split()[-1]) if x.split()[-1].isdigit() else 0)
+
     for prefix in sorted_prefixes:
         product_data = {str(col)[len(prefix):].strip(): row[col] for col in columns if str(col).startswith(prefix)}
         role = str(product_data.get("Role", "")).strip().lower()
@@ -231,53 +227,49 @@ def generate_products_content(row, columns, mode='RxLogix'):
         else:
             grouped_products["Other"].append(product_data)
 
-    # Build product entry as mini-table
-    def render_product(product_data):
-        rows = ""
+    def normalize_value(value):
+        if pd.isna(value):
+            return ""
+        return str(value).strip()
+
+    def to_fields(product_data):
+        fields = []
         for key in product_keys:
-            val = product_data.get(key, "")
-            if pd.isna(val):
-                continue
-            value = str(val).strip() if isinstance(val, str) else str(val)
+            value = normalize_value(product_data.get(key, ""))
             if not value:
                 continue
-            rows += f"""
-            <tr>
-            <td class='pr-4 font-medium text-gray-700'>{key}:</td>
-            <td class='text-gray-900'>{value}</td>
-            </tr>
-            """
-        return f"""
-        <div class='mb-4 border border-gray-200 rounded-lg bg-white p-3 shadow-sm'>
-        <h4 class='font-semibold text-blue-800 mb-2'>{product_data.get("Product Name", "(Unnamed Product)")}</h4>
-        <table class='text-sm table-auto'>
-            <tbody>
-            {rows}
-            </tbody>
-        </table>
-        </div>
-        """
+            fields.append({"label": key, "value": value})
+        return fields
 
-    # Final HTML output
-    products_html = ""
+    def determine_display_name(product_data):
+        for candidate in ["Product Name", "Prod Active Ingred", "Product Active Ingredient"]:
+            val = normalize_value(product_data.get(candidate, ""))
+            if val:
+                return val
+        return "(Unnamed Product)"
 
+    groups = []
     for category, items in grouped_products.items():
-        if not items:
-            continue
+        group_items = []
+        for product_data in items:
+            fields = to_fields(product_data)
+            if not fields:
+                continue
+            group_items.append({
+                "display_name": determine_display_name(product_data),
+                "fields": fields,
+            })
+        if group_items:
+            groups.append({
+                "role": category,
+                "count": len(group_items),
+                "items": group_items
+            })
 
-        block = "\n".join(render_product(p) for p in items)
-
-        products_html += f"""
-        <details class='mb-4 border rounded-lg bg-white shadow-sm overflow-hidden'>
-        <summary class='cursor-pointer select-none px-4 py-2 font-semibold bg-blue-50 text-blue-800 hover:bg-blue-100'>
-                    {category} Products ({len(items)})
-        </summary>
-        <div class='px-4 py-3'>
-            {block}
-        </div>
-        </details>
-        """
-    return products_html
+    return {
+        "mode": mode,
+        "groups": groups
+    }
 
 def load_json_with_charset_normalizer(file_path):
     """

@@ -13,6 +13,52 @@ interface Props {
   id?: string;
 }
 
+type DemographicEntry = {
+  label: string;
+  type: 'text' | 'list';
+  value?: string;
+  items?: string[];
+};
+
+type ProductField = {
+  label: string;
+  value: string;
+};
+
+type ProductItem = {
+  display_name: string;
+  fields: ProductField[];
+};
+
+type ProductGroup = {
+  role: string;
+  count: number;
+  items: ProductItem[];
+};
+
+type ProductsMeta = {
+  mode?: string;
+  groups: ProductGroup[];
+};
+
+type OutcomeRow = {
+  term_id?: number;
+  soc?: string;
+  hlgt?: string;
+  hlt?: string;
+  pt?: string;
+  llt?: string;
+  term_label?: string;
+  term_event?: string;
+  start_date?: string;
+};
+
+type OutcomesMeta = {
+  mode?: string;
+  rows: OutcomeRow[];
+  categories?: Record<string, { rank?: number; text?: string }[]>;
+};
+
 type LlmHeaderObject = {
   suspected_drug?: string;
   primary_adverse_event?: string;
@@ -120,20 +166,54 @@ export default function AssessPanel({ pages, meta, annotations, folder, fileName
   const initialAssessment: StoredAssessment | undefined =
     (meta && (meta as any).assessment) || undefined;
 
+  const demographicEntries = useMemo(() => {
+    const raw = meta?.demographic;
+    return Array.isArray(raw) ? (raw as DemographicEntry[]) : undefined;
+  }, [meta]);
+
   const demographicHtml = useMemo(() => {
-    const html = meta?.demographic;
-    return typeof html === 'string' ? html : '';
+    if (demographicEntries) return '';
+    const raw = meta?.demographic;
+    return typeof raw === 'string' ? raw : '';
+  }, [meta, demographicEntries]);
+
+  const productsData = useMemo(() => {
+    const raw = meta?.products;
+    if (raw && typeof raw === 'object' && !Array.isArray(raw) && Array.isArray((raw as ProductsMeta).groups)) {
+      return raw as ProductsMeta;
+    }
+    return undefined;
   }, [meta]);
 
   const productsHtml = useMemo(() => {
-    const html = meta?.products;
-    return typeof html === 'string' ? html : '';
+    if (productsData) return '';
+    const raw = meta?.products;
+    return typeof raw === 'string' ? raw : '';
+  }, [meta, productsData]);
+
+  const outcomesData = useMemo(() => {
+    const raw = meta?.outcomes;
+    if (raw && typeof raw === 'object' && !Array.isArray(raw) && (Array.isArray((raw as OutcomesMeta).rows) || raw.categories)) {
+      return raw as OutcomesMeta;
+    }
+    return undefined;
   }, [meta]);
 
   const outcomesHtml = useMemo(() => {
-    const html = meta?.outcomes;
-    return typeof html === 'string' ? html : '';
-  }, [meta]);
+    if (outcomesData) return '';
+    const raw = meta?.outcomes;
+    return typeof raw === 'string' ? raw : '';
+  }, [meta, outcomesData]);
+
+  const demographicPayload = demographicEntries
+    ? formatDemographicText(demographicEntries)
+    : stripHtmlTags(demographicHtml);
+  const productsPayload = productsData
+    ? formatProductsText(productsData)
+    : stripHtmlTags(productsHtml);
+  const outcomesPayload = outcomesData
+    ? formatOutcomesText(outcomesData)
+    : stripHtmlTags(outcomesHtml);
 
   const [selectedOutcome, setSelectedOutcome] = useState<AssessmentOption | null>(
     (initialAssessment?.selected_judgment as AssessmentOption) || null
@@ -183,9 +263,9 @@ export default function AssessPanel({ pages, meta, annotations, folder, fileName
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           narrative: firstPageText,
-          demographic_html: demographicHtml,
-          products_html: productsHtml,
-          outcomes_html: outcomesHtml,
+          demographic_html: demographicPayload,
+          products_html: productsPayload,
+          outcomes_html: outcomesPayload,
           judgment: option,
         }),
       });
@@ -246,9 +326,9 @@ export default function AssessPanel({ pages, meta, annotations, folder, fileName
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             narrative: firstPageText,
-            demographic_html: demographicHtml,
-            products_html: productsHtml,
-            outcomes_html: outcomesHtml,
+            demographic_html: demographicPayload,
+            products_html: productsPayload,
+            outcomes_html: outcomesPayload,
           }),
         });
         const json = await res.json();
@@ -272,7 +352,7 @@ export default function AssessPanel({ pages, meta, annotations, folder, fileName
       }
     };
     loadScores();
-  }, [firstPageText, demographicHtml, productsHtml, outcomesHtml, scoreMap]);
+  }, [firstPageText, demographicPayload, productsPayload, outcomesPayload, scoreMap]);
 
   React.useEffect(() => {
     updateLineCount();
@@ -337,7 +417,9 @@ export default function AssessPanel({ pages, meta, annotations, folder, fileName
       {/* Demographic Information */}
       <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-4">
         <h2 className="text-lg font-semibold mb-3 text-gray-800">Demographic Information</h2>
-        {demographicHtml ? (
+        {demographicEntries ? (
+          renderDemographicEntries(demographicEntries)
+        ) : demographicHtml ? (
           <div
             className="p-3 bg-gray-50 border border-gray-200 rounded-md text-sm leading-relaxed prose prose-sm max-w-none"
             dangerouslySetInnerHTML={{ __html: demographicHtml }}
@@ -350,7 +432,9 @@ export default function AssessPanel({ pages, meta, annotations, folder, fileName
       {/* Product Information */}
       <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-4">
         <h2 className="text-lg font-semibold mb-3 text-gray-800">Product Information</h2>
-        {productsHtml ? (
+        {productsData ? (
+          renderProductGroups(productsData)
+        ) : productsHtml ? (
           <div
             className="p-3 bg-gray-50 border border-gray-200 rounded-md text-sm leading-relaxed prose prose-sm max-w-none"
             dangerouslySetInnerHTML={{ __html: productsHtml }}
@@ -363,7 +447,9 @@ export default function AssessPanel({ pages, meta, annotations, folder, fileName
       {/* Outcomes Information */}
       <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-4">
         <h2 className="text-lg font-semibold mb-3 text-gray-800">Outcomes</h2>
-        {outcomesHtml ? (
+        {outcomesData ? (
+          renderOutcomesEntries(outcomesData)
+        ) : outcomesHtml ? (
           <div
             className="p-3 bg-gray-50 border border-gray-200 rounded-md text-sm leading-relaxed prose prose-sm max-w-none"
             dangerouslySetInnerHTML={{ __html: outcomesHtml }}
@@ -511,3 +597,147 @@ export default function AssessPanel({ pages, meta, annotations, folder, fileName
     </div>
   );
 }
+
+const stripHtmlTags = (value?: string): string =>
+  value ? value.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim() : '';
+
+const formatDemographicText = (entries: DemographicEntry[]): string =>
+  entries
+    .map(entry => {
+      if (entry.type === 'list') {
+        return `${entry.label}: ${(entry.items || []).join('; ')}`;
+      }
+      return `${entry.label}: ${entry.value || ''}`;
+    })
+    .filter(Boolean)
+    .join('\n');
+
+const formatProductsText = (data?: ProductsMeta): string => {
+  if (!data || !Array.isArray(data.groups)) return '';
+  const pieces: string[] = [];
+  data.groups.forEach(group => {
+    (group.items || []).forEach(item => {
+      const detail = item.fields.map(field => `${field.label}: ${field.value}`).join(' | ');
+      pieces.push(`Role: ${group.role} - ${item.display_name}${detail ? ` | ${detail}` : ''}`);
+    });
+  });
+  return pieces.join('\n');
+};
+
+const formatOutcomesText = (data?: OutcomesMeta): string => {
+  if (!data) return '';
+  const rows = Array.isArray(data.rows) ? data.rows : [];
+  const rowPieces = rows.map(row => {
+    const columns = [
+      `SOC: ${row.soc || '—'}`,
+      `HLGT: ${row.hlgt || '—'}`,
+      `HLT: ${row.hlt || '—'}`,
+      `PT: ${row.pt || '—'}`,
+      `LLT: ${row.llt || '—'}`
+    ].join(', ');
+    const header = row.term_label || row.term_event || `Term ${row.term_id || '—'}`;
+    return `${header}${row.start_date ? ` | Start: ${row.start_date}` : ''} | ${columns}`;
+  });
+  const categoryPieces = data.categories
+    ? Object.entries(data.categories)
+        .map(([category, items]) => {
+          const textList = (Array.isArray(items) ? items.map(item => item?.text || '').filter(Boolean) : []).join(', ');
+          return `${category}: ${textList || 'Not provided'}`;
+        })
+        .filter(Boolean)
+    : [];
+  return [...rowPieces, ...categoryPieces].filter(Boolean).join('\n');
+};
+
+const renderDemographicEntries = (entries: DemographicEntry[]): React.ReactNode => (
+  <div className="space-y-3">
+    {entries.map((entry, idx) => (
+      <div key={`${entry.label}-${idx}`} className="bg-gray-50 border border-gray-200 rounded-2xl p-4">
+        <p className="text-[9px] uppercase tracking-[0.3em] text-gray-500 mb-2">{entry.label}</p>
+        {entry.type === 'list' ? (
+          <ul className="list-disc list-inside text-sm text-gray-700 space-y-1">
+            {(entry.items || []).map((item, itemIdx) => (
+              <li key={itemIdx}>{item}</li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-sm text-gray-700">{entry.value || '—'}</p>
+        )}
+      </div>
+    ))}
+  </div>
+);
+
+const renderProductGroups = (data: ProductsMeta): React.ReactNode => {
+  if (!Array.isArray(data.groups) || !data.groups.length) {
+    return <p className="text-sm text-gray-500 italic">No product information available.</p>;
+  }
+  return (
+    <div className="space-y-4">
+      {data.groups.map(group => (
+        <div key={group.role} className="space-y-3">
+            <div className="flex items-center justify-between text-[10px] uppercase tracking-[0.3em] text-gray-500">
+              <span>{group.role}</span>
+              <span>{group.count ?? (group.items?.length ?? 0)} products</span>
+            </div>
+          <div className="space-y-3">
+            {(group.items || []).map((item, idx) => (
+              <div key={`${group.role}-${idx}`} className="bg-white border border-gray-200 rounded-2xl p-4 shadow-sm">
+                <div className="text-sm font-semibold text-gray-900 mb-2">{item.display_name}</div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-[12px] text-gray-700">
+                  {item.fields.map(field => (
+                    <div key={`${field.label}-${field.value}`} className="space-y-1">
+                      <p className="text-[10px] uppercase tracking-[0.3em] text-gray-400">{field.label}</p>
+                      <p className="font-semibold text-gray-800">{field.value}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+};
+
+const renderOutcomesEntries = (data: OutcomesMeta): React.ReactNode => {
+  const rows = Array.isArray(data.rows) ? data.rows : [];
+  const categories = data.categories || {};
+  if (!rows.length && !Object.keys(categories).length) {
+    return <p className="text-sm text-gray-500 italic">No outcomes listed.</p>;
+  }
+  return (
+    <div className="space-y-4">
+      {Object.entries(categories).length > 0 && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {Object.entries(categories).map(([category, items]) => (
+            <div key={category} className="bg-white border border-gray-200 rounded-2xl p-3 text-[10px] uppercase tracking-[0.3em] text-gray-500">
+              <div className="font-semibold text-gray-800 mb-1">{category}</div>
+              <p className="text-[12px] text-gray-600">
+                {(Array.isArray(items) ? items.map(item => item?.text || '').filter(Boolean) : []).join(', ') ||
+                  'Not provided'}
+              </p>
+            </div>
+          ))}
+        </div>
+      )}
+      {rows.map((row, idx) => (
+        <div key={`outcome-row-${idx}`} className="bg-gray-50 border border-gray-200 rounded-2xl p-4">
+          <div className="flex items-center justify-between text-[10px] uppercase tracking-[0.3em] text-gray-400 mb-2">
+            <span>Term {row.term_id || idx + 1}</span>
+            <span>{row.start_date ? `Start: ${row.start_date}` : 'Start date unknown'}</span>
+          </div>
+          <div className="text-sm font-semibold text-gray-900 mb-1">{row.term_label || row.term_event || '—'}</div>
+          <div className="grid grid-cols-2 gap-3 text-[12px] text-gray-600">
+            <div>SOC: {row.soc || '—'}</div>
+            <div>HLGT: {row.hlgt || '—'}</div>
+            <div>HLT: {row.hlt || '—'}</div>
+            <div>PT: {row.pt || '—'}</div>
+            <div>LLT: {row.llt || '—'}</div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+};

@@ -165,8 +165,10 @@ def upsert_case(case_num, ver_num, attributes):
             for col, val in attributes.items():
                 if col in ['case_number', 'version_number']: continue
                 new_val = str(val).strip() if val is not None else ""
-                # Keep existing if Excel is empty
-                final_val = new_val if new_val else (existing[col] or "")
+                if col == 'meta':
+                    final_val = new_val
+                else:
+                    final_val = new_val if new_val else (existing[col] or "")
                 updates.append(f"{col} = ?")
                 params.append(final_val)
             params.extend([case_num, ver_num])
