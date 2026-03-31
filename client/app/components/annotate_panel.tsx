@@ -635,7 +635,7 @@ export default function Annotate_Panel({ overrideProject, overrideId}: Props) {
   useEffect(() => {
     const loadGuidelines = async () => {
       try {
-        const res = await fetch('/api/annotation-guidelines');
+        const res = await fetch('/annotator_api/api/annotation-guidelines');
         if (!res.ok) throw new Error('Guidelines fetch failed');
         const data: AnnotationGuideline[] = await res.json();
         setAnnotationGuidelines(data);

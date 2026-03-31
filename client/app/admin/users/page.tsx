@@ -164,8 +164,8 @@ export default function AdminDashboardPage() {
   const fetchData = async () => {
     try {
       const [usersRes, rolesRes] = await Promise.all([
-        fetch('/api/users'),
-        fetch('/api/roles')
+        fetch('/annotator_api/api/users'),
+        fetch('/annotator_api/api/roles')
       ]);
       const usersData = await usersRes.json();
       const rolesData = await rolesRes.json();
@@ -178,7 +178,7 @@ export default function AdminDashboardPage() {
 
   const fetchStats = async () => {
     try {
-      const res = await fetch('/api/admin/stats');
+      const res = await fetch('/annotator_api/api/admin/stats');
       if (res.ok) {
         const data = await res.json();
         setStats(data);
@@ -192,7 +192,7 @@ export default function AdminDashboardPage() {
     if (!confirm('Trigger background BERT annotation?')) return;
     setIsProcessingBert(true);
     try {
-      const res = await fetch('/api/admin/bert-annotate', { method: 'POST' });
+      const res = await fetch('/annotator_api/api/admin/bert-annotate', { method: 'POST' });
       if (res.ok) alert('Started.');
       else alert('Failed.');
     } catch (err) {
@@ -204,7 +204,7 @@ export default function AdminDashboardPage() {
 
   const handleSubmitUser = async (e: React.FormEvent) => {
     e.preventDefault();
-    const url = editingUser ? `/api/users/${editingUser.id}` : '/api/users';
+    const url = editingUser ? `/annotator_api/api/users/${editingUser.id}` : '/annotator_api/api/users';
     const method = editingUser ? 'PUT' : 'POST';
     
     try {
@@ -231,7 +231,7 @@ export default function AdminDashboardPage() {
   const handleDelete = async (id: number) => {
     if (!confirm('Delete this user?')) return;
     try {
-      const res = await fetch(`/api/users/${id}`, { method: 'DELETE' });
+      const res = await fetch(`/annotator_api/api/users/${id}`, { method: 'DELETE' });
       if (res.ok) {
         fetchData();
         fetchStats();

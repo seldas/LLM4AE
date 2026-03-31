@@ -31,3 +31,4 @@ MANIFEST
 .gitignore
 history/
 database/
+./ipynb_checkpoints/

@@ -84,7 +84,7 @@ export default function AdjudicateClient() {
 
   const saveAdjudication = async (annId: number, status: string, reason: string) => {
     try {
-      const res = await fetch('/api/adjudicate', {
+      const res = await fetch('/annotator_api/api/adjudicate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

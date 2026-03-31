@@ -44,7 +44,7 @@ const NewProjectUploader = ({
     formData.append("projectName", newProjectName.trim());
 
     try {
-      const res = await fetch("/api/create-project-from-excel", { method: "POST", body: formData });
+      const res = await fetch("/annotator_api/api/create-project-from-excel", { method: "POST", body: formData });
       if (res.ok) {
         await fetchProjectList();
         onClose();
@@ -144,7 +144,7 @@ export default function HomePage() {
   };
 
   const fetchProjectList = async () => {
-    const res = await fetch('/api/projects');
+    const res = await fetch('/annotator_api/api/projects');
     const projects = await res.json();
     const sorted = projects.sort((a: string, b: string) => {
       if (a.toLowerCase() === 'playground') return -1;
@@ -158,7 +158,7 @@ export default function HomePage() {
     setSelectedProjectName(projectName);
     setLoading(true);
     try {
-      const res = await fetch(`/api/show_project/${encodeURIComponent(projectName)}?limit=${limit}&offset=${offset}`);
+      const res = await fetch(`/annotator_api/api/show_project/${encodeURIComponent(projectName)}?limit=${limit}&offset=${offset}`);
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
       const records = data.records.map((r: any) => {
@@ -185,7 +185,7 @@ export default function HomePage() {
     if (!window.confirm(`Delete project "${projectName}"? This keeps the underlying cases.`)) return;
     setDeletingProject(projectName);
     try {
-      const res = await fetch('/api/delete-project', {
+      const res = await fetch('/annotator_api/api/delete-project', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ projectName })
@@ -242,14 +242,14 @@ export default function HomePage() {
           <div className="flex gap-3">
             {isAdj && (
               <button
-                onClick={() => window.open(`/adjudicate?project=${encodeURIComponent(folderName)}&id=${encodeURIComponent(id)}`, '_blank')}
+                onClick={() => window.open(`/annotator/adjudicate?project=${encodeURIComponent(folderName)}&id=${encodeURIComponent(id)}`, '_blank')}
                 className="text-emerald-600 hover:text-emerald-800 text-[11px] font-bold uppercase tracking-wider"
               >
                 Adjudicate
               </button>
             )}
             <button
-              onClick={() => window.open(`/annotate?project=${encodeURIComponent(folderName)}&id=${encodeURIComponent(id)}`, '_blank')}
+              onClick={() => window.open(`/annotator/annotate?project=${encodeURIComponent(folderName)}&id=${encodeURIComponent(id)}`, '_blank')}
               className="text-blue-600 hover:text-blue-800 text-[11px] font-bold uppercase tracking-wider"
             >
               Review
@@ -402,7 +402,7 @@ export default function HomePage() {
               <button 
                 onClick={async () => {
                   const finalBaseName = `manual_${Date.now()}`;
-                  await fetch('/api/save', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ fileName: finalBaseName, curr_folder: 'Playground', pages: [playgroundText.trim()], annotations: [], meta: {} }) });
+                  await fetch('/annotator_api/api/save', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ fileName: finalBaseName, curr_folder: 'Playground', pages: [playgroundText.trim()], annotations: [], meta: {} }) });
                   setPlaygroundText('');
                   handleProjectClick('Playground');
                   window.open(`/annotate?project=Playground&file=${encodeURIComponent(finalBaseName + '.json')}`, '_blank');

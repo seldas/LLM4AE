@@ -10,7 +10,7 @@ RUN pip install --no-cache-dir --upgrade pip && \
 # Development fallback: ensure app.py can run even if volume isn't mounted yet
 COPY . .
 
-EXPOSE 5000
+EXPOSE 8862
 
 # Default command (overridden in dev compose)
 CMD ["python", "app.py"]

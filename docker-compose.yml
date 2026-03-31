@@ -1,0 +1,39 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    container_name: annotator-backend
+    expose:
+      - "8862" # Internal-only for services on apps-network
+    env_file:
+      - .env
+    environment:
+      HOST: 0.0.0.0
+    volumes:
+      - ./server/database:/app/database
+    networks:
+      - apps-network
+
+  frontend:
+    build:
+      context: ./client
+      dockerfile: Dockerfile
+    container_name: annotator-frontend
+    volumes:
+      - ./client/public:/app/public
+    expose:
+      - "3000" # Internal-only for services on apps-network
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+    networks:
+      - apps-network
+
+networks:
+  apps-network:
+    name: apps-network
+    external: true

@@ -1,15 +1,9 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  allowedDevOrigins: ['ncshpcgpu01'],
-  async rewrites() {
-    return [
-      {
-        source: '/api/:path*',
-        destination: 'http://localhost:8862/api/:path*',
-      },
-    ];
-  },
+  basePath: "/annotator",
+  trailingSlash: true,
+  allowedDevOrigins: ["ncshpcgpu01", "ncshpc400", "ncshpc400.fda.gov"]
 };
 
 export default nextConfig;

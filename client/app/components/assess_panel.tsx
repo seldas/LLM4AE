@@ -258,7 +258,7 @@ export default function AssessPanel({ pages, meta, annotations, folder, fileName
     setReasonChecks([]);
 
     try {
-      const res = await fetch('/api/llm-assess', {
+      const res = await fetch('/annotator_api/api/llm-assess', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -291,7 +291,7 @@ export default function AssessPanel({ pages, meta, annotations, folder, fileName
         reason_checks: reasonChecks.length ? reasonChecks : undefined,
       };
 
-      const res = await fetch('/api/save-assessment', {
+      const res = await fetch('/annotator_api/api/save-assessment', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -321,7 +321,7 @@ export default function AssessPanel({ pages, meta, annotations, folder, fileName
       if (!firstPageText) return;
       if (Object.keys(scoreMap).length > 0) return;
       try {
-        const res = await fetch('/api/llm-assess-scores', {
+        const res = await fetch('/annotator_api/api/llm-assess-scores', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
