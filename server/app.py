@@ -521,13 +521,21 @@ def llm_assess_explanation():
 @app.route("/api/annotate_icsr_intake/", methods=["POST"])
 @cross_origin()
 def annotate_icsr_intake():
+    # Try getting from form (traditional POST) or JSON body
     case_data_raw = request.form.get("case_data")
-    if not case_data_raw:
-        return "Missing case_data", 400
+    if case_data_raw:
+        try:
+            case_data = json.loads(case_data_raw)
+        except Exception:
+            return "Invalid JSON in case_data form field", 400
+    else:
+        case_data = request.get_json(silent=True)
+    
+    if not case_data:
+        return "Missing case_data (should be a JSON object or form field)", 400
     
     try:
-        case_data = json.loads(case_data_raw)
-        case_num = case_data.get("safety_report_id") or case_data.get("case_id") or str(case_data.get("id"))
+        case_num = str(case_data.get("safety_report_id") or case_data.get("case_id") or case_data.get("id") or "unknown")
         ver_num = "1"
         narrative = case_data.get("narrative", "")
         
