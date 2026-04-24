@@ -16,6 +16,7 @@ services:
       - FRONTEND_URL=http://localhost:8861
       - FRONTEND_BASE_PATH=
       - PYTHONUNBUFFERED=1
+    command: python app.py
     stdin_open: true
     tty: true
 

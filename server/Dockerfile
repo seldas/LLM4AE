@@ -13,4 +13,6 @@ COPY . .
 
 EXPOSE 8862
 
-CMD ["python", "app.py"]
+# Use gunicorn for production. 
+# We use 4 workers and a longer timeout (120s) because LLM/BERT tasks can be heavy.
+CMD ["gunicorn", "--bind", "0.0.0.0:8862", "--workers", "4", "--timeout", "120", "app:app"]
