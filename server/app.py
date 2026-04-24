@@ -535,15 +535,16 @@ def annotate_icsr_intake():
         return "Missing case_data (should be a JSON object or form field)", 400
     
     try:
-        case_num = str(case_data.get("safety_report_id") or case_data.get("case_id") or case_data.get("id") or "unknown")
-        ver_num = "1"
+        # Use case_report_id if available, fallback to other IDs
+        case_num = str(case_data.get("case_report_id") or case_data.get("safety_report_id") or case_data.get("case_id") or case_data.get("id") or "unknown")
+        ver_num = str(case_data.get("version") or "1")
         narrative = case_data.get("narrative", "")
         
         meta = {
             "source": "AskMyFAERS",
             "original_id": case_data.get("id"),
             "safety_report_id": case_data.get("safety_report_id"),
-            "case_id": case_data.get("case_id"),
+            "case_report_id": case_data.get("case_report_id"),
             "is_icsr": True
         }
         
@@ -551,48 +552,27 @@ def annotate_icsr_intake():
             "narrative": narrative,
             "pages": json.dumps([narrative]),
             "meta": json.dumps(meta),
-            "full_data": case_data_raw
+            "full_data": json.dumps(case_data)
         }
         
-        project_id = create_project("AskMyFAERS_Integration", description="Cases imported from AskMyFAERS")
+        # 1. Ensure project exists
+        project_id = create_project("AskMyFAERS_Integration", description="Integrated ICSR Cases")
+        
+        # 2. Upsert Case (Will keep same ID if case_num/ver_num match)
         case_id = upsert_case(case_num, ver_num, attrs)
+        
+        # 3. Link to Project
         link_case_to_project(project_id, case_id)
         
-        # Add initial annotations if any
-        annotations_data = case_data.get("annotations", {})
-        conn = get_db_connection()
-        user = conn.execute("SELECT id FROM users WHERE username = 'AskMyFAERS'").fetchone()
-        if not user:
-            role = conn.execute("SELECT id FROM roles WHERE name = 'Annotator'").fetchone()
-            cursor = conn.execute("INSERT INTO users (username, role_id, full_name) VALUES (?, ?, ?)", 
-                         ("AskMyFAERS", role['id'], "AskMyFAERS System"))
-            user_id = cursor.lastrowid
-        else:
-            user_id = user['id']
-        
-        conn.execute("DELETE FROM annotations WHERE case_id = ? AND user_id = ?", (case_id, user_id))
-        
-        def add_simple_ann(term, label):
-            if not term: return
-            # Using re.escape for safety, but note that it might match substrings
-            for match in re.finditer(re.escape(term), narrative, re.IGNORECASE):
-                conn.execute("""
-                    INSERT INTO annotations (case_id, user_id, label, start_offset, end_offset, text_content, note, relationships)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                """, (case_id, user_id, label, match.start(), match.end(), match.group(), "Imported from AskMyFAERS", "{}"))
-
-        for d in annotations_data.get("drugs", []): add_simple_ann(d, "DRUG")
-        for e in annotations_data.get("events", []): add_simple_ann(e, "AE")
-        
-        conn.commit()
-        conn.close()
+        # Note: We NO LONGER delete or add simple annotations here. 
+        # Existing annotations in llm4ae.db for this case_id will be loaded by the UI automatically.
         
         frontend_url = os.environ.get("FRONTEND_URL", "http://localhost:3000")
         base_path = os.environ.get("FRONTEND_BASE_PATH", "/annotator")
         return redirect(f"{frontend_url}{base_path}/annotate_icsr?id={case_id}")
     except Exception as e:
         logging.error(f"Error in ICSR intake: {e}")
-        return str(e), 500
+        return f"Intake Error: {str(e)}", 500
 
 @app.route("/api/export_icsr/<int:case_id>", methods=["GET"])
 @cross_origin()
