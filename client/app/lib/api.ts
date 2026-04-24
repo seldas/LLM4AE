@@ -3,7 +3,7 @@ import { Annotation, FileData, SaveAnnotationsPayload } from './interfaces';
 import { API_BASE } from './util';
 
 const client = axios.create({
-  baseURL: `${API_BASE}/annotator_api/api/`,
+  baseURL: `${API_BASE}`,
 });
 
 export const getHistoryFile = async (fileName: string, curr_folder: string) => {
