@@ -475,13 +475,6 @@ export default function AnnotateIcsrPanel({ overrideProject, overrideId}: Props)
                 >
                   <IconExport /> Download JSON
                 </button>
-                <button 
-                  onClick={handleSendBackToSource} 
-                  className="flex items-center gap-2 px-3 py-1.5 hover:bg-slate-50 rounded text-[11px] font-bold text-blue-500 uppercase tracking-wider transition-colors"
-                  title="Send annotations back to AskMyFAERS"
-                >
-                  <IconLink /> Send to Source
-                </button>
             {!isReadOnly && (
               <button onClick={() => handleSave(false)} className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded text-[11px] font-bold uppercase tracking-wider shadow-sm transition-colors">
                 <IconSave /> Save
