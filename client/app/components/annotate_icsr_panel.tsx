@@ -13,7 +13,8 @@ import {
 import { getHistoryFile, getCaseById, saveAnnotationsToDb } from '../lib/api';
 import {  
   escapeRegExp,
-  generateOptionColors
+  generateOptionColors,
+  BASE_PATH
 } from '../lib/util';
 
 import ExcelJS from 'exceljs';
@@ -237,7 +238,7 @@ export default function AnnotateIcsrPanel({ overrideProject, overrideId}: Props)
 
   const handleIcsrExport = async () => {
     try {
-      const res = await fetch(`/annotator_api/api/export_icsr/${overrideId}`);
+      const res = await fetch(`${BASE_PATH}/annotator_api/api/export_icsr/${overrideId}`);
       if (!res.ok) throw new Error('Export failed');
       const data = await res.json();
       
@@ -255,7 +256,7 @@ export default function AnnotateIcsrPanel({ overrideProject, overrideId}: Props)
 
   const handleSendBackToSource = async () => {
     try {
-      const res = await fetch(`/annotator_api/api/export_icsr/${overrideId}`);
+      const res = await fetch(`${BASE_PATH}/annotator_api/api/export_icsr/${overrideId}`);
       if (!res.ok) throw new Error('Export failed');
       const data = await res.json();
       
@@ -441,7 +442,8 @@ export default function AnnotateIcsrPanel({ overrideProject, overrideId}: Props)
   useEffect(() => {
     const loadGuidelines = async () => {
       try {
-        const res = await fetch('/annotator_api/api/annotation-guidelines');
+        const res = await fetch(`${BASE_PATH}/annotator_api/api/annotation-guidelines`);
+
         if (!res.ok) throw new Error('Guidelines fetch failed');
         const data: AnnotationGuideline[] = await res.json();
         setAnnotationGuidelines(data);

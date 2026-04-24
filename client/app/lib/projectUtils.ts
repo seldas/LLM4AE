@@ -2,19 +2,20 @@
 import * as XLSX from 'xlsx';
 
 import type { ProjectEntry, MetaRecord, FileStats } from './interfaces';
+import { BASE_PATH } from './util';
 
 export async function readMetaFile(projectName: string): Promise<ProjectEntry | null> {
   // We use history-files which now returns records directly from DB 
   // along with their counts and meta.
   const folderName = projectName;
-  const statsRes = await fetch(`/annotator_api/api/history-files/${encodeURIComponent(folderName)}`);
+  const statsRes = await fetch(`${BASE_PATH}/annotator_api/api/history-files/${encodeURIComponent(folderName)}`);
   if (!statsRes.ok) return null;
   const statsData = await statsRes.json();
   
   // We need to fetch the 'meta' excel records if they exist for demographic info
   // though eventually we might want to fetch all columns from DB.
   const metaFile = `${projectName}_Meta.xlsx`;
-  const metaRes = await fetch(`/annotator_api/api/meta?file=${encodeURIComponent(metaFile)}`);
+  const metaRes = await fetch(`${BASE_PATH}/annotator_api/api/meta?file=${encodeURIComponent(metaFile)}`);
   let metaRecords: any[] = [];
   if (metaRes.ok) {
     const metaJson = await metaRes.json();
@@ -64,7 +65,7 @@ export async function readMetaFile(projectName: string): Promise<ProjectEntry | 
 
 export async function readMetaFileExcel(projectName: string): Promise<ProjectEntry | null> {
   const file = `${projectName}_Meta.xlsx`;
-  const res = await fetch(`/annotator_api/api/meta?file=${encodeURIComponent(file)}`);
+  const res = await fetch(`${BASE_PATH}/annotator_api/api/meta?file=${encodeURIComponent(file)}`);
   if (!res.ok) return null;
 
   const arrayBuffer = await res.arrayBuffer();
@@ -75,7 +76,7 @@ export async function readMetaFileExcel(projectName: string): Promise<ProjectEnt
   const folderName = projectName;
 
   // 🔁 Fetch file stats just for this project
-  const statsRes = await fetch(`/annotator_api/api/history-files/${encodeURIComponent(folderName)}`);
+  const statsRes = await fetch(`${BASE_PATH}/annotator_api/api/history-files/${encodeURIComponent(folderName)}`);
   const statsData = await statsRes.json();
   const fileStatsMap = new Map<string, FileStats>(
     statsData.files.map((f: any) => [f.filename.replace(/\.json$/i, ''), f])

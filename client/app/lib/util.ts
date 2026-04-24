@@ -1,5 +1,7 @@
 import { Annotation } from "./interfaces";
 
+export const BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH !== undefined ? process.env.NEXT_PUBLIC_BASE_PATH : "/annotator";
+
 export const splitIntoSentences = (text: string): string[] => {
     const sentences = text.split(/(?:\n+|(?<=\.)\s+)/);
     // If the text is empty or doesn't match the regex, return an empty array or the original text.

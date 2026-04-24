@@ -5,7 +5,7 @@ import { useSearchParams, useRouter } from 'next/navigation';
 import { getHistoryFile, getCaseById } from '../lib/api';
 import type { FileData, Annotation } from '../lib/interfaces';
 import PageDisplay from '../components/page-display-brat';
-import { generateOptionColors } from '../lib/util';
+import { generateOptionColors, BASE_PATH } from '../lib/util';
 
 export default function AdjudicateClient() {
   const searchParams = useSearchParams();
@@ -84,7 +84,7 @@ export default function AdjudicateClient() {
 
   const saveAdjudication = async (annId: number, status: string, reason: string) => {
     try {
-      const res = await fetch('/annotator_api/api/adjudicate', {
+      const res = await fetch(`${BASE_PATH}/annotator_api/api/adjudicate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
