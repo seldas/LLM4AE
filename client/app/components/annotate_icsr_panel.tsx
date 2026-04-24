@@ -231,6 +231,10 @@ export default function AnnotateIcsrPanel({ overrideProject, overrideId}: Props)
       }
   };
 
+  const handleLayerToggle = (layer: string) => {
+    setActiveLayers(prev => prev.includes(layer) ? prev.filter(l => l !== layer) : [...prev, layer]);
+  };
+
   const handleIcsrExport = async () => {
     try {
       const res = await fetch(`/annotator_api/api/export_icsr/${overrideId}`);
