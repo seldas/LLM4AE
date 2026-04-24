@@ -13,7 +13,8 @@ import {
 import { getHistoryFile, getCaseById, saveAnnotationsToDb } from '../lib/api';
 import {  
   escapeRegExp,
-  generateOptionColors
+  generateOptionColors,
+  BASE_PATH
 } from '../lib/util';
 
 import ExcelJS from 'exceljs';
