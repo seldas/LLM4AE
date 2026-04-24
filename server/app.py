@@ -580,7 +580,7 @@ def annotate_icsr_intake():
         conn.close()
         
         frontend_url = os.environ.get("FRONTEND_URL", "http://localhost:3000")
-        base_path = os.environ.get("FRONTEND_BASE_PATH", "")
+        base_path = os.environ.get("FRONTEND_BASE_PATH", "/annotator")
         return redirect(f"{frontend_url}{base_path}/annotate_icsr?id={case_id}")
     except Exception as e:
         logging.error(f"Error in ICSR intake: {e}")
