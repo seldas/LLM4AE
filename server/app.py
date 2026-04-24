@@ -518,7 +518,7 @@ def llm_assess_explanation():
 # -----------------------------------------------------------------------------
 # ICSR Integration (AskMyFAERS)
 # -----------------------------------------------------------------------------
-@app.route("/api/annotate_icsr_intake", methods=["POST"])
+@app.route("/api/annotate_icsr_intake/", methods=["POST"])
 @cross_origin()
 def annotate_icsr_intake():
     case_data_raw = request.form.get("case_data")
