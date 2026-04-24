@@ -567,7 +567,7 @@ def annotate_icsr_intake():
         # Note: We NO LONGER delete or add simple annotations here. 
         # Existing annotations in llm4ae.db for this case_id will be loaded by the UI automatically.
         
-        frontend_url = os.environ.get("FRONTEND_URL", "http://localhost:3000")
+        frontend_url = os.environ.get("FRONTEND_URL", "https://ncshpc400.fda.gov")
         base_path = os.environ.get("FRONTEND_BASE_PATH", "/annotator")
         return redirect(f"{frontend_url}{base_path}/annotate_icsr?id={case_id}")
     except Exception as e:

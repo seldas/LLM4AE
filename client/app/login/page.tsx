@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { BASE_PATH } from '../lib/util';
+import { BASE_PATH, API_BASE } from '../lib/util';
 
 export default function LoginPage() {
   const [username, setUsername] = useState('');
@@ -17,7 +17,7 @@ export default function LoginPage() {
     setError('');
 
     try {
-      const res = await fetch(`${BASE_PATH}/annotator_api/api/login`, {
+      const res = await fetch(`${API_BASE}/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username, password }),
@@ -44,7 +44,7 @@ export default function LoginPage() {
     setError('');
 
     try {
-      const res = await fetch(`${BASE_PATH}/annotator_api/api/login`, {
+      const res = await fetch(`${API_BASE}/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username: 'guest', password: 'guest' }),

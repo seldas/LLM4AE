@@ -13,7 +13,7 @@ import {
   CellContext,  
 } from '@tanstack/react-table';
 import type { ProjectEntry, MetaRecord } from './lib/interfaces';
-import { BASE_PATH } from './lib/util';
+import { BASE_PATH, API_BASE } from './lib/util';
 
 // --- Icons (Inline SVGs for professional look) ---
 const IconPlus = () => <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4"/></svg>;
@@ -45,7 +45,7 @@ const NewProjectUploader = ({
     formData.append("projectName", newProjectName.trim());
 
     try {
-      const res = await fetch(`${BASE_PATH}/annotator_api/api/create-project-from-excel`, { method: "POST", body: formData });
+      const res = await fetch(`${API_BASE}/create-project-from-excel`, { method: "POST", body: formData });
       if (res.ok) {
         await fetchProjectList();
         onClose();
@@ -145,7 +145,7 @@ export default function HomePage() {
   };
 
   const fetchProjectList = async () => {
-    const res = await fetch(`${BASE_PATH}/annotator_api/api/projects`);
+    const res = await fetch(`${API_BASE}/projects`);
     const projects = await res.json();
     const sorted = projects.sort((a: string, b: string) => {
       if (a.toLowerCase() === 'playground') return -1;
@@ -159,7 +159,7 @@ export default function HomePage() {
     setSelectedProjectName(projectName);
     setLoading(true);
     try {
-      const res = await fetch(`${BASE_PATH}/annotator_api/api/show_project/${encodeURIComponent(projectName)}?limit=${limit}&offset=${offset}`);
+      const res = await fetch(`${API_BASE}/show_project/${encodeURIComponent(projectName)}?limit=${limit}&offset=${offset}`);
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
       const records = data.records.map((r: any) => {
@@ -186,7 +186,7 @@ export default function HomePage() {
     if (!window.confirm(`Delete project "${projectName}"? This keeps the underlying cases.`)) return;
     setDeletingProject(projectName);
     try {
-      const res = await fetch(`${BASE_PATH}/annotator_api/api/delete-project`, {
+      const res = await fetch(`${API_BASE}/delete-project`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ projectName })
@@ -403,7 +403,7 @@ export default function HomePage() {
               <button 
                 onClick={async () => {
                   const finalBaseName = `manual_${Date.now()}`;
-                  await fetch(`${BASE_PATH}/annotator_api/api/save`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ fileName: finalBaseName, curr_folder: 'Playground', pages: [playgroundText.trim()], annotations: [], meta: {} }) });
+                  await fetch(`${API_BASE}/save`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ fileName: finalBaseName, curr_folder: 'Playground', pages: [playgroundText.trim()], annotations: [], meta: {} }) });
                   setPlaygroundText('');
                   handleProjectClick('Playground');
                   window.open(`${BASE_PATH}/annotate?project=Playground&file=${encodeURIComponent(finalBaseName + '.json')}`, '_blank');
