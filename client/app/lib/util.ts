@@ -1,6 +1,7 @@
 import { Annotation } from "./interfaces";
 
-export const BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH !== undefined ? process.env.NEXT_PUBLIC_BASE_PATH : "/annotator";
+const rawBasePath = process.env.NEXT_PUBLIC_BASE_PATH !== undefined ? process.env.NEXT_PUBLIC_BASE_PATH : "/annotator";
+export const BASE_PATH = rawBasePath === "" ? "" : (rawBasePath.startsWith('/') ? rawBasePath : `/${rawBasePath}`).replace(/\/$/, '');
 
 export const splitIntoSentences = (text: string): string[] => {
     const sentences = text.split(/(?:\n+|(?<=\.)\s+)/);

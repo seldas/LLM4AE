@@ -282,7 +282,6 @@ export default function HomePage() {
 
   if (!user) return null;
   const isAdminUser = user.username === 'admin';
-  const BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH !== undefined ? process.env.NEXT_PUBLIC_BASE_PATH : "/annotator";
 
   return (
     <div className="flex h-screen bg-slate-50 overflow-hidden text-slate-900 antialiased">
