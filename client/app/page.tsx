@@ -242,14 +242,14 @@ export default function HomePage() {
           <div className="flex gap-3">
             {isAdj && (
               <button
-                onClick={() => window.open(`/annotator/adjudicate?project=${encodeURIComponent(folderName)}&id=${encodeURIComponent(id)}`, '_blank')}
+                onClick={() => window.open(`${BASE_PATH}/adjudicate?project=${encodeURIComponent(folderName)}&id=${encodeURIComponent(id)}`, '_blank')}
                 className="text-emerald-600 hover:text-emerald-800 text-[11px] font-bold uppercase tracking-wider"
               >
                 Adjudicate
               </button>
             )}
             <button
-              onClick={() => window.open(`/annotator/annotate?project=${encodeURIComponent(folderName)}&id=${encodeURIComponent(id)}`, '_blank')}
+              onClick={() => window.open(`${BASE_PATH}/annotate?project=${encodeURIComponent(folderName)}&id=${encodeURIComponent(id)}`, '_blank')}
               className="text-blue-600 hover:text-blue-800 text-[11px] font-bold uppercase tracking-wider"
             >
               Review
@@ -281,6 +281,7 @@ export default function HomePage() {
 
   if (!user) return null;
   const isAdminUser = user.username === 'admin';
+  const BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH !== undefined ? process.env.NEXT_PUBLIC_BASE_PATH : "/annotator";
 
   return (
     <div className="flex h-screen bg-slate-50 overflow-hidden text-slate-900 antialiased">
@@ -405,7 +406,7 @@ export default function HomePage() {
                   await fetch('/annotator_api/api/save', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ fileName: finalBaseName, curr_folder: 'Playground', pages: [playgroundText.trim()], annotations: [], meta: {} }) });
                   setPlaygroundText('');
                   handleProjectClick('Playground');
-                  window.open(`/annotate?project=Playground&file=${encodeURIComponent(finalBaseName + '.json')}`, '_blank');
+                  window.open(`${BASE_PATH}/annotate?project=Playground&file=${encodeURIComponent(finalBaseName + '.json')}`, '_blank');
                 }}
                 className="px-6 py-2 bg-slate-900 text-white text-[11px] font-bold uppercase tracking-widest rounded hover:bg-slate-800 transition-colors shadow-sm"
               >

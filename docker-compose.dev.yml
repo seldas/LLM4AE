@@ -1,0 +1,39 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    container_name: annotator-backend-dev
+    ports:
+      - "8862:8862"
+    volumes:
+      - ./server:/app
+      - ./server/database:/app/database
+    environment:
+      - FLASK_ENV=development
+      - FRONTEND_URL=http://localhost:8861
+      - PYTHONUNBUFFERED=1
+    stdin_open: true
+    tty: true
+
+  frontend:
+    build:
+      context: ./client
+      dockerfile: Dockerfile
+    container_name: annotator-frontend-dev
+    ports:
+      - "8861:8861"
+    volumes:
+      - ./client:/app
+      - /app/node_modules
+      - /app/.next
+    environment:
+      - NODE_ENV=development
+      - NEXT_PUBLIC_BASE_PATH=
+      - BACKEND_HOST=backend
+      - WATCHPACK_POLLING=true
+    command: npm run dev
+    depends_on:
+      - backend
