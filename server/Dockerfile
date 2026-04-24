@@ -2,15 +2,15 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install dependencies in the image
+# Install dependencies with cache mount to speed up rebuilds
 COPY requirements.txt ./
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install --upgrade pip && \
+    pip install -r requirements.txt
 
-# Development fallback: ensure app.py can run even if volume isn't mounted yet
+# Development fallback
 COPY . .
 
 EXPOSE 8862
 
-# Default command (overridden in dev compose)
 CMD ["python", "app.py"]
