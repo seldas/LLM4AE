@@ -75,3 +75,33 @@ After completing the analysis in SCAT, the user will export a JSON file to be up
 2. **User** performs annotation in **SCAT**.
 3. **SCAT App** --(Download JSON)--> **User's Local Machine**
 4. **User** --(Upload JSON)--> **AskMyFAERS** (Stage 2: Import Annotations)
+
+
+the function that submit the form with annotate_icsr/ call:
+
+const SCAT_URL = '/annotator/annotate_icsr/';
+const handleGoToSCAT = () => {
+    if (!icsr) return;
+    
+    // Create a form to POST data to SCAT
+    const form = document.createElement('form');
+    form.method = 'POST';
+    form.action = SCAT_URL;
+    form.target = '_blank';
+
+    const input = document.createElement('input');
+    input.type = 'hidden';
+    input.name = 'case_data';
+    input.value = JSON.stringify({
+        id: icsr.id,
+        safety_report_id: icsr.safety_report_id,
+        narrative: icsr.raw_data?.Narrative || icsr.raw_data?.narrative || '',
+        annotations: icsr.annotations,
+        // Include any other relevant data SCAT might need
+    });
+    form.appendChild(input);
+
+    document.body.appendChild(form);
+    form.submit();
+    document.body.removeChild(form);
+  };
