@@ -406,6 +406,75 @@ def trigger_llm_annotation():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+@app.route("/api/bert-annotate", methods=["POST"])
+@cross_origin()
+def trigger_bert_annotation():
+    try:
+        req = request.get_json(silent=True) or {}
+        file_name = (req.get("file") or "").strip()
+        folder = (req.get("folder") or "").strip()
+
+        if not file_name or not folder:
+            return jsonify({"error": "Missing file or folder name"}), 400
+
+        project = get_project_by_name(folder)
+        if not project:
+            return jsonify({"error": f"Project not found: {folder}"}), 404
+
+        doc = get_case(project_id=project['id'], filename=file_name)
+        if not doc:
+            return jsonify({"error": f"Document not found: {file_name}"}), 404
+
+        def background_task(doc_id):
+            import sys
+            from pathlib import Path
+            sys.path.append(str(Path(__file__).resolve().parent.parent / "development" / "NER" / "scripts"))
+            from ner_client import get_ner_client
+            
+            client = get_ner_client()
+            conn = get_db_connection()
+            
+            bert_user = conn.execute("SELECT id FROM users WHERE migration_key = 'BERT'").fetchone()
+            if not bert_user:
+                logging.error("BERT user not found")
+                return
+            bert_user_id = bert_user['id']
+
+            # Set status to working
+            doc_data = conn.execute('SELECT pages, meta FROM cases WHERE id = ?', (doc_id,)).fetchone()
+            meta = json.loads(doc_data['meta']) if doc_data['meta'] else {}
+            meta["bert_processed"] = "working"
+            conn.execute('UPDATE cases SET meta = ? WHERE id = ?', (json.dumps(meta), doc_id))
+            conn.commit()
+
+            pages = json.loads(doc_data['pages']) if doc_data['pages'] else [""]
+            narrative = pages[0] if pages else ""
+            
+            if narrative and narrative.strip():
+                try:
+                    entities = client.annotate_text(narrative)
+                    with conn:
+                        conn.execute("DELETE FROM annotations WHERE case_id = ? AND user_id = ?", (doc_id, bert_user_id))
+                        for ent in entities:
+                            conn.execute("""
+                                INSERT INTO annotations 
+                                (case_id, user_id, label, start_offset, end_offset, text_content, note, relationships)
+                                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                            """, (doc_id, bert_user_id, ent['label'], ent['start'], ent['end'], ent['text'], "BERT", "{}"))
+                        
+                        meta["bert_processed"] = "Done"
+                        conn.execute("UPDATE cases SET meta = ? WHERE id = ?", (json.dumps(meta), doc_id))
+                except Exception as ex:
+                    logging.error(f"Error processing case {doc_id}: {ex}")
+            
+            conn.close()
+
+        threading.Thread(target=background_task, args=(doc['id'],), daemon=True).start()
+        return jsonify({"message": f"BERT annotation started", "file_locked": file_name}), 200
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 # -----------------------------------------------------------------------------
 # API: Save assessment to DB
 # -----------------------------------------------------------------------------

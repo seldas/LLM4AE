@@ -40,7 +40,8 @@ const TEMPORAL_LABELS = new Set(['TEMPORAL','DATE','TIME','DURATION','RELATIVE',
 const IconSave = () => <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"/></svg>;
 const IconExport = () => <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a2 2 0 002 2h12a2 2 0 002-2v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>;
 const IconExit = () => <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>;
-const IconLink = () => <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.828a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/></svg>;
+const IconSparkles = () => <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z"/></svg>;
+const IconRobot = () => <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z"/></svg>;
 
 export default function AnnotateIcsrPanel({ overrideProject, overrideId}: Props) {
   const [doc, dispatch] = useReducer(docReducer, initialDocState)
@@ -71,6 +72,9 @@ export default function AnnotateIcsrPanel({ overrideProject, overrideId}: Props)
   const [userRole, setUserRole] = useState<string>("Anonymous");
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [isReadOnly, setIsReadOnly] = useState(false);
+  
+  const [isProcessingLlm, setIsProcessingLlm] = useState(false);
+  const [isProcessingBert, setIsProcessingBert] = useState(false);
   
   const [metaView, setMetaView] = useState<'none' | 'demographic' | 'products' | 'outcomes'>('none');
   const availableMetaEntries = useMemo(() => {
@@ -234,6 +238,73 @@ export default function AnnotateIcsrPanel({ overrideProject, overrideId}: Props)
 
   const handleLayerToggle = (layer: string) => {
     setActiveLayers(prev => prev.includes(layer) ? prev.filter(l => l !== layer) : [...prev, layer]);
+  };
+
+  const handleLlmAnnotate = async () => {
+    if (isReadOnly || isProcessingLlm) return;
+    setIsProcessingLlm(true);
+    try {
+      const res = await fetch(`${API_BASE}/llm-annotate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ file: overrideId, folder: overrideProject ?? 'AskMyFAERS_Integration' })
+      });
+      if (!res.ok) throw new Error('LLM request failed');
+      
+      // Start polling for completion
+      pollProcessingStatus('llm');
+    } catch (err: any) {
+      alert(`Error: ${err.message}`);
+      setIsProcessingLlm(false);
+    }
+  };
+
+  const handleBertAnnotate = async () => {
+    if (isReadOnly || isProcessingBert) return;
+    setIsProcessingBert(true);
+    try {
+      const res = await fetch(`${API_BASE}/bert-annotate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ file: overrideId, folder: overrideProject ?? 'AskMyFAERS_Integration' })
+      });
+      if (!res.ok) throw new Error('BERT request failed');
+      
+      // Start polling for completion
+      pollProcessingStatus('bert');
+    } catch (err: any) {
+      alert(`Error: ${err.message}`);
+      setIsProcessingBert(false);
+    }
+  };
+
+  const pollProcessingStatus = (type: 'llm' | 'bert') => {
+    const interval = setInterval(async () => {
+      try {
+        const data = await getCaseById(overrideId || '', overrideProject ?? 'AskMyFAERS_Integration');
+        if (!data) return;
+        
+        const meta = data.meta || {};
+        const isDone = type === 'llm' ? meta.llm_processed === 'Done' : meta.bert_processed === 'Done';
+        
+        if (isDone) {
+          clearInterval(interval);
+          if (type === 'llm') setIsProcessingLlm(false);
+          else setIsProcessingBert(false);
+          // Reload the entire document to get new annotations
+          dispatch({ type: DocActionTypes.LOAD, payload: { ...data, fileName: overrideId } });
+        }
+      } catch (err) {
+        console.error("Polling error", err);
+      }
+    }, 3000);
+    
+    // Safety timeout after 2 minutes
+    setTimeout(() => {
+      clearInterval(interval);
+      setIsProcessingLlm(false);
+      setIsProcessingBert(false);
+    }, 120000);
   };
 
   const handleIcsrExport = async () => {
@@ -468,6 +539,25 @@ export default function AnnotateIcsrPanel({ overrideProject, overrideId}: Props)
               <div className="h-6 w-px bg-slate-200"></div>
 
               <div className="flex items-center gap-4">
+                <button 
+                  onClick={handleLlmAnnotate} 
+                  disabled={isReadOnly || isProcessingLlm}
+                  className={`flex items-center gap-2 px-3 py-1.5 rounded text-[11px] font-bold uppercase tracking-wider transition-colors ${isProcessingLlm ? 'bg-indigo-50 text-indigo-400' : 'hover:bg-indigo-50 text-indigo-600'}`}
+                  title="Run LLM Annotation"
+                >
+                  <IconSparkles /> {isProcessingLlm ? 'LLM Working...' : 'LLM Annotate'}
+                </button>
+                <button 
+                  onClick={handleBertAnnotate} 
+                  disabled={isReadOnly || isProcessingBert}
+                  className={`flex items-center gap-2 px-3 py-1.5 rounded text-[11px] font-bold uppercase tracking-wider transition-colors ${isProcessingBert ? 'bg-teal-50 text-teal-400' : 'hover:bg-teal-50 text-teal-600'}`}
+                  title="Run BERT Annotation"
+                >
+                  <IconRobot /> {isProcessingBert ? 'BERT Working...' : 'BERT Annotate'}
+                </button>
+
+                <div className="h-4 w-px bg-slate-200"></div>
+
                 <button 
                   onClick={handleIcsrExport} 
                   className="flex items-center gap-2 px-3 py-1.5 hover:bg-slate-50 rounded text-[11px] font-bold text-slate-500 uppercase tracking-wider transition-colors"
