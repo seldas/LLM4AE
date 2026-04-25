@@ -179,8 +179,10 @@ export default function Annotate_Panel({ overrideProject, overrideId}: Props) {
   useEffect(() => {
     async function loadData() {
       if (!overrideId) return;
+      console.log(`Fetching data for case ID: ${overrideId}`);
       const data = await getCaseById(overrideId);
       if (data) {
+        console.log(`Loaded case data. Annotations count: ${data.annotations?.length || 0}`);
         dispatch({ type: DocActionTypes.LOAD, payload: data as LoadDocAction['payload'] });
         
         // Lazy load more annotations if total_annotations > initially loaded (500)

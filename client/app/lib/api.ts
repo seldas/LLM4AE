@@ -20,12 +20,14 @@ export const getHistoryFile = async (fileName: string, curr_folder: string) => {
 
 export const getCaseById = async (id: string) => {
   try {
+    console.log(`API: Fetching case ${id}`);
     const response: AxiosResponse = await client.get(`/case/${id}`);
     const data: any = response.data;
+    console.log(`API: Received data for case ${id}. Annotations:`, data.annotations?.length);
 
     // Prioritize structured annotations from DB if present
     if (data && data.annotations && Array.isArray(data.annotations)) {
-      // Annotations are already there from the DB
+      console.log(`API: Using ${data.annotations.length} annotations from DB`);
     } else if (data && data.full_data) {
       try {
         const fullData = JSON.parse(data.full_data);

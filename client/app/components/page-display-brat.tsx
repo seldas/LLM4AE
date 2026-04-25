@@ -48,10 +48,19 @@ function darkenHSLColor(hsl: string): string {
   return `hsl(${h}, ${s}%, 35%, 1)`;
 }
 
-function getTransparentColor(hsl: string, alpha: number = 0.15): string {
-  const match = hsl.match(/hsl\((\d+),\s*(\d+)%,\s*(\d+)%\)/);
-  if (!match) return hsl;
-  return `hsla(${match[1]}, ${match[2]}%, ${match[3]}%, ${alpha})`;
+function getTransparentColor(color: string, alpha: number = 0.15): string {
+  if (color.startsWith('hsl')) {
+    const match = color.match(/hsl\((\d+),\s*(\d+)%,\s*(\d+)%\)/);
+    if (!match) return color;
+    return `hsla(${match[1]}, ${match[2]}%, ${match[3]}%, ${alpha})`;
+  }
+  if (color.startsWith('#')) {
+    const r = parseInt(color.slice(1, 3), 16);
+    const g = parseInt(color.slice(3, 5), 16);
+    const b = parseInt(color.slice(5, 7), 16);
+    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+  }
+  return color;
 }
 
 function PageDisplay({
