@@ -20,6 +20,14 @@ const AnnotationPanel = (props: Props) => {
   const termRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const [collapsedCategories, setCollapsedCategories] = useState<Record<string, boolean>>({});
   const [collapsedTerms, setCollapsedTerms] = useState<Record<string, boolean>>({});
+  const [hoveredStats, setHoveredStats] = useState<{
+    text: string;
+    human: number;
+    ai: number;
+    total: number;
+    x: number;
+    y: number;
+  } | null>(null);
 
   const getTextOccurrences = useCallback((text: string) => {
     if (!props.pageData || !text) return 0;
@@ -145,7 +153,7 @@ const AnnotationPanel = (props: Props) => {
                             <div 
                               key={text} 
                               ref={(el) => {if (el) termRefs.current[text] = el;}}
-                              className="bg-white rounded border border-slate-200 shadow-sm overflow-hidden"
+                              className="bg-white rounded border border-slate-200 shadow-sm relative hover:z-50"
                             >
                               <div className="flex items-center justify-between bg-slate-50/50 hover:bg-slate-100/50 transition-colors">
                                 <button 
@@ -169,23 +177,25 @@ const AnnotationPanel = (props: Props) => {
 
                                     return (
                                       <div 
-                                        className="group/stats relative cursor-help flex items-center px-2 py-1 bg-slate-100 rounded text-[10px] font-mono text-slate-500 border border-slate-200 transition-colors hover:bg-slate-200"
+                                        onMouseEnter={(e) => {
+                                          const rect = e.currentTarget.getBoundingClientRect();
+                                          setHoveredStats({
+                                            text,
+                                            human: humanCount,
+                                            ai: aiCount,
+                                            total: totalOccurrences,
+                                            x: rect.left,
+                                            y: rect.top + rect.height / 2
+                                          });
+                                        }}
+                                        onMouseLeave={() => setHoveredStats(null)}
+                                        className="relative cursor-help flex items-center px-2 py-1 bg-slate-100 rounded text-[10px] font-mono text-slate-500 border border-slate-200 transition-colors hover:bg-slate-200"
                                       >
                                         <span className="text-indigo-600 font-bold">{humanCount}</span>
                                         <span className="mx-0.5 opacity-30">/</span>
                                         <span className="text-orange-600 font-bold">{aiCount}</span>
                                         <span className="mx-0.5 opacity-30">/</span>
                                         <span className="text-slate-400">{totalOccurrences}</span>
-
-                                        <div className="absolute right-0 bottom-full mb-2 hidden group-hover/stats:block w-48 p-3 bg-slate-900 text-white text-[10px] rounded-lg shadow-xl z-[100] leading-relaxed animate-in fade-in slide-in-from-bottom-1 border border-slate-700">
-                                          <p className="font-bold border-b border-white/10 pb-1.5 mb-1.5 uppercase tracking-wider">Concept Metrics</p>
-                                          <div className="space-y-1.5">
-                                            <div className="flex justify-between font-mono"><span className="text-indigo-300">HUMAN:</span> <span>{humanCount}</span></div>
-                                            <div className="flex justify-between font-mono"><span className="text-orange-300">AI:</span> <span>{aiCount}</span></div>
-                                            <div className="flex justify-between font-mono"><span className="text-slate-400">TOTAL MATCH:</span> <span>{totalOccurrences}</span></div>
-                                          </div>
-                                          <p className="mt-2 text-[9px] text-slate-400 border-t border-white/10 pt-1.5 italic">Human / AI / Narrative Occurrences</p>
-                                        </div>
                                       </div>
                                     );
                                   })()}
@@ -277,6 +287,26 @@ const AnnotationPanel = (props: Props) => {
           </div>
         )}
       </div>
+
+      {hoveredStats && (
+        <div 
+          style={{ 
+            position: 'fixed', 
+            left: hoveredStats.x - 200, 
+            top: hoveredStats.y,
+            transform: 'translateY(-50%)',
+          }}
+          className="w-48 p-3 bg-slate-900 text-white text-[10px] rounded-lg shadow-xl z-[9999] leading-relaxed animate-in fade-in slide-in-from-right-1 border border-slate-700"
+        >
+          <p className="font-bold border-b border-white/10 pb-1.5 mb-1.5 uppercase tracking-wider">Concept Metrics</p>
+          <div className="space-y-1.5">
+            <div className="flex justify-between font-mono"><span className="text-indigo-300">HUMAN:</span> <span>{hoveredStats.human}</span></div>
+            <div className="flex justify-between font-mono"><span className="text-orange-300">AI:</span> <span>{hoveredStats.ai}</span></div>
+            <div className="flex justify-between font-mono"><span className="text-slate-400">TOTAL MATCH:</span> <span>{hoveredStats.total}</span></div>
+          </div>
+          <p className="mt-2 text-[9px] text-slate-400 border-t border-white/10 pt-1.5 italic">Human / AI / Narrative Occurrences</p>
+        </div>
+      )}
     </div>
   );
 };

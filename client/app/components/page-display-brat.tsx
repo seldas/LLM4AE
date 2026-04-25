@@ -136,8 +136,18 @@ function PageDisplay({
 
   const getAnnotatorDisplay = (note: string) => {
     const upperNote = note.toUpperCase();
-    if (['SME1', 'SME2', 'ADJUDICATOR'].includes(upperNote)) return 'DevUser';
-    return note;
+    if (
+      upperNote.includes('LLM') || 
+      upperNote.includes('BERT') || 
+      upperNote.includes('AI') || 
+      upperNote.includes('LLAMA')
+    ) {
+      if (upperNote.includes('LLM')) return 'LLM';
+      if (upperNote.includes('BERT')) return 'BERT';
+      if (upperNote.includes('LLAMA')) return 'LLAMA';
+      return 'AI';
+    }
+    return 'Manual';
   };
 
   const processedPageData = useMemo(() => {

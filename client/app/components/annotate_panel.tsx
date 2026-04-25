@@ -35,8 +35,8 @@ const PRIMARY_ENTITY_LABELS = new Set(['AE','SDRUG','CDRUG','ODRUG','TREATMENT',
 const TEMPORAL_LABELS = new Set(['TEMPORAL','DATE','TIME','DURATION','RELATIVE','LATENCY']);
 
 // Icons
-const IconSave = () => <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"/></svg>;
-const IconExport = () => <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a2 2 0 002 2h12a2 2 0 002-2v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>;
+const IconJSON = () => <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/></svg>;
+const IconExcel = () => <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>;
 const IconExit = () => <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>;
 const IconSparkles = () => <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z"/></svg>;
 const IconRobot = () => <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z"/></svg>;
@@ -350,7 +350,20 @@ export default function Annotate_Panel({ overrideProject, overrideId}: Props) {
       if (shouldClose) window.close();
   };
 
-  const handleExport = async () => {
+  const handleExportJSON = () => {
+    const dataStr = JSON.stringify(doc.annotations, null, 2);
+    const blob = new Blob([dataStr], { type: 'application/json' });
+    const url = window.URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    const id = overrideId || 'unknown';
+    anchor.download = `annotations_${id}_${timestamp}.json`;
+    anchor.click();
+    window.URL.revokeObjectURL(url);
+  };
+
+  const handleExportExcel = async () => {
     const workbook = new ExcelJS.Workbook();
     const worksheet = workbook.addWorksheet('Annotations');
     worksheet.columns = [
@@ -609,16 +622,19 @@ export default function Annotate_Panel({ overrideProject, overrideId}: Props) {
 
           <div className="flex items-center gap-2 sm:gap-4">
             <button
-                onClick={handleExport}
-                className={`flex items-center gap-2 px-2 sm:px-3 py-1.5 rounded text-[10px] sm:text-[11px] font-bold uppercase tracking-wider transition-colors ${theme === 'dark' ? 'hover:bg-slate-800 text-slate-400' : 'hover:bg-slate-50 text-slate-500'}`}
+                onClick={handleExportJSON}
+                className={`flex items-center gap-2 px-2 sm:px-3 py-1.5 rounded text-[10px] sm:text-[11px] font-bold uppercase tracking-wider transition-colors ${theme === 'dark' ? 'hover:bg-slate-800 text-slate-400' : 'hover:bg-slate-100 text-slate-500'}`}
+                title="Download Annotations as JSON"
             >
-                <IconExport /> <span className="hidden xs:inline">Export</span>
+                <IconJSON /> <span className="hidden xs:inline">JSON</span>
             </button>
-            {!isReadOnly && (
-              <button onClick={() => handleSave(false)} className="flex items-center gap-2 px-2 sm:px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded text-[10px] sm:text-[11px] font-bold uppercase tracking-wider shadow-sm transition-colors">
-                <IconSave /> <span className="hidden xs:inline">Save</span>
-              </button>
-            )}
+            <button
+                onClick={handleExportExcel}
+                className={`flex items-center gap-2 px-2 sm:px-3 py-1.5 rounded text-[10px] sm:text-[11px] font-bold uppercase tracking-wider transition-colors ${theme === 'dark' ? 'hover:bg-slate-800 text-slate-400' : 'hover:bg-slate-100 text-slate-500'}`}
+                title="Download Annotations as Excel"
+            >
+                <IconExcel /> <span className="hidden xs:inline">Excel</span>
+            </button>
           </div>
         </div>
 
