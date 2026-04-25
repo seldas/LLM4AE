@@ -25,7 +25,7 @@ This document summarizes the progress and remaining tasks for migrating the SCAT
 
 ### **Functional Cleanup**
 - [x] **Adjudication Module:** Move adjudication decisions into a dedicated table or more structured format in the DB instead of a serialized JSON field in the annotations table.
-- [ ] **Audit Trail:** Create a `history_log` table in the database to track every incremental change (who changed what and when) for regulatory compliance.
+- [x] **Audit Trail:** Create a `history_log` table in the database to track every incremental change (who changed what and when) for regulatory compliance.
 
 ### **Performance & Scalability**
 - [ ] **Lazy Loading:** For very long narratives, implement offset-based loading for annotations to keep the UI responsive.

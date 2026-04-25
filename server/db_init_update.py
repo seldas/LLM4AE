@@ -96,6 +96,22 @@ def update_db():
         )
     ''')
 
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS history_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            case_id INTEGER,
+            user_id INTEGER,
+            action TEXT NOT NULL,
+            entity_type TEXT NOT NULL,
+            entity_id INTEGER,
+            old_value TEXT,
+            new_value TEXT,
+            timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (case_id) REFERENCES cases (id) ON DELETE SET NULL,
+            FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE SET NULL
+        )
+    ''')
+
     # 3. Add missing columns safely
     print("Checking for missing columns...")
     columns_to_add = {

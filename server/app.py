@@ -223,6 +223,18 @@ def clean_html(html_text: str) -> str:
     except Exception:
         return html_text or ""
 
+def log_action(conn, action, entity_type, entity_id, user_id=None, case_id=None, old_value=None, new_value=None):
+    """Helper to log actions to history_log table."""
+    try:
+        conn.execute('''
+            INSERT INTO history_log (action, entity_type, entity_id, user_id, case_id, old_value, new_value)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        ''', (action, entity_type, entity_id, user_id, case_id, 
+              json.dumps(old_value) if old_value else None, 
+              json.dumps(new_value) if new_value else None))
+    except Exception as e:
+        logging.error(f"Error logging action: {e}")
+
 # -----------------------------------------------------------------------------
 # User Management (Admin only recommended)
 # -----------------------------------------------------------------------------
@@ -329,6 +341,12 @@ def adjudicate():
     conn = get_db_connection()
     try:
         from datetime import datetime
+        
+        # Get existing for logging
+        old_adj = conn.execute('SELECT * FROM adjudications WHERE annotation_id = ?', (annotation_id,)).fetchone()
+        case_row = conn.execute('SELECT case_id FROM annotations WHERE id = ?', (annotation_id,)).fetchone()
+        case_id = case_row['case_id'] if case_row else None
+
         # Upsert into adjudications table
         conn.execute('''
             INSERT INTO adjudications (annotation_id, user_id, status, reason, updated_at)
@@ -340,6 +358,11 @@ def adjudicate():
                 updated_at = excluded.updated_at
         ''', (annotation_id, adjudicator_id, status, reason, datetime.now().isoformat()))
         
+        log_action(conn, 'adjudicate', 'annotation', annotation_id, 
+                   user_id=adjudicator_id, case_id=case_id,
+                   old_value=dict(old_adj) if old_adj else None,
+                   new_value={"status": status, "reason": reason})
+
         # Legacy: Still update the JSON field in annotations for backward compatibility during transition
         import json
         adjudication_data = json.dumps({
@@ -783,6 +806,9 @@ def create_annotation():
             data.get("adjudication")
         ))
         new_id = cursor.lastrowid
+        
+        log_action(conn, 'create', 'annotation', new_id, user_id=user_id, case_id=case_id, new_value=data)
+        
         conn.commit()
         conn.close()
         
@@ -798,6 +824,11 @@ def update_annotation(ann_id):
         data = request.get_json()
         conn = get_db_connection()
         
+        # Get old value for logging
+        old_anno = conn.execute('SELECT * FROM annotations WHERE id = ?', (ann_id,)).fetchone()
+        if not old_anno:
+            return jsonify({"error": "Annotation not found"}), 404
+            
         # Build dynamic update
         updates = []
         params = []
@@ -814,6 +845,13 @@ def update_annotation(ann_id):
             
         params.append(ann_id)
         conn.execute(f"UPDATE annotations SET {', '.join(updates)} WHERE id = ?", params)
+        
+        log_action(conn, 'update', 'annotation', ann_id, 
+                   user_id=get_user_by_note(data.get("note", old_anno['note'])), 
+                   case_id=old_anno['case_id'],
+                   old_value=dict(old_anno), 
+                   new_value=data)
+        
         conn.commit()
         conn.close()
         
@@ -827,6 +865,14 @@ def update_annotation(ann_id):
 def delete_annotation(ann_id):
     try:
         conn = get_db_connection()
+        
+        # Get old value for logging
+        old_anno = conn.execute('SELECT * FROM annotations WHERE id = ?', (ann_id,)).fetchone()
+        if old_anno:
+            log_action(conn, 'delete', 'annotation', ann_id, 
+                       case_id=old_anno['case_id'],
+                       old_value=dict(old_anno))
+
         conn.execute("DELETE FROM annotations WHERE id = ?", (ann_id,))
         conn.commit()
         conn.close()
