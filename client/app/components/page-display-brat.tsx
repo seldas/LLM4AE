@@ -13,7 +13,7 @@ interface Props {
   currentPage: number;
   pageData: string;
   optionColors: { [key: string]: string };
-  handleTextSelection: () => void;
+  handleTextSelection: (e?: any) => void;
   activeLabelFilters: string[];
   disableFilter?: boolean;
   userRole: string;

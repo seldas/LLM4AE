@@ -29,3 +29,4 @@ accelerate>=1.1.0
 
 # Production Server
 gunicorn
+eventlet

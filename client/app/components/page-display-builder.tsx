@@ -7,7 +7,7 @@ interface Props {
   pageData: string;  
   currentAnnotationRelation: Annotation | null;
   optionColors: { [key: string]: string };
-  handleTextSelection: () => void;
+  handleTextSelection: (e?: any) => void;
   userRole: string; 
   onClickAnnotation?: (anno: Annotation) => void;
   isReadOnly?: boolean;

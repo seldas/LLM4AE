@@ -344,9 +344,9 @@ export default function Annotate_Panel({ overrideProject, overrideId}: Props) {
       worksheet.addRow({ 
           text: anno.textContext.text, 
           label: anno.label, 
-          start: anno.textContext.start, 
-          end: anno.textContext.end, 
-          page: anno.textContext.page + 1, 
+          start: anno.textContext.start ?? 0, 
+          end: anno.textContext.end ?? 0, 
+          page: (anno.textContext.page ?? 0) + 1, 
           note: anno.note 
       });
     });
@@ -895,8 +895,13 @@ export default function Annotate_Panel({ overrideProject, overrideId}: Props) {
               <span className="px-2 py-0.5 bg-slate-100 rounded text-[9px] font-bold text-slate-500">{doc.actionHistory.length}</span>
            </div>
            <div className="flex-1 overflow-y-auto">
-              <ActionHistoryPanel history={doc.actionHistory} />
+             <ActionHistoryPanel 
+               history={doc.actionHistory} 
+               onUndo={(id) => dispatch({ type: DocActionTypes.UNDO_ACTION, payload: { actionId: id } })}
+               optionColors={optionColors}
+             />
            </div>
+
         </aside>
       </div>
 

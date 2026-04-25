@@ -14,6 +14,6 @@ COPY . .
 EXPOSE 8862
 
 # Use gunicorn for production. 
-# We use 4 workers and a longer timeout (120s) because LLM/BERT tasks can be heavy.
-# Added logging flags to ensure backend output is visible.
-CMD ["gunicorn", "--bind", "0.0.0.0:8862", "--workers", "4", "--timeout", "120", "--access-logfile", "-", "--error-logfile", "-", "--log-level", "debug", "app:app"]
+# We use eventlet worker class for WebSocket support.
+# Single worker is recommended for Socket.io unless a message broker (Redis) is used.
+CMD ["gunicorn", "--worker-class", "eventlet", "--workers", "1", "--bind", "0.0.0.0:8862", "--timeout", "120", "--access-logfile", "-", "--error-logfile", "-", "--log-level", "debug", "app:app"]
