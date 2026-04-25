@@ -291,7 +291,7 @@ function PageDisplay({
                 width: (box.width ?? 0) + 4,
                 height: (box.height ?? 0) + 4,
                 backgroundColor: isPureAI ? "transparent" : (isSelected ? getTransparentColor(box.color, 0.3) : getTransparentColor(box.color, 0.15)),
-                opacity: 1,
+                opacity: 0.6,
                 zIndex: isSelected ? 10 : 2,
                 pointerEvents: "auto",
                 borderRadius: "4px",

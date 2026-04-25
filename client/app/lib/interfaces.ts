@@ -46,7 +46,6 @@ export interface Annotation {
     textContext: TextContext,
     label: string,
     note: string
-    relationships: AnnotationRelationships
     disputed?: boolean
     adjudication?: string;
 }
@@ -74,9 +73,10 @@ export interface ContextMenu {
     visible: boolean,
     x: number,
     y: number,
-    type: 'annotation' | 'relationship' | 'verification',
+    type: 'annotation' | 'verification',
     start?: number,
-    end?: number
+    end?: number,
+    options?: string[]
 }
 
 export interface SaveAnnotationsPayload {
@@ -86,17 +86,6 @@ export interface SaveAnnotationsPayload {
   pages: string[];
   annotations: Annotation[];
   meta: Record<string, any>;
-}
-
-export interface AnnotationRelationships {
-    latency?: number | TextContext,
-    date?: number | TextContext,
-    time?: number | TextContext,
-    frequency?: number | TextContext,
-    temporal_sequence?: number | TextContext,
-    span?: number | TextContext,
-    relatives?: number | TextContext,
-    [key: string]: number | TextContext | undefined
 }
 
 export interface TextContext {

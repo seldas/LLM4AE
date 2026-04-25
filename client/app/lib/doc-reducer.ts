@@ -1,5 +1,5 @@
 import { act } from "react";
-import { Annotation, AnnotationRelationships, HighlightedTerms, TextContext, CaseMetadata } from "./interfaces";
+import { Annotation, HighlightedTerms, TextContext, CaseMetadata } from "./interfaces";
 import { getCurrentDateString, splitIntoSentences } from "./util";
 
 export interface ActionRecord {
@@ -54,7 +54,6 @@ export enum DocActionTypes {
     REMOVE_ANNOTATION = "REMOVE_ANNOTATION",
     HIGHLIGHT_ALL = "HIGHLIGHT_ALL",
     SET_SAVE_FILE_NAME = "SET_SAVE_FILE_NAME",
-    ADD_RELATION = "ADD_RELATION",
     CHANGE_VERIFICATION ="CHANGE_VERIFICATION",
     UNDO_ACTION = "UNDO_ACTION",
     COMMIT_HISTORY = "COMMIT_HISTORY",
@@ -143,10 +142,6 @@ export interface SetSaveFileNameDocAction {
     payload: { name: string }
 };
 
-export interface AddRelationDocAction {
-    type: DocActionTypes.ADD_RELATION;
-    payload: { annotation: Annotation, relation: string, context: TextContext }
-};
 export interface ChangeVerificationDocAction {
     type: DocActionTypes.CHANGE_VERIFICATION;
     payload: { annotation: Annotation, disputed: boolean }
@@ -175,7 +170,6 @@ export type DocActions =
     RemoveAnnotationDocAction |
     HighlightAllDocAction |
     SetSaveFileNameDocAction |
-    AddRelationDocAction |
     ChangeVerificationDocAction |
     UndoActionDocAction |
     CommitHistoryDocAction |
@@ -319,7 +313,6 @@ export function docReducer(state: DocState, action: DocActions ) {
                 return {
                   ...a,
                   note: action.payload.annotation.note,
-                  relationships: action.payload.annotation.relationships,
                 };
               }
               return a; 
@@ -406,19 +399,6 @@ export function docReducer(state: DocState, action: DocActions ) {
             };
         };
 
-        case DocActionTypes.ADD_RELATION: {
-            const newAnnotation = action.payload.annotation
-            newAnnotation.relationships[action.payload.relation as keyof AnnotationRelationships] = action.payload.context;
-
-            const updatedAnnotations = [...state.annotations];
-            const index = updatedAnnotations.findIndex((a) => a == action.payload.annotation);
-            updatedAnnotations[index] = newAnnotation;
-            return {
-                ...state,
-                annotations: updatedAnnotations
-            }
-        };
-
         case DocActionTypes.CHANGE_VERIFICATION: {
           const { annotation, disputed } = action.payload;
         
@@ -488,12 +468,8 @@ export function docReducer(state: DocState, action: DocActions ) {
         case DocActionTypes.SYNC_ANNOTATION_ID: {
             const { tempId, realId } = action.payload;
             const updatedAnnotations = state.annotations.map(a => {
-                // If the annotation doesn't have an ID yet, it's a candidate for sync.
-                // We use a combination of text, start, and end as a pseudo-temp-id.
-                // In a more robust implementation, we'd add a dedicated tempId field to the Annotation interface.
                 return a; 
             });
-            // For now, we'll rely on the re-fetching or surgical replacement in the component.
             return state;
         }
 

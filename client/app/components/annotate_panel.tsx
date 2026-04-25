@@ -6,7 +6,6 @@ import { docReducer, initialDocState, DocActionTypes, LoadDocAction } from '../l
 import {
   Annotation,
   AnnotationOptions,
-  AnnotationRelationships,
   TextContext,
   AnnotationGuideline,
   ContextMenu
@@ -22,8 +21,6 @@ import ExcelJS from 'exceljs';
 import UnifiedContextMenuDisplay from '../components/context-menus/unified-context-menu';
 import AnnotationPanel from '../components/annotation-panel';
 import PageDisplay from '../components/page-display-brat';
-import PageDisplayBuilder from '../components/page-display-builder';
-import RelationshipBuilderPanel from '../components/relationship-builder-panel';
 import LLMAnnotationPopup from '../components/context-menus/llm-annotation-popup';
 import ActionHistoryPanel from '../components/action-history-panel';
 
@@ -145,10 +142,6 @@ export default function Annotate_Panel({ overrideProject, overrideId}: Props) {
     }
   }, [overrideProject]);
 
-  const [relationshipBuilderMode, setRelationshipBuilderMode] = useState(false);
-  const [currentRelationType, setCurrentRelationType] = useState<keyof AnnotationRelationships | null>(null);
-  const [currentAnnotationRelation, setCurrentAnnotationRelation] = useState<Annotation | null>(null);
-
   const [activeLabelFilters, setActiveLabelFilters] = useState<string[]>([]);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
@@ -216,12 +209,25 @@ export default function Annotate_Panel({ overrideProject, overrideId}: Props) {
     if (entry.key === 'demographic') {
       return (
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
-          {data.map((item: any, i: number) => (
-            <div key={i} className="bg-slate-50 p-3 rounded-lg border border-slate-100">
-              <div className="text-[9px] font-bold text-slate-400 uppercase tracking-tight">{item.label || 'Field'}</div>
-              <div className="text-xs font-bold text-slate-700 mt-1">{item.value || 'N/A'}</div>
-            </div>
-          ))}
+          {data.map((item: any, i: number) => {
+            const value = item.value || 'N/A';
+            const isUrl = typeof value === 'string' && (value.startsWith('http://') || value.startsWith('https://'));
+            return (
+              <div key={i} className="bg-slate-50 p-3 rounded-lg border border-slate-100">
+                <div className="text-[9px] font-bold text-slate-400 uppercase tracking-tight">{item.label || 'Field'}</div>
+                <div className="text-xs font-bold text-slate-700 mt-1">
+                  {isUrl ? (
+                    <a href={value} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline flex items-center gap-1">
+                      <span>Click to Open</span>
+                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/></svg>
+                    </a>
+                  ) : (
+                    value
+                  )}
+                </div>
+              </div>
+            );
+          })}
         </div>
       );
     }
@@ -284,25 +290,6 @@ export default function Annotate_Panel({ overrideProject, overrideId}: Props) {
     return colors;
   }, [annotationOptions]);
 
-  const linkModeColors = {
-      'Latency': '#6366f1',
-      'Duration': '#8b5cf6',
-      'Frequency': '#ec4899',
-      'Route': '#10b981',
-      'Dose': '#f59e0b',
-      'Verification': '#14b8a6',
-      'Condition': '#64748b'
-  };
-
-  const filteredLinkAnnotations = useMemo(() => {
-    if (!relationshipBuilderMode) return [];
-    return doc.annotations.filter(a => activeLayers.includes(a.note.includes('LLM') ? 'LLM' : a.note.includes('BERT') ? 'BERT' : 'Human'));
-  }, [doc.annotations, activeLayers, relationshipBuilderMode]);
-
-  const temporalTerms = useMemo(() => {
-    return doc.annotations.filter(a => TEMPORAL_LABELS.has(a.label.toUpperCase()));
-  }, [doc.annotations]);
-
   const visibleAnnotations = useMemo(() => {
     return doc.annotations.filter(a => {
       const isLlm = a.note.includes('LLM');
@@ -325,7 +312,7 @@ export default function Annotate_Panel({ overrideProject, overrideId}: Props) {
           visible: true,
           x: e.clientX,
           y: e.clientY,
-          type: relationshipBuilderMode ? 'relationship' : 'annotation',
+          type: 'annotation',
           start: startOffset,
           end: endOffset
         });
@@ -352,43 +339,12 @@ export default function Annotate_Panel({ overrideProject, overrideId}: Props) {
     setSelectedTermContext(anno.textContext);
   };
 
-  const onClickLinkAnnotation = (anno: Annotation) => {
-      if (currentRelationType && currentAnnotationRelation) {
-          // Use the ID of the target annotation for the relationship
-          const updated = { 
-            ...currentAnnotationRelation, 
-            relationships: { 
-              ...currentAnnotationRelation.relationships, 
-              [currentRelationType]: anno.id 
-            } 
-          };
-          dispatch({ type: DocActionTypes.UPDATE_ANNOTATION, payload: { annotation: updated, historyType: 'verify' } });
-          setCurrentRelationType(null);
-      } else {
-          setCurrentAnnotationRelation(anno);
-      }
-  };
-
-  useEffect(() => {
-    if (currentAnnotationRelation) {
-      const updated = doc.annotations.find(a => 
-        a.textContext.start === currentAnnotationRelation.textContext.start && 
-        a.textContext.end === currentAnnotationRelation.textContext.end &&
-        a.label === currentAnnotationRelation.label &&
-        a.note === currentAnnotationRelation.note
-      );
-      if (updated) setCurrentAnnotationRelation(updated);
-    }
-  }, [doc.annotations]);
-
   useEffect(() => {
     setHasUnsavedChanges(doc.actionHistory.length > 0);
   }, [doc.actionHistory.length]);
 
   const handleSave = async (shouldClose = false) => {
       // Incremental saving is done during actions. 
-      // This is now more of a "Commit" or "Sync" if we had a local buffer.
-      // For now, we'll just show success since actions are synced.
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 2000);
       if (shouldClose) window.close();
@@ -807,13 +763,6 @@ export default function Annotate_Panel({ overrideProject, overrideId}: Props) {
 
               <div className="flex items-center gap-4 shrink-0">
                 <div className="flex items-center gap-1.5">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest hidden lg:inline">Mode:</span>
-                  <div className={`flex p-0.5 rounded-lg border ${theme === 'dark' ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-200'}`}>
-                    <button onClick={() => setRelationshipBuilderMode(false)} className={`px-2.5 py-0.5 rounded-md text-[9px] font-black transition-all ${!relationshipBuilderMode ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400'}`}>STD</button>
-                    <button onClick={() => setRelationshipBuilderMode(true)} className={`px-2.5 py-0.5 rounded-md text-[9px] font-black transition-all ${relationshipBuilderMode ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400'}`}>LINK</button>
-                  </div>
-                </div>
-                <div className="flex items-center gap-1.5">
                   <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest hidden lg:inline">Layers:</span>
                   <div className={`flex p-0.5 rounded-lg border gap-0.5 ${theme === 'dark' ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-200'}`}>
                     {['Human', 'LLM', 'BERT'].map(layer => (
@@ -848,11 +797,16 @@ export default function Annotate_Panel({ overrideProject, overrideId}: Props) {
             </div>
           </div>
 
-          <main className="flex-1 flex flex-col overflow-hidden">
+          <main className="flex-1 flex flex-col overflow-hidden relative">
             {/* Metadata Overlay */}
             {metaView !== 'none' && (
-              <div className={`absolute top-0 left-0 right-0 max-h-[60%] shadow-2xl z-20 overflow-y-auto animate-in slide-in-from-top duration-300 border-b ${theme === 'dark' ? 'bg-slate-900 border-slate-800' : theme === 'soft' ? 'bg-[#fdf6e3] border-[#eee8d5]' : 'bg-white border-slate-200'}`}>
-                <div className="p-4 sm:p-8">
+              <>
+                <div 
+                  className="absolute inset-0 z-10" 
+                  onClick={() => setMetaView('none')}
+                ></div>
+                <div className={`absolute top-0 left-0 right-0 max-h-[60%] shadow-2xl z-20 overflow-y-auto animate-in slide-in-from-top duration-300 border-b ${theme === 'dark' ? 'bg-slate-900 border-slate-800' : theme === 'soft' ? 'bg-[#fdf6e3] border-[#eee8d5]' : 'bg-white border-slate-200'}`}>
+                  <div className="p-4 sm:p-8">
                   <div className="flex items-center justify-between mb-6">
                     <div className="flex items-center gap-3">
                         <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center text-white shadow-lg shadow-blue-500/20">
@@ -882,72 +836,30 @@ export default function Annotate_Panel({ overrideProject, overrideId}: Props) {
                   </div>
                 </div>
               </div>
-            )}
+            </>
+          )}
 
-            {relationshipBuilderMode ? (
-              <div className="flex-1 flex flex-col overflow-hidden">
-                <div className={`flex-1 overflow-y-auto p-4 sm:p-8 lg:p-12 transition-colors duration-300 ${theme === 'dark' ? 'bg-slate-950' : theme === 'soft' ? 'bg-[#eee8d5]' : 'bg-slate-50/30'}`}>
-                  <div className={`max-w-4xl mx-auto shadow-sm border min-h-full transition-colors duration-300 ${theme === 'dark' ? 'bg-slate-900 border-slate-800' : theme === 'soft' ? 'bg-[#fdf6e3] border-[#eee8d5]' : 'bg-white border-slate-200'}`}>
-                    <PageDisplayBuilder
-                      annotations={filteredLinkAnnotations}
-                      currentPage={doc.currentPageIndex}
-                      pageData={currentPageData || ''}
-                      currentAnnotationRelation={currentAnnotationRelation}
-                      optionColors={{...optionColors, ...linkModeColors}}
-                      handleTextSelection={handleTextSelection}
-                      userRole={userRole as any}
-                      isReadOnly={isReadOnly}
-                      onClickAnnotation={onClickLinkAnnotation}
-                      theme={theme}
-                      selectedTermContext={selectedTermContext}
-                      temporalTerms={temporalTerms}
-                      showTemporalHighlights={relationshipBuilderMode}
-                    />
-                  </div>
-                </div>
-                <div className={`h-48 border-t z-10 ${theme === 'dark' ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'}`}>
-                   <RelationshipBuilderPanel
-                     currentAnnotation={currentAnnotationRelation}
-                     onSelectRelationType={setCurrentRelationType}
-                     activeRelationType={currentRelationType}
-                     allAnnotations={doc.annotations}
-                     onRemoveRelation={(type) => {
-                       if (!currentAnnotationRelation) return;
-                       const updated = { 
-                         ...currentAnnotationRelation, 
-                         relationships: { 
-                           ...currentAnnotationRelation.relationships, 
-                           [type]: undefined 
-                         } 
-                       };
-                       dispatch({ type: DocActionTypes.UPDATE_ANNOTATION, payload: { annotation: updated, historyType: 'verify' } });
-                     }}
-                   />
-                </div>
+            <div className={`flex-1 overflow-y-auto p-4 sm:p-8 lg:p-12 transition-colors duration-300 ${theme === 'dark' ? 'bg-slate-950' : theme === 'soft' ? 'bg-[#eee8d5]' : 'bg-slate-50/30'}`}>
+              <div className={`max-w-4xl mx-auto shadow-xl border min-h-full pb-32 transition-colors duration-300 ${theme === 'dark' ? 'bg-slate-900 border-slate-800' : theme === 'soft' ? 'bg-[#fdf6e3] border-[#eee8d5]' : 'bg-white border-slate-200'}`}>
+                <PageDisplay
+                  annotations={visibleAnnotations}
+                  updateAnnotationNote={handleVerifyAnnotation}
+                  userRole={userRole as any}
+                  currentPage={doc.currentPageIndex}
+                  pageData={currentPageData || ''}
+                  optionColors={optionColors}
+                  handleTextSelection={handleTextSelection}
+                  activeLabelFilters={activeLabelFilters}
+                  disableFilter={false}
+                  annotationSet="SME"
+                  onAnnotationClick={onClickAnnotation}
+                  selectedTermContext={selectedTermContext}
+                  setSelectedTermContext={setSelectedTermContext}
+                  isReadOnly={isReadOnly}
+                  theme={theme}
+                />
               </div>
-            ) : (
-              <div className={`flex-1 overflow-y-auto p-4 sm:p-8 lg:p-12 transition-colors duration-300 ${theme === 'dark' ? 'bg-slate-950' : theme === 'soft' ? 'bg-[#eee8d5]' : 'bg-slate-50/30'}`}>
-                <div className={`max-w-4xl mx-auto shadow-xl border min-h-full pb-32 transition-colors duration-300 ${theme === 'dark' ? 'bg-slate-900 border-slate-800' : theme === 'soft' ? 'bg-[#fdf6e3] border-[#eee8d5]' : 'bg-white border-slate-200'}`}>
-                  <PageDisplay
-                    annotations={visibleAnnotations}
-                    updateAnnotationNote={handleVerifyAnnotation}
-                    userRole={userRole as any}
-                    currentPage={doc.currentPageIndex}
-                    pageData={currentPageData || ''}
-                    optionColors={optionColors}
-                    handleTextSelection={handleTextSelection}
-                    activeLabelFilters={activeLabelFilters}
-                    disableFilter={false}
-                    annotationSet="SME"
-                    onAnnotationClick={onClickAnnotation}
-                    selectedTermContext={selectedTermContext}
-                    setSelectedTermContext={setSelectedTermContext}
-                    isReadOnly={isReadOnly}
-                    theme={theme}
-                  />
-                </div>
-              </div>
-            )}
+            </div>
           </main>
         </div>
       </div>
@@ -959,69 +871,7 @@ export default function Annotate_Panel({ overrideProject, overrideId}: Props) {
           optionColors={optionColors}
           annotationGuidelines={annotationGuidelines}
           addAnnotation={handleAddAnnotation}
-          handleAddRelationship={async (opt) => {
-             if (isReadOnly || !currentAnnotationRelation || !currentRelationType) return;
-
-             if (opt === 'Set') {
-                // To maintain data integrity, relationships MUST point to an annotation ID.
-                // Check if an annotation exists at this range, or create one.
-                let target = doc.annotations.find(a => 
-                    a.textContext.start === unifiedContextMenu.start && 
-                    a.textContext.end === unifiedContextMenu.end
-                );
-
-                if (!target) {
-                    try {
-                        const response = await createAnnotation({
-                          case_id: parseInt(overrideId || '0'),
-                          label: 'TEMPORAL', // Default label for relationship targets
-                          start: unifiedContextMenu.start as number,
-                          end: unifiedContextMenu.end as number,
-                          text: selectedText,
-                          note: userRole
-                        });
-                        target = {
-                          id: response.id,
-                          label: 'TEMPORAL',
-                          textContext: {
-                            text: selectedText,
-                            start: unifiedContextMenu.start as number,
-                            end: unifiedContextMenu.end as number,
-                            page: doc.currentPageIndex
-                          },
-                          note: userRole,
-                          relationships: {}
-                        };
-                        dispatch({ type: DocActionTypes.ADD_ANNOTATION, payload: { annotation: target, historyType: 'add' } });
-                    } catch (err) {
-                        console.error("Failed to create target annotation:", err);
-                        return;
-                    }
-                }
-
-                if (target) {
-                    const updated = { 
-                      ...currentAnnotationRelation, 
-                      relationships: { 
-                        ...currentAnnotationRelation.relationships, 
-                        [currentRelationType]: target.id 
-                      } 
-                    };
-                    dispatch({ type: DocActionTypes.UPDATE_ANNOTATION, payload: { annotation: updated, historyType: 'verify' } });
-                }
-             } else {
-                // Clear the relationship
-                const updated = { 
-                    ...currentAnnotationRelation, 
-                    relationships: { 
-                        ...currentAnnotationRelation.relationships, 
-                        [currentRelationType]: undefined 
-                    } 
-                };
-                dispatch({ type: DocActionTypes.UPDATE_ANNOTATION, payload: { annotation: updated, historyType: 'verify' } });
-             }
-             setUnifiedContextMenu(prev => ({ ...prev, visible: false }));
-          }}
+          handleAddRelationship={() => {}}
           closeContextMenu={() => setUnifiedContextMenu(prev => ({ ...prev, visible: false }))}
         />
       )}

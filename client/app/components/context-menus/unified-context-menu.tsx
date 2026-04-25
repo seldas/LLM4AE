@@ -100,37 +100,6 @@ const UnifiedContextMenuDisplay = ({
           </button>
         </div>
       )}
-
-      {contextMenu.type === 'relationship' &&
-        (contextMenu.options || []).map((option) => (
-          <div
-            key={option}
-            onClick={() => {
-              handleAddRelationship(option);
-              closeContextMenu();
-            }}
-            style={{
-              cursor: 'pointer',
-              padding: '6px 10px',
-              marginBottom: '4px',
-              borderRadius: '6px',
-              backgroundColor: '#fdf2e9',
-              color: '#6e2c00',
-              fontSize: '13px',
-              fontWeight: 500,
-              textAlign: 'center',
-              transition: 'background-color 0.2s ease',
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.backgroundColor = '#f8c471';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.backgroundColor = '#fdf2e9';
-            }}
-          >
-            {option}
-          </div>
-        ))}
     </div>
   );
 };
