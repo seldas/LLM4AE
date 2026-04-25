@@ -14,15 +14,16 @@ This document summarizes the progress and remaining tasks for migrating the SCAT
 - [x] **Case-Centric Reducer:** Refactored `doc-reducer.ts` to reflect the database record structure. The state now tracks a `caseId` and a normalized `status` object.
 - [x] **Asynchronous Handlers:** Refactored UI actions (`handleAdd`, `handleRemove`, `handleVerify`) to be fully asynchronous, performing "Optimistic UI" updates synced with backend confirmations.
 - [x] **Real-time Status Polling:** Implemented an ID-based polling mechanism that checks database status columns directly to refresh AI results.
+- [x] **Unified Annotation Tool:** Migrated the legacy `annotate/` tool to the incremental CRUD model and consolidated it with the ICSR integration logic.
 
 ### **Integration (AskMyFAERS)**
-- [x] **Integrated Intake Workflow:** Created a dedicated `/api/annotate_icsr_intake/` endpoint that handles inbound case data and automatically redirects to the ICSR tool.
-- [x] **Dynamic Base Path:** Centralized `BASE_PATH` logic to support both development (root-level) and production (subpath `/annotator/`) deployments.
+- [x] **Integrated Intake Workflow:** Created a dedicated `/api/annotate_icsr_intake/` endpoint that handles inbound case data and automatically redirects to the unified annotation tool.
+- [x] **Temporary Mode:** Implemented a lightweight UI mode for direct integrations that hides user info and uses a default "tempo" project context.
+- [x] **Project Prefixing:** Implemented automatic project namespacing (e.g., `AskMyFAERS_Case-1`) for better organizational structure of integrated cases.
 
 ## 2. In Progress / Pending Tasks
 
 ### **Functional Cleanup**
-- [ ] **Migrate Legacy Tool:** The original `annotate/` tool still uses some bulk-saving logic. It needs to be fully transitioned to the incremental model used by `annotate_icsr/`.
 - [ ] **Adjudication Module:** Move adjudication decisions into a dedicated table or more structured format in the DB instead of a serialized JSON field in the annotations table.
 - [ ] **Audit Trail:** Create a `history_log` table in the database to track every incremental change (who changed what and when) for regulatory compliance.
 
