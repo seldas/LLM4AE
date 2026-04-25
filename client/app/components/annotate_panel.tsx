@@ -2,6 +2,7 @@
 'use client';
 
 import { useState, useReducer, useEffect, useRef, useMemo, JSX, ReactNode } from 'react';
+import { io } from 'socket.io-client';
 import { docReducer, initialDocState, DocActionTypes, LoadDocAction } from '../lib/doc-reducer';
 import {
   Annotation,
@@ -552,23 +553,34 @@ export default function Annotate_Panel({ overrideProject, overrideId}: Props) {
     loadGuidelines();
   }, []);
 
-  // Poll for status updates
+  // Websocket status updates
   useEffect(() => {
     if (!overrideId) return;
-    const interval = setInterval(async () => {
-      const data = await getCaseById(overrideId);
-      if (data && (data.status.llm_status === 'Done' || data.status.bert_status === 'Done')) {
-         // If a tool just finished, reload everything
-         if (doc.status.llm_status === 'working' && data.status.llm_status === 'Done') {
+    
+    // Connect to the socket through the proxy
+    const socketPath = API_BASE.replace(/\/api$/, '') + '/socket.io';
+    const socket = io(window.location.origin, { 
+      path: socketPath,
+      transports: ['websocket', 'polling']
+    });
+    
+    socket.on('status_update', async (update: { case_id: number, llm_status?: string, bert_status?: string }) => {
+      if (update.case_id === parseInt(overrideId)) {
+        console.log("Received status update via websocket:", update);
+        if (update.llm_status === 'Done' || update.bert_status === 'Done' || update.llm_status === 'working' || update.bert_status === 'working') {
+           // Reload case data to get latest status and annotations
+           const data = await getCaseById(overrideId);
+           if (data) {
              dispatch({ type: DocActionTypes.LOAD, payload: data as LoadDocAction['payload'] });
-         }
-         if (doc.status.bert_status === 'working' && data.status.bert_status === 'Done') {
-             dispatch({ type: DocActionTypes.LOAD, payload: data as LoadDocAction['payload'] });
-         }
+           }
+        }
       }
-    }, 3000);
-    return () => clearInterval(interval);
-  }, [overrideId, doc.status]);
+    });
+
+    return () => {
+      socket.disconnect();
+    };
+  }, [overrideId, API_BASE]);
 
   return (
     <div className="app-container h-screen overflow-hidden flex flex-col bg-slate-50 text-slate-900 antialiased">

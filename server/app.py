@@ -1,5 +1,6 @@
 from flask import Flask, request, jsonify, redirect
 from flask_cors import cross_origin
+from flask_socketio import SocketIO
 import logging
 import os
 import threading
@@ -20,6 +21,7 @@ from ai_client import call_ai as ai_call
 logging.basicConfig(level=logging.DEBUG)
 
 app = Flask(__name__)
+socketio = SocketIO(app, cors_allowed_origins="*")
 
 if __name__ != '__main__':
     # If running via gunicorn, bridge the loggers
@@ -454,7 +456,9 @@ def trigger_llm_annotation():
             conn.commit()
             conn.close()
 
-            run_llm_annotation(doc_id=doc_id) 
+            socketio.emit('status_update', {'case_id': doc_id, 'llm_status': 'working'})
+            run_llm_annotation(doc_id=doc_id)
+            socketio.emit('status_update', {'case_id': doc_id, 'llm_status': 'Done'})
 
         threading.Thread(target=background_task, args=(doc['id'],), daemon=True).start()
         return jsonify({"message": f"LLM annotation started", "file_locked": file_name}), 200
@@ -505,7 +509,9 @@ def trigger_bert_annotation():
             conn.execute('UPDATE cases SET bert_status = "working" WHERE id = ?', (doc_id,))
             conn.commit()
 
-            pages = json.loads(doc_data['pages']) if doc_data['pages'] else [""]
+            socketio.emit('status_update', {'case_id': doc_id, 'bert_status': 'working'})
+
+            pages = json.loads(doc['pages']) if doc['pages'] else [""]
             narrative = pages[0] if pages else ""
             
             if narrative and narrative.strip():
@@ -522,6 +528,8 @@ def trigger_bert_annotation():
                         
                         # Set status to Done in new column
                         conn.execute("UPDATE cases SET bert_status = 'Done' WHERE id = ?", (doc_id,))
+                    
+                    socketio.emit('status_update', {'case_id': doc_id, 'bert_status': 'Done'})
                 except Exception as ex:
                     logging.error(f"Error processing case {doc_id}: {ex}")
             
@@ -904,4 +912,4 @@ def delete_annotation(ann_id):
         return jsonify({"error": str(e)}), 500
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=8862, debug=True)
+    socketio.run(app, host="0.0.0.0", port=8862, debug=True, allow_unsafe_werkzeug=True)
