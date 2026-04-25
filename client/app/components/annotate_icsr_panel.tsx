@@ -2,7 +2,7 @@
 'use client';
 
 import { useState, useReducer, useEffect, useRef, useMemo, JSX, ReactNode } from 'react';
-import { docReducer, initialDocState, DocActionTypes } from '../lib/doc-reducer';
+import { docReducer, initialDocState, DocActionTypes, LoadDocAction } from '../lib/doc-reducer';
 import {
   Annotation,
   AnnotationOptions,
@@ -482,14 +482,24 @@ export default function AnnotateIcsrPanel({ overrideProject, overrideId}: Props)
     }
   };
 
-  useEffect(() => {
-    if (overrideId) {
-      getCaseById(overrideId).then(data => {
-        if (!data) return;
-        dispatch({ type: DocActionTypes.LOAD, payload: { ...data, fileName: overrideId } });
-      });
-    }
-  }, [overrideId]);
+useEffect(() => {
+  if (overrideId) {
+    getCaseById(overrideId).then(data => {
+      if (!data) return;
+      try {
+        const formattedData: LoadDocAction['payload'] = {
+          pages: data.pages || [],
+          annotations: data.annotations || [],
+          meta: data.meta || {},
+          fileName: overrideId
+        };
+        dispatch({ type: DocActionTypes.LOAD, payload: formattedData });
+      } catch (error) {
+        console.error('Error parsing case data:', error);
+      }
+    });
+  }
+}, [overrideId]);
 
   useEffect(() => {
     if (doc.annotations) {

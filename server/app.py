@@ -380,19 +380,13 @@ def trigger_llm_annotation():
         req = request.get_json(silent=True) or {}
         app.logger.debug(f"Request JSON: {req}")
         req = request.get_json(silent=True) or {}
-        case_id = req.get("id")
-        file_name = (req.get("file") or "").strip()
+        case_id = (req.get("file") or "").strip()
         folder = (req.get("folder") or "").strip()
 
         if case_id:
             doc = get_case(case_id=case_id)
             # Find the filename for logging
             file_name = doc['case_number'] + "-" + doc['version_number'] if doc else "unknown"
-        elif file_name and folder:
-            project = get_project_by_name(folder)
-            if not project:
-                return jsonify({"error": f"Project not found: {folder}"}), 404
-            doc = get_case(project_id=project['id'], filename=file_name)
         else:
             return jsonify({"error": "Missing case identifier (id or file/folder)"}), 400
 
@@ -666,10 +660,11 @@ def annotate_icsr_intake():
 @cross_origin()
 def get_case_by_id(case_id):
     try:
-        case = get_case(case_id=case_id)
+        case = get_case(case_id=case_id)        
         if not case:
             return jsonify({"error": "Case not found"}), 404
-        return jsonify(dict(case)), 200
+        final_case = dict(case)
+        return jsonify(final_case), 200
     except Exception as e:
         logging.error(f"Error getting case by ID: {e}")
         return jsonify({"error": str(e)}), 500

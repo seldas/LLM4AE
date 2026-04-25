@@ -21,8 +21,43 @@ export const getHistoryFile = async (fileName: string, curr_folder: string) => {
 export const getCaseById = async (id: string) => {
   try {
     const response: AxiosResponse = await client.get(`/case/${id}`);
-    const data: FileData = response.data;
-    return data;
+    const data: any = response.data;
+
+    if (data && data.full_data) {
+      try {
+        const fullData = JSON.parse(data.full_data);
+        data.annotations = fullData.annotations || [];
+      } catch (error) {
+        console.error('Error parsing full_data:', error);
+        data.annotations = [];
+      }
+    } else {
+      data.annotations = [];
+    }
+
+    if (data && data.meta) {
+      try {
+        data.meta = JSON.parse(data.meta);
+      } catch (error) {
+        console.error('Error parsing meta:', error);
+        data.meta = {};
+      }
+    } else {
+      data.meta = {};
+    }
+
+    if (data && data.pages) {
+      try {
+        data.pages = JSON.parse(data.pages);
+      } catch (error) {
+        console.error('Error parsing pages:', error);
+        data.pages = [];
+      }
+    } else {
+      data.pages = [];
+    }
+
+    return data as FileData;
   } catch (error) {
     console.error('Error loading case by ID:', error);
     const errorMessage = error instanceof Error ? error.message : "Unknown error occurred.";

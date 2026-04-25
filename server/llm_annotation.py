@@ -118,7 +118,8 @@ def run_llm_annotation(file_path=None, doc_id=None):
                 "text": sp["text"]
             })
         current_offset += len(chunk)
-
+    print(current_offset)
+    
     if doc_id:
         conn = get_db_connection()
         # Save annotations to DB
