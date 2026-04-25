@@ -3,7 +3,7 @@ import { AnnotationGuideline, AnnotationOptions, ContextMenu } from "../../lib/i
 
 interface Props {
   contextMenu: ContextMenu & { type: 'annotation' | 'relationship' | 'verification'; options?: string[] };
-  annotationOptions: AnnotationOptions;
+  annotationOptions: AnnotationOptions[];
   optionColors: { [key: string]: string };
   annotationGuidelines: AnnotationGuideline[];
   addAnnotation: (label: string) => void;

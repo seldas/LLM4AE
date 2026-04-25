@@ -209,11 +209,7 @@ const AnnotationPanel = (props: Props) => {
                                               key={idx}
                                               onClick={() => {
                                                 if (props.setSelectedTermContext) {
-                                                    props.setSelectedTermContext({
-                                                      text: ann.textContext.text,
-                                                      start: ann.textContext.start ?? 0,
-                                                      end: ann.textContext.end ?? 0,
-                                                    });
+                                                    props.setSelectedTermContext(ann.textContext);
                                                 }
                                                 // Jump to narrative position
                                                 setTimeout(() => {

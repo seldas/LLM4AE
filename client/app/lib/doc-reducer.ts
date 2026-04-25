@@ -1,5 +1,5 @@
 import { act } from "react";
-import { Annotation, AnnotationRelationships, HighlightedTerms, TextContext } from "./interfaces";
+import { Annotation, AnnotationRelationships, HighlightedTerms, TextContext, CaseMetadata } from "./interfaces";
 import { getCurrentDateString, splitIntoSentences } from "./util";
 
 export interface ActionRecord {
@@ -88,7 +88,16 @@ export interface ChangeDocAction {
 
 export interface LoadDocAction {
     type: DocActionTypes.LOAD;
-    payload: { pages: string[], annotations: Annotation[], meta: Record<string, any>, fileName: string };
+    payload: { 
+        pages: string[], 
+        annotations: Annotation[], 
+        meta: Record<string, any>, 
+        fileName: string,
+        caseId?: number,
+        caseNumber?: string,
+        versionNumber?: string,
+        status?: CaseMetadata
+    };
 };
 
 export interface PasteTextDocAction {
@@ -170,7 +179,8 @@ export type DocActions =
     ChangeVerificationDocAction |
     UndoActionDocAction |
     CommitHistoryDocAction |
-    APPEND_ANNOTATIONS_Action
+    APPEND_ANNOTATIONS_Action |
+    SYNC_ANNOTATION_ID_Action
     ;
 
 

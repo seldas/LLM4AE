@@ -32,6 +32,7 @@ services:
     environment:
       - NODE_ENV=development
       - NEXT_PUBLIC_BASE_PATH=
+      - NEXT_PUBLIC_API_BASE=http://localhost:8862/api
       - BACKEND_HOST=backend
       - WATCHPACK_POLLING=true
     command: npm run dev

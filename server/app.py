@@ -1,58 +1,7 @@
-import eventlet
-eventlet.monkey_patch()
-
 from flask import Flask, request, jsonify, redirect
 from flask_cors import cross_origin
-from flask_socketio import SocketIO, emit, join_room, leave_room
 # ... (inside app.py)
 
-active_case_users = {} # {case_id: {user_id: username}}
-sid_to_user = {} # {sid: (case_id, user_id)}
-
-@socketio.on('join_case')
-def handle_join_case(data):
-    case_id = data.get('case_id')
-    user_id = data.get('user_id')
-    username = data.get('username')
-    if case_id and user_id:
-        join_room(f"case_{case_id}")
-        if case_id not in active_case_users:
-            active_case_users[case_id] = {}
-        active_case_users[case_id][user_id] = username
-        sid_to_user[request.sid] = (case_id, user_id)
-        
-        emit('presence_update', {
-            'case_id': case_id, 
-            'users': list(active_case_users[case_id].values())
-        }, room=f"case_{case_id}")
-        logging.info(f"User {username} joined case {case_id}")
-
-@socketio.on('leave_case')
-def handle_leave_case(data):
-    case_id = data.get('case_id')
-    user_id = data.get('user_id')
-    if case_id and user_id:
-        leave_room(f"case_{case_id}")
-        sid_to_user.pop(request.sid, None)
-        if case_id in active_case_users and user_id in active_case_users[case_id]:
-            username = active_case_users[case_id].pop(user_id)
-            emit('presence_update', {
-                'case_id': case_id, 
-                'users': list(active_case_users[case_id].values())
-            }, room=f"case_{case_id}")
-            logging.info(f"User {username} left case {case_id}")
-
-@socketio.on('disconnect')
-def handle_disconnect():
-    if request.sid in sid_to_user:
-        case_id, user_id = sid_to_user.pop(request.sid)
-        if case_id in active_case_users and user_id in active_case_users[case_id]:
-            username = active_case_users[case_id].pop(user_id)
-            emit('presence_update', {
-                'case_id': case_id, 
-                'users': list(active_case_users[case_id].values())
-            }, room=f"case_{case_id}")
-            logging.info(f"User {username} disconnected, left case {case_id}")
 import logging
 import os
 import threading
@@ -73,7 +22,6 @@ from ai_client import call_ai as ai_call
 logging.basicConfig(level=logging.DEBUG)
 
 app = Flask(__name__)
-socketio = SocketIO(app, cors_allowed_origins="*")
 
 if __name__ != '__main__':
     # If running via gunicorn, bridge the loggers
@@ -508,9 +456,13 @@ def trigger_llm_annotation():
             conn.commit()
             conn.close()
 
-            socketio.emit('status_update', {'case_id': doc_id, 'llm_status': 'working'})
             run_llm_annotation(doc_id=doc_id)
-            socketio.emit('status_update', {'case_id': doc_id, 'llm_status': 'Done'})
+            
+            # Update status to Done after completion
+            conn = get_db_connection()
+            conn.execute('UPDATE cases SET llm_status = "Done" WHERE id = ?', (doc_id,))
+            conn.commit()
+            conn.close()
 
         threading.Thread(target=background_task, args=(doc['id'],), daemon=True).start()
         return jsonify({"message": f"LLM annotation started", "file_locked": file_name}), 200
@@ -561,8 +513,6 @@ def trigger_bert_annotation():
             conn.execute('UPDATE cases SET bert_status = "working" WHERE id = ?', (doc_id,))
             conn.commit()
 
-            socketio.emit('status_update', {'case_id': doc_id, 'bert_status': 'working'})
-
             pages = json.loads(doc['pages']) if doc['pages'] else [""]
             narrative = pages[0] if pages else ""
             
@@ -580,8 +530,6 @@ def trigger_bert_annotation():
                         
                         # Set status to Done in new column
                         conn.execute("UPDATE cases SET bert_status = 'Done' WHERE id = ?", (doc_id,))
-                    
-                    socketio.emit('status_update', {'case_id': doc_id, 'bert_status': 'Done'})
                 except Exception as ex:
                     logging.error(f"Error processing case {doc_id}: {ex}")
             
@@ -979,4 +927,4 @@ def delete_annotation(ann_id):
         return jsonify({"error": str(e)}), 500
 
 if __name__ == "__main__":
-    socketio.run(app, host="0.0.0.0", port=8862, debug=True, allow_unsafe_werkzeug=True)
+    app.run(host="0.0.0.0", port=8862, debug=True)

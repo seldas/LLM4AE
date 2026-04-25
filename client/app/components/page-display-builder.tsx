@@ -7,7 +7,7 @@ interface Props {
   pageData: string;  
   currentAnnotationRelation: Annotation | null;
   optionColors: { [key: string]: string };
-  handleTextSelection: (e?: any) => void;
+  handleTextSelection: (e?: any, start?: number, end?: number) => void;
   userRole: string; 
   onClickAnnotation?: (anno: Annotation) => void;
   isReadOnly?: boolean;
@@ -85,6 +85,38 @@ const PageDisplayBuilder = ({
   };
 
   const currentTheme = themeStyles[theme];
+
+  const getOffsetFromSelection = useCallback(() => {
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0 || !textRef.current) return null;
+
+    const range = selection.getRangeAt(0);
+    const pre = textRef.current;
+
+    // Check if the selection is within our text block
+    if (!pre.contains(range.startContainer) || !pre.contains(range.endContainer)) return null;
+
+    // Helper to calculate total character offset of a node within the pre
+    const calculateOffset = (targetNode: Node, targetOffset: number) => {
+      let totalOffset = 0;
+      const walk = document.createTreeWalker(pre, NodeFilter.SHOW_TEXT);
+      let currentNode = walk.nextNode();
+      while (currentNode) {
+        if (currentNode === targetNode) {
+          totalOffset += targetOffset;
+          return totalOffset;
+        }
+        totalOffset += (currentNode.textContent || "").length;
+        currentNode = walk.nextNode();
+      }
+      return totalOffset;
+    };
+
+    const start = calculateOffset(range.startContainer, range.startOffset);
+    const end = calculateOffset(range.endContainer, range.endOffset);
+
+    return { start, end };
+  }, []);
 
   const getAnnotatorDisplay = (note: string) => {
     const upperNote = note.toUpperCase();
@@ -204,7 +236,7 @@ const PageDisplayBuilder = ({
         });
       }
 
-      if (selectedTermContext && (!currentAnnotationRelation || selectedTermContext.start !== currentAnnotationRelation.textContext.start || selectedTermContext.end !== currentAnnotationRelation.textContext.end)) {
+      if (selectedTermContext && typeof selectedTermContext.start === 'number' && typeof selectedTermContext.end === 'number' && (!currentAnnotationRelation || selectedTermContext.start !== currentAnnotationRelation.textContext.start || selectedTermContext.end !== currentAnnotationRelation.textContext.end)) {
         addBox(selectedTermContext.start, selectedTermContext.end, "Temporal", "hsl(48, 95%, 70%)", false, "", true);
       }
 
@@ -226,7 +258,19 @@ const PageDisplayBuilder = ({
   }, [computeHighlightBoxes, updateLineCount]);
 
   return (
-    <div className="page flex" style={{ margin: "20px auto" }} onMouseUp={() => !isReadOnly && handleTextSelection()}>
+    <div 
+      className="page flex" 
+      style={{ margin: "20px auto" }} 
+      onMouseUp={(e) => {
+        if (isReadOnly) return;
+        const offsets = getOffsetFromSelection();
+        if (offsets) {
+          handleTextSelection(e, offsets.start, offsets.end);
+        } else {
+          handleTextSelection(e);
+        }
+      }}
+    >
       <div className={`flex-shrink-0 text-right pr-4 select-none font-mono text-[10px] border-r ${currentTheme.lineNumbers}`} style={{ width: '50px', lineHeight: '3.5rem', paddingTop: '14px' }}>
         {Array.from({ length: lineCount }).map((_, i) => <div key={i}>{i + 1}</div>)}
       </div>

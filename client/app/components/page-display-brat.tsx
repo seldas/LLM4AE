@@ -13,7 +13,7 @@ interface Props {
   currentPage: number;
   pageData: string;
   optionColors: { [key: string]: string };
-  handleTextSelection: (e?: any) => void;
+  handleTextSelection: (e?: any, start?: number, end?: number) => void;
   activeLabelFilters: string[];
   disableFilter?: boolean;
   userRole: string;
@@ -62,6 +62,7 @@ function PageDisplay({
   optionColors,
   handleTextSelection,
   activeLabelFilters,
+  currentPage,
   disableFilter = false,
   onAnnotationClick,
   selectedTermContext,
@@ -93,6 +94,38 @@ function PageDisplay({
   };
 
   const currentTheme = themeStyles[theme];
+
+  const getOffsetFromSelection = useCallback(() => {
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0 || !textRef.current) return null;
+
+    const range = selection.getRangeAt(0);
+    const pre = textRef.current;
+
+    // Check if the selection is within our text block
+    if (!pre.contains(range.startContainer) || !pre.contains(range.endContainer)) return null;
+
+    // Helper to calculate total character offset of a node within the pre
+    const calculateOffset = (targetNode: Node, targetOffset: number) => {
+      let totalOffset = 0;
+      const walk = document.createTreeWalker(pre, NodeFilter.SHOW_TEXT);
+      let currentNode = walk.nextNode();
+      while (currentNode) {
+        if (currentNode === targetNode) {
+          totalOffset += targetOffset;
+          return totalOffset;
+        }
+        totalOffset += (currentNode.textContent || "").length;
+        currentNode = walk.nextNode();
+      }
+      return totalOffset;
+    };
+
+    const start = calculateOffset(range.startContainer, range.startOffset);
+    const end = calculateOffset(range.endContainer, range.endOffset);
+
+    return { start, end };
+  }, []);
 
   const getAnnotatorDisplay = (note: string) => {
     const upperNote = note.toUpperCase();
@@ -176,7 +209,19 @@ function PageDisplay({
   }, [computeHighlightBoxes, updateLineCount]);
 
   return (
-    <div className="page flex" style={{ margin: "20px auto" }} onMouseUp={() => !isReadOnly && handleTextSelection()}>
+    <div 
+      className="page flex" 
+      style={{ margin: "20px auto" }} 
+      onMouseUp={(e) => {
+        if (isReadOnly) return;
+        const offsets = getOffsetFromSelection();
+        if (offsets) {
+          handleTextSelection(e, offsets.start, offsets.end);
+        } else {
+          handleTextSelection(e);
+        }
+      }}
+    >
       <div className={`flex-shrink-0 text-right pr-4 select-none font-mono text-[10px] border-r ${currentTheme.lineNumbers}`} style={{ width: '50px', lineHeight: '3.5rem', paddingTop: '14px' }}>
         {Array.from({ length: lineCount }).map((_, i) => <div key={i}>{i + 1}</div>)}
       </div>
@@ -205,7 +250,12 @@ function PageDisplay({
                 if (onAnnotationClick && box.annotationRef) {
                    onAnnotationClick(box.annotationRef, rect.left + window.scrollX, rect.top + window.scrollY);
                 } else {
-                   setSelectedTermContext({ text: pageData.substring(box.start, box.end), start: box.start, end: box.end });
+                   setSelectedTermContext({ 
+                     text: pageData.substring(box.start, box.end), 
+                     start: box.start, 
+                     end: box.end,
+                     page: currentPage 
+                   });
                 }
               }}
               style={{

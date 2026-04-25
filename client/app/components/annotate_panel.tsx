@@ -2,14 +2,14 @@
 'use client';
 
 import { useState, useReducer, useEffect, useRef, useMemo, JSX, ReactNode } from 'react';
-import { io } from 'socket.io-client';
 import { docReducer, initialDocState, DocActionTypes, LoadDocAction } from '../lib/doc-reducer';
 import {
   Annotation,
   AnnotationOptions,
   AnnotationRelationships,
   TextContext,
-  AnnotationGuideline
+  AnnotationGuideline,
+  ContextMenu
 } from '../lib/interfaces';
 import { getHistoryFile, getCaseById, createAnnotation, updateAnnotation, deleteAnnotation, getCaseAnnotations } from '../lib/api';
 import {  
@@ -158,7 +158,7 @@ export default function Annotate_Panel({ overrideProject, overrideId}: Props) {
     start: number;
     end: number;
     label?: string;
-    type?: string;
+    type?: 'LLM' | 'BERT' | 'SME' | 'NEW';
     note?: string;
     isVerified?: boolean;
   }>({ visible: false, x: 0, y: 0, text: '', start: 0, end: 0 });
@@ -251,10 +251,9 @@ export default function Annotate_Panel({ overrideProject, overrideId}: Props) {
     });
   }, [doc.annotations, activeLayers]);
 
-  const handleTextSelection = (e?: any) => {
+  const handleTextSelection = (e?: any, startOffset?: number, endOffset?: number) => {
     const selection = window.getSelection();
     if (selection && selection.toString().trim().length > 0) {
-      const range = selection.getRangeAt(0);
       const text = selection.toString();
       setSelectedText(text);
 
@@ -264,15 +263,16 @@ export default function Annotate_Panel({ overrideProject, overrideId}: Props) {
           x: e.clientX,
           y: e.clientY,
           type: relationshipBuilderMode ? 'relationship' : 'annotation',
-          start: 0, // Injected by PageDisplay
-          end: 0    // Injected by PageDisplay
+          start: startOffset,
+          end: endOffset
         });
       }
     }
   };
 
   const onClickAnnotation = (anno: Annotation, x: number, y: number) => {
-    const isAi = anno.note.includes('LLM') || anno.note.includes('BERT') || anno.note.includes('AI');
+    const isLlm = anno.note.includes('LLM');
+    const isBert = anno.note.includes('BERT');
     const isVerified = anno.note.includes('VERIFIED');
 
     setLlmPopup({
@@ -282,7 +282,7 @@ export default function Annotate_Panel({ overrideProject, overrideId}: Props) {
       start: anno.textContext.start ?? 0,
       end: anno.textContext.end ?? 0,
       label: anno.label,
-      type: anno.label,
+      type: isLlm ? 'LLM' : isBert ? 'BERT' : 'SME',
       note: anno.note,
       isVerified
     });
@@ -561,53 +561,13 @@ export default function Annotate_Panel({ overrideProject, overrideId}: Props) {
     loadGuidelines();
   }, []);
 
-  const [presenceUsers, setPresenceUsers] = useState<string[]>([]);
-
-  // Websocket status updates and presence
-  useEffect(() => {
-    if (!overrideId || !currentUser) return;
-    
-    // Connect to the socket through the proxy
-    const socketPath = API_BASE.replace(/\/api$/, '') + '/socket.io';
-    const socket = io(window.location.origin, { 
-      path: socketPath,
-      transports: ['websocket', 'polling']
-    });
-    
-    // Join the case room for presence tracking
-    socket.emit('join_case', {
-        case_id: parseInt(overrideId),
-        user_id: currentUser.id,
-        username: currentUser.full_name || currentUser.username
-    });
-
-    socket.on('presence_update', (data: { case_id: number, users: string[] }) => {
-        if (data.case_id === parseInt(overrideId)) {
-            setPresenceUsers(data.users);
-        }
-    });
-
-    socket.on('status_update', async (update: { case_id: number, llm_status?: string, bert_status?: string }) => {
-      if (update.case_id === parseInt(overrideId)) {
-        console.log("Received status update via websocket:", update);
-        if (update.llm_status === 'Done' || update.bert_status === 'Done' || update.llm_status === 'working' || update.bert_status === 'working') {
-           // Reload case data to get latest status and annotations
-           const data = await getCaseById(overrideId);
-           if (data) {
-             dispatch({ type: DocActionTypes.LOAD, payload: data as LoadDocAction['payload'] });
-           }
-        }
-      }
-    });
-
-    return () => {
-      socket.emit('leave_case', {
-          case_id: parseInt(overrideId),
-          user_id: currentUser.id
-      });
-      socket.disconnect();
-    };
-  }, [overrideId, API_BASE, currentUser]);
+  const handleRefresh = async () => {
+    if (!overrideId) return;
+    const data = await getCaseById(overrideId);
+    if (data) {
+      dispatch({ type: DocActionTypes.LOAD, payload: data as LoadDocAction['payload'] });
+    }
+  };
 
   return (
     <div className="app-container h-screen overflow-hidden flex flex-col bg-slate-50 text-slate-900 antialiased">
@@ -692,6 +652,15 @@ export default function Annotate_Panel({ overrideProject, overrideId}: Props) {
                 </button>
               </div>
             )}
+            <div className="mt-2">
+                <button
+                  onClick={handleRefresh}
+                  className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] font-bold uppercase tracking-wider transition-all border border-slate-200"
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+                  Refresh Status
+                </button>
+            </div>
           </div>
 
           <div className="flex-1 overflow-hidden flex flex-col">
@@ -782,21 +751,6 @@ export default function Annotate_Panel({ overrideProject, overrideId}: Props) {
           </div>
 
           <main className="flex-1 flex flex-col overflow-hidden">
-            {/* Conflict Warning Banner */}
-            {presenceUsers.length > 1 && (
-              <div className="bg-amber-50 border-b border-amber-200 px-6 py-2 flex items-center gap-3 animate-in fade-in slide-in-from-top duration-500">
-                <div className="w-5 h-5 rounded-full bg-amber-100 flex items-center justify-center">
-                    <svg className="w-3 h-3 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
-                </div>
-                <div className="flex-1">
-                    <p className="text-[11px] font-bold text-amber-800">
-                        SIMULTANEOUS EDITING: {presenceUsers.filter(u => u !== (currentUser?.full_name || currentUser?.username)).join(', ')} {presenceUsers.length > 2 ? 'are' : 'is'} also viewing this case.
-                    </p>
-                    <p className="text-[9px] text-amber-600 font-medium">To avoid overwriting changes, please coordinate with other editors.</p>
-                </div>
-              </div>
-            )}
-
             {/* Metadata Overlay */}
             {metaView !== 'none' && (
               <div className="absolute top-0 left-0 right-0 max-h-[40%] bg-white border-b border-slate-200 shadow-xl z-10 overflow-y-auto animate-in slide-in-from-top duration-300">

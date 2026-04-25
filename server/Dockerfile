@@ -13,7 +13,5 @@ COPY . .
 
 EXPOSE 8862
 
-# Use gunicorn for production. 
-# We use eventlet worker class for WebSocket support.
-# Single worker is recommended for Socket.io unless a message broker (Redis) is used.
-CMD ["gunicorn", "--worker-class", "eventlet", "--workers", "1", "--bind", "0.0.0.0:8862", "--timeout", "120", "--access-logfile", "-", "--error-logfile", "-", "--log-level", "debug", "app:app"]
+# Use gunicorn for production.
+CMD ["gunicorn", "--workers", "1", "--bind", "0.0.0.0:8862", "--timeout", "120", "--access-logfile", "-", "--error-logfile", "-", "--log-level", "debug", "app:app"]

@@ -2,7 +2,7 @@ import { Annotation } from "./interfaces";
 
 const rawBasePath = process.env.NEXT_PUBLIC_BASE_PATH !== undefined ? process.env.NEXT_PUBLIC_BASE_PATH : "/annotator";
 export const BASE_PATH = rawBasePath === "" ? "" : (rawBasePath.startsWith('/') ? rawBasePath : `/${rawBasePath}`).replace(/\/$/, '');
-export const API_BASE = process.env.NEXT_PUBLIC_API_BASE !== undefined ? process.env.NEXT_PUBLIC_API_BASE : "/annotator_api/api";
+export const API_BASE = process.env.NEXT_PUBLIC_API_BASE !== undefined ? process.env.NEXT_PUBLIC_API_BASE : "http://localhost:8862/api";
 
 export const splitIntoSentences = (text: string): string[] => {
     const sentences = text.split(/(?:\n+|(?<=\.)\s+)/);

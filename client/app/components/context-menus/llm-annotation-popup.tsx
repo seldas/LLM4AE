@@ -6,7 +6,7 @@ interface Props {
   y: number;
   visible: boolean;
   text: string;
-  annotationOptions: AnnotationOptions;
+  annotationOptions: AnnotationOptions[];
   type?: 'LLM' | 'BERT' | 'SME' | 'NEW';
   userRole?: string;
   selectedLabel: string;
