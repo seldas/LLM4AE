@@ -858,6 +858,17 @@ def create_annotation():
         user_id = get_user_by_note(user_note) or 1
         logging.debug(f"Resolved user_id: {user_id} for note: {user_note}")
         
+        # Check for duplicates
+        existing = conn.execute("""
+            SELECT id FROM annotations 
+            WHERE case_id = ? AND user_id = ? AND label = ? AND start_offset = ? AND end_offset = ?
+        """, (case_id, user_id, data.get("label"), data.get("start"), data.get("end"))).fetchone()
+        
+        if existing:
+            logging.info(f"Annotation already exists with ID {existing['id']}. Skipping insertion.")
+            conn.close()
+            return jsonify({"id": existing['id'], "message": "Annotation already exists", "is_duplicate": True}), 200
+
         # Validation: Ensure all target IDs in relationships exist in the same case
         relationships = data.get("relationships", {})
         if isinstance(relationships, dict):
