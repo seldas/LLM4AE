@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo, useCallback, Dispatch, SetStateAction } from "react";
-import { Annotation, AnnotationOptions } from "../lib/interfaces";
+import { Annotation, AnnotationOptions, TextContext } from "../lib/interfaces";
 import { escapeRegExp } from "../lib/util";
 
 interface Props {
@@ -10,8 +10,8 @@ interface Props {
   activeLayers: string[];
   isReadOnly?: boolean;
   pageData?: string;
-  selectedTermContext?: { text: string; start: number; end: number } | null;  
-  setSelectedTermContext?: (context: { text: string; start: number; end: number } | null) => void;  
+  selectedTermContext?: TextContext | null;  
+  setSelectedTermContext?: (context: TextContext | null) => void;  
   handleRemoveAnnotation?: (annotation: Annotation) => void;
 }
 

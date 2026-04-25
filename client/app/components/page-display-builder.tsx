@@ -12,7 +12,7 @@ interface Props {
   onClickAnnotation?: (anno: Annotation) => void;
   isReadOnly?: boolean;
   theme?: 'light' | 'dark' | 'soft';
-  selectedTermContext?: { text: string; start: number; end: number } | null;
+  selectedTermContext?: TextContext | null;
   temporalTerms?: Annotation[];
   showTemporalHighlights?: boolean;
 }

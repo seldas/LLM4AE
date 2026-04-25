@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState, useCallback, useMemo } from "react";
-import { Annotation } from "../lib/interfaces";
+import { Annotation, TextContext } from "../lib/interfaces";
 
 interface Props {
   annotations: Annotation[];
@@ -19,8 +19,8 @@ interface Props {
   userRole: string;
   annotationSet: string;  
   onClickAnnotation?: (text: string, start: number, end: number, x: number, y: number, note?: string, label?: string) => void;
-  selectedTermContext: { text: string; start: number; end: number } | null;
-  setSelectedTermContext: (context: { text: string; start: number; end: number } | null) => void;
+  selectedTermContext: TextContext | null;
+  setSelectedTermContext: (context: TextContext | null) => void;
   isReadOnly?: boolean;
   theme?: 'light' | 'dark' | 'soft';
 }
