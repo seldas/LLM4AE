@@ -34,8 +34,15 @@ export interface MetaRecord {
 }
 
 
+export interface CaseMetadata {
+  llm_status: 'idle' | 'working' | 'Done';
+  bert_status: 'idle' | 'working' | 'Done';
+  review_status: 'pending' | 'in_progress' | 'completed';
+  [key: string]: any;
+}
+
 export interface Annotation {
-    id?: number;
+    id: number; // Now mandatory for all DB-synced annotations
     textContext: TextContext,
     label: string,
     note: string

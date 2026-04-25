@@ -11,24 +11,30 @@ export interface ActionRecord {
 }
 
 export interface DocState {
-    file: File | null
+    caseId: number | null;
+    caseNumber: string;
+    versionNumber: string;
     pages: string[];
     currentPageIndex: number;
     annotations: Annotation[];
-    meta: Record<string, any>;
+    status: CaseMetadata;
     highlightedTerms: HighlightedTerms;
-    saveFileName: string;
     actionHistory: ActionRecord[];
 };
 
 export const initialDocState: DocState = {
-    file: null,
+    caseId: null,
+    caseNumber: '',
+    versionNumber: '',
     pages: [],
     currentPageIndex: 0,
     annotations: [],
-    meta: {},
+    status: {
+        llm_status: 'idle',
+        bert_status: 'idle',
+        review_status: 'pending'
+    },
     highlightedTerms: {},
-    saveFileName: '',
     actionHistory: []
 }
 
@@ -191,12 +197,18 @@ export function docReducer(state: DocState, action: DocActions ) {
         case DocActionTypes.LOAD: {
             return {
                 ...state,
-                pages: action.payload.pages,
+                caseId: action.payload.caseId || null,
+                caseNumber: action.payload.caseNumber || '',
+                versionNumber: action.payload.versionNumber || '',
+                pages: action.payload.pages || [],
                 currentPageIndex: 0,
-                annotations: action.payload.annotations,
-                meta: action.payload.meta || {},
+                annotations: action.payload.annotations || [],
+                status: {
+                    llm_status: action.payload.status?.llm_status || 'idle',
+                    bert_status: action.payload.status?.bert_status || 'idle',
+                    review_status: action.payload.status?.review_status || 'pending',
+                },
                 highlightedTerms: {},
-                saveFileName: action.payload.fileName.replace('.json', ''),
                 actionHistory: [],
             };
         };

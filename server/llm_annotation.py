@@ -167,7 +167,7 @@ def run_llm_annotation(file_path=None, doc_id=None):
         
         meta["llm_processed"] = "Done"
         meta["llm_provider"] = AI_PROVIDER
-        conn.execute('UPDATE cases SET meta = ? WHERE id = ?', (json.dumps(meta), doc_id))
+        conn.execute('UPDATE cases SET meta = ?, llm_status = "Done" WHERE id = ?', (json.dumps(meta), doc_id))
         conn.commit()
         conn.close()
         logging.info(f"LLM Annotation task finished for doc_id={doc_id}")

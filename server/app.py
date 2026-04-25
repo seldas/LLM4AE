@@ -412,10 +412,8 @@ def trigger_llm_annotation():
                 conn.execute(f'DELETE FROM annotations WHERE case_id = ? AND user_id IN ({placeholders})', 
                              [doc_id] + ai_user_ids)
 
-            doc_data = conn.execute('SELECT meta FROM cases WHERE id = ?', (doc_id,)).fetchone()
-            meta = json.loads(doc_data['meta']) if doc_data['meta'] else {}
-            meta["llm_processed"] = "working"
-            conn.execute('UPDATE cases SET meta = ? WHERE id = ?', (json.dumps(meta), doc_id))
+            # Set status to working in new column
+            conn.execute('UPDATE cases SET llm_status = "working" WHERE id = ?', (doc_id,))
             conn.commit()
             conn.close()
 
@@ -466,11 +464,8 @@ def trigger_bert_annotation():
                 return
             bert_user_id = bert_user['id']
 
-            # Set status to working
-            doc_data = conn.execute('SELECT pages, meta FROM cases WHERE id = ?', (doc_id,)).fetchone()
-            meta = json.loads(doc_data['meta']) if doc_data['meta'] else {}
-            meta["bert_processed"] = "working"
-            conn.execute('UPDATE cases SET meta = ? WHERE id = ?', (json.dumps(meta), doc_id))
+            # Set status to working in new column
+            conn.execute('UPDATE cases SET bert_status = "working" WHERE id = ?', (doc_id,))
             conn.commit()
 
             pages = json.loads(doc_data['pages']) if doc_data['pages'] else [""]
@@ -488,8 +483,8 @@ def trigger_bert_annotation():
                                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                             """, (doc_id, bert_user_id, ent['label'], ent['start'], ent['end'], ent['text'], "BERT", "{}"))
                         
-                        meta["bert_processed"] = "Done"
-                        conn.execute("UPDATE cases SET meta = ? WHERE id = ?", (json.dumps(meta), doc_id))
+                        # Set status to Done in new column
+                        conn.execute("UPDATE cases SET bert_status = 'Done' WHERE id = ?", (doc_id,))
                 except Exception as ex:
                     logging.error(f"Error processing case {doc_id}: {ex}")
             

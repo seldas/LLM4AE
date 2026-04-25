@@ -57,7 +57,14 @@ export const getCaseById = async (id: string) => {
       data.pages = [];
     }
 
-    return data as FileData;
+    return {
+      ...data,
+      status: {
+        llm_status: data.llm_status || 'idle',
+        bert_status: data.bert_status || 'idle',
+        review_status: data.review_status || 'pending',
+      }
+    } as any;
   } catch (error) {
     console.error('Error loading case by ID:', error);
     const errorMessage = error instanceof Error ? error.message : "Unknown error occurred.";

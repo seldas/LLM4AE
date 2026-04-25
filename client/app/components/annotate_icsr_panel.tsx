@@ -116,9 +116,6 @@ export default function AnnotateIcsrPanel({ overrideProject, overrideId}: Props)
 
   const [selectedPopupLabel, setSelectedPopupLabel] = useState('');
   const [selectedTermContext, setSelectedTermContext] = useState<{ text: string; start: number; end: number } | null>(null);
-  const [saveSuccess, setSaveSuccess] = useState(false);
-  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
-  const [showFinishConfirm, setShowFinishConfirm] = useState(false);
   
   const [llmPopup, setLlmPopup] = useState<{ 
     visible: boolean; x: number; y: number; text: string; start: number; end: number; 
@@ -289,15 +286,19 @@ export default function AnnotateIcsrPanel({ overrideProject, overrideId}: Props)
         const data = await getCaseById(overrideId || '');
         if (!data) return;
         
-        const meta = data.meta || {};
-        const isDone = type === 'llm' ? meta.llm_processed === 'Done' : meta.bert_processed === 'Done';
+        const isDone = type === 'llm' ? data.status.llm_status === 'Done' : data.status.bert_status === 'Done';
         
         if (isDone) {
           clearInterval(interval);
           if (type === 'llm') setIsProcessingLlm(false);
           else setIsProcessingBert(false);
           // Reload the entire document to get new annotations
-          dispatch({ type: DocActionTypes.LOAD, payload: { ...data, fileName: overrideId ?? 'default-file-name' } });
+          dispatch({ type: DocActionTypes.LOAD, payload: data });
+        }
+      } catch (err) {
+        console.error("Polling error", err);
+      }
+    }, 3000);
         }
       } catch (err) {
         console.error("Polling error", err);
@@ -369,85 +370,147 @@ export default function AnnotateIcsrPanel({ overrideProject, overrideId}: Props)
       }
   };
 
-  const handleAddAnnotation = (label: string) => {
+  const handleAddAnnotation = async (label: string) => {
       if (isReadOnly) return;
-      const newAnnotation: Annotation = {
-        textContext: { text: selectedText, page: doc.currentPageIndex, start: unifiedContextMenu.start as number, end: unifiedContextMenu.end as number, disputed: false },
-        label: label,
-        note: userRole,
-        relationships: { latency: {text:'',page:0}, date: {text:'',page:0}, time: {text:'',page:0}, frequency: {text:'',page:0}, temporal_sequence: {text:'',page:0} },
-      };
-      dispatch({ type: DocActionTypes.ADD_ANNOTATION, payload: { annotation: newAnnotation, historyType: 'add' } });
+      
+      try {
+        const response = await createAnnotation({
+          case_id: parseInt(overrideId || '0'),
+          label: label,
+          start: unifiedContextMenu.start as number,
+          end: unifiedContextMenu.end as number,
+          text: selectedText,
+          note: userRole
+        });
+
+        const newAnnotation: Annotation = {
+          id: response.id,
+          textContext: { text: selectedText, page: doc.currentPageIndex, start: unifiedContextMenu.start as number, end: unifiedContextMenu.end as number, disputed: false },
+          label: label,
+          note: userRole,
+          relationships: { latency: {text:'',page:0}, date: {text:'',page:0}, time: {text:'',page:0}, frequency: {text:'',page:0}, temporal_sequence: {text:'',page:0} },
+        };
+
+        dispatch({ type: DocActionTypes.ADD_ANNOTATION, payload: { annotation: newAnnotation, historyType: 'add' } });
+      } catch (err) {
+        alert("Failed to save annotation to database.");
+      }
       setUnifiedContextMenu(prev => ({ ...prev, visible: false }));
   };
 
-  const handleVerifyAnnotation = (start: number, end: number, text: string, label: string, note: string) => {
+  const handleVerifyAnnotation = async (start: number, end: number, text: string, label: string, note: string) => {
     if (isReadOnly) return;
     const existingAI = doc.annotations.find(a => a.textContext.start === start && a.textContext.end === end && (a.label.toUpperCase() === label.toUpperCase() || (labelNormalizer[a.label.toUpperCase()] || a.label.toUpperCase()) === label.toUpperCase()) && (a.note.toUpperCase().includes('LLM') || a.note.toUpperCase().includes('AI') || a.note.toLowerCase().includes('llama') || a.note.toLowerCase().includes('bert') || a.note.toUpperCase().includes('IMPORTED')));
-    if (existingAI) {
-      const updatedAI = { ...existingAI, note: `${existingAI.note} | VERIFIED BY ${userRole}` };
-      dispatch({ type: DocActionTypes.UPDATE_ANNOTATION, payload: { annotation: updatedAI, historyType: 'verify' } });
-      const newHumanAnnotation: Annotation = {
-        textContext: { text, start, end, page: doc.currentPageIndex, disputed: false },
-        label: label, note: userRole,
-        relationships: { latency: {text:'',page:0}, date: {text:'',page:0}, time: {text:'',page:0}, frequency: {text:'',page:0}, temporal_sequence: {text:'',page:0} },
-      };
-      dispatch({ type: DocActionTypes.ADD_ANNOTATION, payload: { annotation: newHumanAnnotation, historyType: 'add' } });
+    if (existingAI && existingAI.id) {
+      try {
+        const newNote = `${existingAI.note} | VERIFIED BY ${userRole}`;
+        await updateAnnotation(existingAI.id, { note: newNote });
+        
+        const updatedAI = { ...existingAI, note: newNote };
+        dispatch({ type: DocActionTypes.UPDATE_ANNOTATION, payload: { annotation: updatedAI, historyType: 'verify' } });
+        
+        const response = await createAnnotation({
+          case_id: parseInt(overrideId || '0'),
+          label: label,
+          start, end, text,
+          note: userRole
+        });
+
+        const newHumanAnnotation: Annotation = {
+          id: response.id,
+          textContext: { text, start, end, page: doc.currentPageIndex, disputed: false },
+          label: label, note: userRole,
+          relationships: { latency: {text:'',page:0}, date: {text:'',page:0}, time: {text:'',page:0}, frequency: {text:'',page:0}, temporal_sequence: {text:'',page:0} },
+        };
+        dispatch({ type: DocActionTypes.ADD_ANNOTATION, payload: { annotation: newHumanAnnotation, historyType: 'add' } });
+      } catch (err) {
+        alert("Failed to verify annotation in database.");
+      }
     }
   };
 
-  const handleRejectAnnotation = (start: number, end: number, label: string) => {
+  const handleRejectAnnotation = async (start: number, end: number, label: string) => {
     if (isReadOnly) return;
     const existing = doc.annotations.find(a => a.textContext.start === start && a.textContext.end === end && (a.label.toUpperCase() === label.toUpperCase() || (labelNormalizer[a.label.toUpperCase()] || a.label.toUpperCase()) === label.toUpperCase()));
-    if (existing) {
-      const updatedAnnotation = { ...existing, note: `${existing.note} | REJECTED BY ${userRole}` };
-      dispatch({ type: DocActionTypes.UPDATE_ANNOTATION, payload: { annotation: updatedAnnotation, historyType: 'reject' } });
-      setLlmPopup(prev => ({ ...prev, visible: false }));
-      setSelectedTermContext(null);
+    if (existing && existing.id) {
+      try {
+        const newNote = `${existing.note} | REJECTED BY ${userRole}`;
+        await updateAnnotation(existing.id, { note: newNote });
+        
+        const updatedAnnotation = { ...existing, note: newNote };
+        dispatch({ type: DocActionTypes.UPDATE_ANNOTATION, payload: { annotation: updatedAnnotation, historyType: 'reject' } });
+        setLlmPopup(prev => ({ ...prev, visible: false }));
+        setSelectedTermContext(null);
+      } catch (err) {
+        alert("Failed to reject annotation in database.");
+      }
     }
   };
 
-  const handleLlmAddAnnotation = (labelOverride?: string) => {
+  const handleLlmAddAnnotation = async (labelOverride?: string) => {
     if (isReadOnly) return;
     const { start, end, text, type } = llmPopup;
     const label = labelOverride || selectedPopupLabel;
-    const newAnnotation: Annotation = {
-      textContext: { text, start, end, page: doc.currentPageIndex, disputed: false },
-      label: label, note: userRole,
-      relationships: { latency: { text: '', page: 0 }, date: { text: '', page: 0 }, time: { text: '', page: 0 }, frequency: { text: '', page: 0 }, temporal_sequence: { text: '', page: 0 } },
-    };
-    if (type === 'LLM' || type === 'BERT') {
-      const existingAI = doc.annotations.find(a => 
-        a.textContext.start === start && 
-        a.textContext.end === end && 
-        (a.label.toUpperCase() === label.toUpperCase() || (labelNormalizer[a.label.toUpperCase()] || a.label.toUpperCase()) === label.toUpperCase()) && 
-        (a.note.toUpperCase().includes('LLM') || a.note.toUpperCase().includes('AI') || a.note.toLowerCase().includes('llama') || a.note.toLowerCase().includes('bert') || a.note.toUpperCase().includes('IMPORTED'))
-      );
-      if (existingAI) {
-        const updatedAI = { ...existingAI, note: `${existingAI.note} | VERIFIED BY ${userRole}` };
-        dispatch({ type: DocActionTypes.UPDATE_ANNOTATION, payload: { annotation: updatedAI, historyType: 'verify' } });
+    
+    try {
+        const response = await createAnnotation({
+          case_id: parseInt(overrideId || '0'),
+          label: label,
+          start, end, text,
+          note: userRole
+        });
+
+        const newAnnotation: Annotation = {
+          id: response.id,
+          textContext: { text, start, end, page: doc.currentPageIndex, disputed: false },
+          label: label, note: userRole,
+          relationships: { latency: { text: '', page: 0 }, date: { text: '', page: 0 }, time: { text: '', page: 0 }, frequency: { text: '', page: 0 }, temporal_sequence: { text: '', page: 0 } },
+        };
+
+        if (type === 'LLM' || type === 'BERT') {
+          const existingAI = doc.annotations.find(a => 
+            a.textContext.start === start && 
+            a.textContext.end === end && 
+            (a.label.toUpperCase() === label.toUpperCase() || (labelNormalizer[a.label.toUpperCase()] || a.label.toUpperCase()) === label.toUpperCase()) && 
+            (a.note.toUpperCase().includes('LLM') || a.note.toUpperCase().includes('AI') || a.note.toLowerCase().includes('llama') || a.note.toLowerCase().includes('bert') || a.note.toUpperCase().includes('IMPORTED'))
+          );
+          if (existingAI && existingAI.id) {
+            const newNote = `${existingAI.note} | VERIFIED BY ${userRole}`;
+            await updateAnnotation(existingAI.id, { note: newNote });
+            const updatedAI = { ...existingAI, note: newNote };
+            dispatch({ type: DocActionTypes.UPDATE_ANNOTATION, payload: { annotation: updatedAI, historyType: 'verify' } });
+          }
+        }
         dispatch({ type: DocActionTypes.ADD_ANNOTATION, payload: { annotation: newAnnotation, historyType: 'add' } });
-      }
-    } else {
-      dispatch({ type: DocActionTypes.ADD_ANNOTATION, payload: { annotation: newAnnotation, historyType: 'add' } });
+        setLlmPopup((prev) => ({ ...prev, visible: false }));
+        setSelectedTermContext(null);
+    } catch (err) {
+        alert("Failed to save annotation.");
     }
-    setLlmPopup((prev) => ({ ...prev, visible: false }));
-    setSelectedTermContext(null);
   };
 
-  const handleUnverifyAnnotation = (start: number, end: number, label: number | string) => {
+  const handleUnverifyAnnotation = async (start: number, end: number, label: number | string) => {
     if (isReadOnly) return;
     const labelStr = String(label);
     const humanAnno = doc.annotations.find(a => a.textContext.start === start && a.textContext.end === end && (a.label.toUpperCase() === labelStr.toUpperCase() || (labelNormalizer[a.label.toUpperCase()] || a.label.toUpperCase()) === labelStr.toUpperCase()) && (a.note.toUpperCase() === userRole.toUpperCase()));
     const aiAnno = doc.annotations.find(a => a.textContext.start === start && a.textContext.end === end && (a.label.toUpperCase() === labelStr.toUpperCase() || (labelNormalizer[a.label.toUpperCase()] || a.label.toUpperCase()) === labelStr.toUpperCase()) && (a.note.toUpperCase().includes('LLM') || a.note.toUpperCase().includes('AI') || a.note.toLowerCase().includes('llama') || a.note.toLowerCase().includes('bert') || a.note.toUpperCase().includes('IMPORTED')) && a.note.toUpperCase().includes('VERIFIED'));
-    if (aiAnno) {
-      const revertedAiNote = aiAnno.note.split(' | VERIFIED BY')[0];
-      const revertedAi = { ...aiAnno, note: revertedAiNote };
-      dispatch({ type: DocActionTypes.UPDATE_ANNOTATION, payload: { annotation: revertedAi } });
-      if (humanAnno) dispatch({ type: DocActionTypes.REMOVE_ANNOTATION, payload: { annotation: humanAnno } });
+    
+    try {
+        if (aiAnno && aiAnno.id) {
+          const revertedAiNote = aiAnno.note.split(' | VERIFIED BY')[0];
+          await updateAnnotation(aiAnno.id, { note: revertedAiNote });
+          const revertedAi = { ...aiAnno, note: revertedAiNote };
+          dispatch({ type: DocActionTypes.UPDATE_ANNOTATION, payload: { annotation: revertedAi } });
+        }
+        if (humanAnno && humanAnno.id) {
+          await deleteAnnotation(humanAnno.id);
+          dispatch({ type: DocActionTypes.REMOVE_ANNOTATION, payload: { annotation: humanAnno } });
+        }
+        setLlmPopup(prev => ({ ...prev, visible: false }));
+        setSelectedTermContext(null);
+    } catch (err) {
+        alert("Failed to unverify annotation.");
     }
-    setLlmPopup(prev => ({ ...prev, visible: false }));
-    setSelectedTermContext(null);
   };
 
   const onClickAnnotation = (text: string, start: number, end: number, x: number, y: number, note?: string, label?: string) => {

@@ -85,7 +85,12 @@ def update_db():
     # 3. Add missing columns safely
     print("Checking for missing columns...")
     columns_to_add = {
-        'cases': [('full_data', 'TEXT')],
+        'cases': [
+            ('full_data', 'TEXT'),
+            ('llm_status', 'TEXT DEFAULT "idle"'),
+            ('bert_status', 'TEXT DEFAULT "idle"'),
+            ('review_status', 'TEXT DEFAULT "pending"')
+        ],
         'annotations': [('adjudication', 'TEXT'), ('relationships', 'TEXT')]
     }
 
