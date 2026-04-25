@@ -20,6 +20,16 @@ from ai_client import call_ai as ai_call
 logging.basicConfig(level=logging.DEBUG)
 
 app = Flask(__name__)
+
+if __name__ != '__main__':
+    # If running via gunicorn, bridge the loggers
+    gunicorn_logger = logging.getLogger('gunicorn.error')
+    app.logger.handlers = gunicorn_logger.handlers
+    app.logger.setLevel(gunicorn_logger.level)
+    # Ensure root logging also goes to gunicorn handlers
+    logging.getLogger().handlers = gunicorn_logger.handlers
+    logging.getLogger().setLevel(gunicorn_logger.level)
+
 app.register_blueprint(history_blueprint)
 app.register_blueprint(project_blueprint)
 
@@ -367,19 +377,24 @@ def get_annotation_guidelines():
 def trigger_llm_annotation():
     try:
         req = request.get_json(silent=True) or {}
+        case_id = req.get("id")
         file_name = (req.get("file") or "").strip()
         folder = (req.get("folder") or "").strip()
 
-        if not file_name or not folder:
-            return jsonify({"error": "Missing file or folder name"}), 400
+        if case_id:
+            doc = get_case(case_id=case_id)
+            # Find the filename for logging
+            file_name = doc['case_number'] + "-" + doc['version_number'] if doc else "unknown"
+        elif file_name and folder:
+            project = get_project_by_name(folder)
+            if not project:
+                return jsonify({"error": f"Project not found: {folder}"}), 404
+            doc = get_case(project_id=project['id'], filename=file_name)
+        else:
+            return jsonify({"error": "Missing case identifier (id or file/folder)"}), 400
 
-        project = get_project_by_name(folder)
-        if not project:
-            return jsonify({"error": f"Project not found: {folder}"}), 404
-
-        doc = get_case(project_id=project['id'], filename=file_name)
         if not doc:
-            return jsonify({"error": f"Document not found: {file_name}"}), 404
+            return jsonify({"error": f"Document not found: {case_id or file_name}"}), 404
 
         def background_task(doc_id):
             conn = get_db_connection()
