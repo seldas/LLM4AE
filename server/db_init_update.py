@@ -82,6 +82,20 @@ def update_db():
         )
     ''')
 
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS adjudications (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            annotation_id INTEGER NOT NULL UNIQUE,
+            user_id INTEGER NOT NULL,
+            status TEXT NOT NULL,
+            reason TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (annotation_id) REFERENCES annotations (id) ON DELETE CASCADE,
+            FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+        )
+    ''')
+
     # 3. Add missing columns safely
     print("Checking for missing columns...")
     columns_to_add = {

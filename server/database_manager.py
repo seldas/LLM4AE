@@ -235,7 +235,23 @@ def get_case(case_id=None, project_id=None, filename=None):
 def get_annotations(case_id):
     conn = get_db_connection()
     try:
-        query = 'SELECT a.*, u.username, r.name as role_name FROM annotations a JOIN users u ON a.user_id = u.id JOIN roles r ON u.role_id = r.id WHERE a.case_id = ?'
+        # Join with adjudications table to get structured data
+        query = '''
+            SELECT 
+                a.*, 
+                u.username, 
+                r.name as role_name,
+                adj.status as adj_status,
+                adj.reason as adj_reason,
+                adj.updated_at as adj_updated_at,
+                adjudicator.full_name as adj_user_name
+            FROM annotations a 
+            JOIN users u ON a.user_id = u.id 
+            JOIN roles r ON u.role_id = r.id 
+            LEFT JOIN adjudications adj ON a.id = adj.annotation_id
+            LEFT JOIN users adjudicator ON adj.user_id = adjudicator.id
+            WHERE a.case_id = ?
+        '''
         return conn.execute(query, (case_id,)).fetchall()
     finally: conn.close()
 

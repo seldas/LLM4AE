@@ -24,7 +24,7 @@ This document summarizes the progress and remaining tasks for migrating the SCAT
 ## 2. In Progress / Pending Tasks
 
 ### **Functional Cleanup**
-- [ ] **Adjudication Module:** Move adjudication decisions into a dedicated table or more structured format in the DB instead of a serialized JSON field in the annotations table.
+- [x] **Adjudication Module:** Move adjudication decisions into a dedicated table or more structured format in the DB instead of a serialized JSON field in the annotations table.
 - [ ] **Audit Trail:** Create a `history_log` table in the database to track every incremental change (who changed what and when) for regulatory compliance.
 
 ### **Performance & Scalability**

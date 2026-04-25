@@ -43,7 +43,15 @@ export default function AdjudicateClient() {
         setFileData(data);
         const initialAdj: Record<number, any> = {};
         data.annotations.forEach((ann: any) => {
-          if (ann.adjudication) {
+          if (ann.adj_status) {
+            initialAdj[ann.id] = { 
+              status: ann.adj_status, 
+              reason: ann.adj_reason || '',
+              updated_at: ann.adj_updated_at,
+              user_name: ann.adj_user_name
+            };
+          } else if (ann.adjudication) {
+            // Fallback for legacy data
             try {
               initialAdj[ann.id] = JSON.parse(ann.adjudication);
             } catch(e) {

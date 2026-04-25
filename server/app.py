@@ -328,8 +328,20 @@ def adjudicate():
         
     conn = get_db_connection()
     try:
-        import json
         from datetime import datetime
+        # Upsert into adjudications table
+        conn.execute('''
+            INSERT INTO adjudications (annotation_id, user_id, status, reason, updated_at)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(annotation_id) DO UPDATE SET
+                user_id = excluded.user_id,
+                status = excluded.status,
+                reason = excluded.reason,
+                updated_at = excluded.updated_at
+        ''', (annotation_id, adjudicator_id, status, reason, datetime.now().isoformat()))
+        
+        # Legacy: Still update the JSON field in annotations for backward compatibility during transition
+        import json
         adjudication_data = json.dumps({
             "status": status,
             "reason": reason,
@@ -337,9 +349,11 @@ def adjudicate():
             "timestamp": datetime.now().isoformat()
         })
         conn.execute('UPDATE annotations SET adjudication = ? WHERE id = ?', (adjudication_data, annotation_id))
+        
         conn.commit()
         return jsonify({"message": "Adjudication saved"}), 200
     except Exception as e:
+        app.logger.error(f"Adjudication error: {e}")
         return jsonify({"error": str(e)}), 500
     finally:
         conn.close()
@@ -673,7 +687,13 @@ def get_case_by_id(case_id):
         case = get_case(case_id=case_id)        
         if not case:
             return jsonify({"error": "Case not found"}), 404
+        
         final_case = dict(case)
+        
+        # Load structured annotations
+        annotations = get_annotations(case_id)
+        final_case['annotations'] = [dict(a) for a in annotations]
+        
         return jsonify(final_case), 200
     except Exception as e:
         logging.error(f"Error getting case by ID: {e}")
