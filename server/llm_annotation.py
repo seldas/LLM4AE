@@ -153,6 +153,10 @@ def run_llm_annotation(doc_id):
         conn = get_db_connection()
         # Save annotations to DB
         logging.info(f"Saving {len(llm_annotations)} annotations to database")
+        
+        # Delete old AI annotations for this case
+        conn.execute('DELETE FROM annotations WHERE case_id = ? AND user_id = ?', (doc_id, ai_user_id))
+
         for ann in llm_annotations:
             conn.execute('''
                 INSERT INTO annotations (case_id, user_id, label, start_offset, end_offset, text_content, note, relationships, adjudication)

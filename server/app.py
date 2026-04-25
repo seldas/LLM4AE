@@ -732,7 +732,30 @@ def get_case_by_id(case_id):
         offset = request.args.get('offset', default=0, type=int)
         
         annotations = get_annotations(case_id, limit=limit, offset=offset)
-        final_case['annotations'] = [dict(a) for a in annotations]
+        
+        # Map DB structure to Frontend interface structure
+        formatted_annotations = []
+        for a in annotations:
+            ann_dict = dict(a)
+            # Create nested textContext
+            ann_dict['textContext'] = {
+                'text': ann_dict.get('text_content', ''),
+                'start': ann_dict.get('start_offset', 0),
+                'end': ann_dict.get('end_offset', 0),
+                'page': 0 # Default to page 0 if not stored
+            }
+            # Parse relationships if they exist as JSON string
+            if ann_dict.get('relationships'):
+                try:
+                    ann_dict['relationships'] = json.loads(ann_dict['relationships'])
+                except:
+                    ann_dict['relationships'] = {}
+            else:
+                ann_dict['relationships'] = {}
+                
+            formatted_annotations.append(ann_dict)
+            
+        final_case['annotations'] = formatted_annotations
         
         return jsonify(final_case), 200
     except Exception as e:
@@ -812,14 +835,17 @@ def export_icsr(case_id):
 def create_annotation():
     try:
         data = request.get_json()
+        logging.debug(f"Creating annotation with data: {data}")
         case_id = data.get("case_id")
         user_note = data.get("note", "Admin")
         
         if not case_id:
+            logging.error("Missing case_id in create_annotation request")
             return jsonify({"error": "Missing case_id"}), 400
 
         conn = get_db_connection()
         user_id = get_user_by_note(user_note) or 1
+        logging.debug(f"Resolved user_id: {user_id} for note: {user_note}")
         
         # Validation: Ensure all target IDs in relationships exist in the same case
         relationships = data.get("relationships", {})
@@ -828,6 +854,7 @@ def create_annotation():
                 if isinstance(target_id, int):
                     res = conn.execute("SELECT 1 FROM annotations WHERE id = ? AND case_id = ?", (target_id, case_id)).fetchone()
                     if not res:
+                        logging.warning(f"Target annotation {target_id} not found for case {case_id}")
                         return jsonify({"error": f"Target annotation {target_id} for relationship {rel_type} not found in this case"}), 400
 
         cursor = conn.execute("""
@@ -845,6 +872,7 @@ def create_annotation():
             data.get("adjudication")
         ))
         new_id = cursor.lastrowid
+        logging.info(f"Successfully created annotation ID {new_id} in case {case_id}")
         
         log_action(conn, 'create', 'annotation', new_id, user_id=user_id, case_id=case_id, new_value=data)
         
@@ -853,7 +881,7 @@ def create_annotation():
         
         return jsonify({"id": new_id, "message": "Annotation created"}), 201
     except Exception as e:
-        logging.error(f"Create annotation error: {e}")
+        logging.error(f"Create annotation error: {e}", exc_info=True)
         return jsonify({"error": str(e)}), 500
 
 @app.route("/api/annotations/<int:ann_id>/", methods=["PATCH", "PUT"])

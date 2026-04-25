@@ -81,6 +81,9 @@ def init_db():
             pages TEXT, 
             meta TEXT,  
             full_data TEXT, 
+            llm_status TEXT DEFAULT "idle",
+            bert_status TEXT DEFAULT "idle",
+            review_status TEXT DEFAULT "pending",
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             UNIQUE(case_number, version_number)
@@ -117,6 +120,53 @@ def init_db():
         )
     ''')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_annotations_case ON annotations(case_id)')
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS adjudications (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            annotation_id INTEGER NOT NULL UNIQUE,
+            user_id INTEGER NOT NULL,
+            status TEXT NOT NULL,
+            reason TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (annotation_id) REFERENCES annotations (id) ON DELETE CASCADE,
+            FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+        )
+    ''')
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS history_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            case_id INTEGER,
+            user_id INTEGER,
+            action TEXT NOT NULL,
+            entity_type TEXT NOT NULL,
+            entity_id INTEGER,
+            old_value TEXT,
+            new_value TEXT,
+            timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (case_id) REFERENCES cases (id) ON DELETE SET NULL,
+            FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE SET NULL
+        )
+    ''')
+
+    # Migration: Add missing columns if database already exists
+    cursor.execute("PRAGMA table_info(cases)")
+    case_cols = [row[1] for row in cursor.fetchall()]
+    if 'llm_status' not in case_cols:
+        cursor.execute('ALTER TABLE cases ADD COLUMN llm_status TEXT DEFAULT "idle"')
+    if 'bert_status' not in case_cols:
+        cursor.execute('ALTER TABLE cases ADD COLUMN bert_status TEXT DEFAULT "idle"')
+    if 'review_status' not in case_cols:
+        cursor.execute('ALTER TABLE cases ADD COLUMN review_status TEXT DEFAULT "pending"')
+
+    cursor.execute("PRAGMA table_info(annotations)")
+    ann_cols = [row[1] for row in cursor.fetchall()]
+    if 'relationships' not in ann_cols:
+        cursor.execute('ALTER TABLE annotations ADD COLUMN relationships TEXT')
+    if 'adjudication' not in ann_cols:
+        cursor.execute('ALTER TABLE annotations ADD COLUMN adjudication TEXT')
 
     roles = [('Admin',), ('Annotator',), ('Adjudicator',), ('AI',)]
     cursor.executemany('INSERT OR IGNORE INTO roles (name) VALUES (?)', roles)
@@ -262,6 +312,14 @@ def get_annotations(case_id, limit=None, offset=None):
             params.append(offset)
             
         return conn.execute(query, params).fetchall()
+    except Exception as e:
+        import logging
+        logging.error(f"Error in get_annotations for case {case_id}: {e}")
+        # Simplified fallback query
+        try:
+            return conn.execute("SELECT a.*, u.username FROM annotations a JOIN users u ON a.user_id = u.id WHERE a.case_id = ?", (case_id,)).fetchall()
+        except:
+            return []
     finally: conn.close()
 
 def get_user_by_note(note):
