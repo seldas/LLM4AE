@@ -10,7 +10,7 @@ import {
   TextContext,
   AnnotationGuideline
 } from '../lib/interfaces';
-import { getHistoryFile, getCaseById, saveAnnotationsToDb } from '../lib/api';
+import { getHistoryFile, getCaseById, createAnnotation, updateAnnotation, deleteAnnotation } from '../lib/api';
 import {  
   escapeRegExp,
   generateOptionColors,

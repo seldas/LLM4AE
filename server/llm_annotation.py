@@ -16,9 +16,9 @@ MAX_INPUT_TOKENS = 80000
 DEFAULT_MAX_OUTPUT_TOKENS = 28000
 
 _ALLOWED_LABELS = {
-    "SDrug", "CDrug", "ODrug", "Dose", "Treatment", "AE", "mAE", "bSYM", "RO", "Dx", "CoD",
-    "Lab", "FHx", "MHx", "IND", "Status", "Age", "Sex", "Date", "Time", "Duration",
-    "Relative", "Latency", "Temporal"
+    "SDRUG", "CDRUG", "ODRUG", "DOSE", "TREATMENT", "AE", "MAE", "BSYM", "RO", "DX", "COD",
+    "LAB", "FHX", "MHx", "IND", "STATUS", "AGE", "SEX", "DATE", "TIME", "DURATION",
+    "RELATIVE", "LATENCY", "TEMPORAL"
 }
 
 _ai_client = None
@@ -46,16 +46,30 @@ def _split_text_by_token_budget(text: str, token_budget: int) -> list[str]:
 
 def call_llm(message, prompt='Help answer the following requests.', max_output_tokens=DEFAULT_MAX_OUTPUT_TOKENS):
     ai_client = get_ai_client()
+    import logging
+    logging.info(f"Calling AI Provider: {AI_PROVIDER}")
     return ai_client.call(message=message, system_prompt=prompt, temperature=0.0, max_tokens=max_output_tokens)
 
 def _extract_json_object(s: str) -> dict | None:
     s = (s or "").strip()
-    try: return json.loads(s)
+    import logging
+    try: 
+        obj = json.loads(s)
+        logging.info("Successfully parsed LLM JSON response")
+        return obj
     except: pass
+    
     m = re.search(r"\{.*\}", s, flags=re.DOTALL)
-    if not m: return None
-    try: return json.loads(m.group(0))
-    except: return None
+    if not m: 
+        logging.warning(f"Could not find JSON object in LLM response: {s[:200]}...")
+        return None
+    try: 
+        obj = json.loads(m.group(0))
+        logging.info("Extracted JSON from LLM response via regex")
+        return obj
+    except: 
+        logging.error(f"Failed to parse extracted JSON block: {m.group(0)[:200]}...")
+        return None
 
 def _dedupe_and_resolve_overlaps(spans: list[dict]) -> list[dict]:
     spans = sorted(spans, key=lambda x: (x["start"], -(x["end"] - x["start"])))
@@ -68,23 +82,41 @@ def _dedupe_and_resolve_overlaps(spans: list[dict]) -> list[dict]:
     return out
 
 def mode_AE_annotation(query: str, prompt_ner: str = prompt_ner_json):
+    import logging
     raw = call_llm(query, prompt_ner)
     obj = _extract_json_object(raw)
-    if not obj or "spans" not in obj: return "", []
+    if not obj or "spans" not in obj: 
+        logging.warning("LLM response missing 'spans' key")
+        return "", []
     
     validated = []
     for sp in obj.get("spans", []):
         try:
-            label, start, end, text = sp["label"], int(sp["start"]), int(sp["end"]), sp["text"]
-            if label in _ALLOWED_LABELS and 0 <= start < end <= len(query) and query[start:end] == text:
-                validated.append({"label": label, "start": start, "end": end, "text": text})
-        except: continue
+            label = str(sp.get("label", "")).upper()
+            start = int(sp.get("start", -1))
+            end = int(sp.get("end", -1))
+            text = sp.get("text", "")
+            
+            if label in _ALLOWED_LABELS and 0 <= start < end <= len(query):
+                # Extra validation: does text match narrative at those offsets?
+                actual_text = query[start:end]
+                if actual_text.lower() == text.lower():
+                    validated.append({"label": label, "start": start, "end": end, "text": actual_text})
+                else:
+                    logging.debug(f"Span text mismatch: expected '{text}', found '{actual_text}'")
+        except Exception as e: 
+            logging.debug(f"Error validating span: {e}")
+            continue
+    logging.info(f"Validated {len(validated)} spans from LLM")
     return obj.get("annotated_text", ""), _dedupe_and_resolve_overlaps(validated)
 
 def run_llm_annotation(file_path=None, doc_id=None):
     """
     Main annotation pipeline. Supports both legacy file path and new doc_id.
     """
+    import logging
+    logging.info(f"Starting LLM Annotation for doc_id={doc_id}")
+    
     if doc_id:
         conn = get_db_connection()
         doc = conn.execute('SELECT pages, meta FROM cases WHERE id = ?', (doc_id,)).fetchone()
@@ -93,14 +125,18 @@ def run_llm_annotation(file_path=None, doc_id=None):
         meta = json.loads(doc['meta']) if doc['meta'] else {}
         narrative = pages[0]
         
-        # Determine AI user (Llama4)
-        ai_user_id = get_user_by_note('Llama4') or 6 # Fallback
+        # Determine AI user
+        ai_user_id = get_user_by_note('LLM') or get_user_by_note('Llama4') or 6
+        ai_note = "Llama4"
+        conn.close()
     else:
-        # Legacy file path logic (if still needed)
+        # Legacy file path logic
         with open(file_path, 'r', encoding='utf-8') as f:
             data = json.load(f)
         narrative = data['pages'][0]
         meta = data.get('meta', {})
+        ai_user_id = None
+        ai_note = "Llama4"
 
     chunks = _split_text_by_token_budget(narrative, MAX_INPUT_TOKENS)
     llm_annotations = []
@@ -111,18 +147,18 @@ def run_llm_annotation(file_path=None, doc_id=None):
         for sp in spans:
             llm_annotations.append({
                 "label": sp["label"],
-                "user_id": ai_user_id if doc_id else None,
-                "note": "Llama4",
+                "user_id": ai_user_id,
+                "note": ai_note,
                 "start": sp["start"] + current_offset,
                 "end": sp["end"] + current_offset,
                 "text": sp["text"]
             })
         current_offset += len(chunk)
-    print(current_offset)
     
     if doc_id:
         conn = get_db_connection()
         # Save annotations to DB
+        logging.info(f"Saving {len(llm_annotations)} annotations to database")
         for ann in llm_annotations:
             conn.execute('''
                 INSERT INTO annotations (case_id, user_id, label, start_offset, end_offset, text_content, note, relationships, adjudication)
@@ -134,8 +170,4 @@ def run_llm_annotation(file_path=None, doc_id=None):
         conn.execute('UPDATE cases SET meta = ? WHERE id = ?', (json.dumps(meta), doc_id))
         conn.commit()
         conn.close()
-    else:
-        # Update file logic... (omitted for brevity as we are moving to DB)
-        pass
-
-    return True, "Annotation complete"
+        logging.info(f"LLM Annotation task finished for doc_id={doc_id}")

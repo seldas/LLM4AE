@@ -50,6 +50,12 @@ export enum DocActionTypes {
     CHANGE_VERIFICATION ="CHANGE_VERIFICATION",
     UNDO_ACTION = "UNDO_ACTION",
     COMMIT_HISTORY = "COMMIT_HISTORY",
+    SYNC_ANNOTATION_ID = "SYNC_ANNOTATION_ID",
+};
+
+export interface SYNC_ANNOTATION_ID_Action {
+    type: DocActionTypes.SYNC_ANNOTATION_ID;
+    payload: { tempId: string, realId: number }
 };
 
 export interface ClearDocAction {
@@ -434,6 +440,18 @@ export function docReducer(state: DocState, action: DocActions ) {
                 ...state,
                 actionHistory: []
             };
+        }
+
+        case DocActionTypes.SYNC_ANNOTATION_ID: {
+            const { tempId, realId } = action.payload;
+            const updatedAnnotations = state.annotations.map(a => {
+                // If the annotation doesn't have an ID yet, it's a candidate for sync.
+                // We use a combination of text, start, and end as a pseudo-temp-id.
+                // In a more robust implementation, we'd add a dedicated tempId field to the Annotation interface.
+                return a; 
+            });
+            // For now, we'll rely on the re-fetching or surgical replacement in the component.
+            return state;
         }
 
         default:

@@ -65,28 +65,45 @@ export const getCaseById = async (id: string) => {
   }
 };
 
-export const saveAnnotationsToDb = async ({
-  fileName,
-  id,
-  curr_folder,
-  pages,
-  annotations,
-  meta,
-}: SaveAnnotationsPayload) => {
+export const createAnnotation = async (data: {
+  case_id: number;
+  label: string;
+  start: number;
+  end: number;
+  text: string;
+  note: string;
+  relationships?: any;
+}) => {
   try {
-    const identifier = id || `${curr_folder}___${fileName}`;
-    const url = `/history/${encodeURIComponent(identifier)}${id ? `?project=${encodeURIComponent(curr_folder)}` : ''}`;
-    const response = await client.post(
-      url,
-      {
-        pages,
-        annotations,
-        meta,
-      }
-    );
+    const response = await client.post('/annotations/', data);
     return response.data;
   } catch (error) {
-    console.error('Error saving annotations to DB:', error);
+    console.error('Error creating annotation:', error);
+    throw error;
+  }
+};
+
+export const updateAnnotation = async (id: number, data: {
+  label?: string;
+  note?: string;
+  relationships?: any;
+  adjudication?: string;
+}) => {
+  try {
+    const response = await client.patch(`/annotations/${id}/`, data);
+    return response.data;
+  } catch (error) {
+    console.error('Error updating annotation:', error);
+    throw error;
+  }
+};
+
+export const deleteAnnotation = async (id: number) => {
+  try {
+    const response = await client.delete(`/annotations/${id}/`);
+    return response.data;
+  } catch (error) {
+    console.error('Error deleting annotation:', error);
     throw error;
   }
 };

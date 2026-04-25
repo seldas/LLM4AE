@@ -379,12 +379,21 @@ def trigger_llm_annotation():
     try:
         req = request.get_json(silent=True) or {}
         app.logger.debug(f"Request JSON: {req}")
-        req = request.get_json(silent=True) or {}
-        case_id = (req.get("file") or "").strip()
+        
+        # Support both 'id' (modern) and 'file' (legacy/integrated)
+        case_id = req.get("id") or req.get("file")
         folder = (req.get("folder") or "").strip()
 
         if case_id:
-            doc = get_case(case_id=case_id)
+            if str(case_id).isdigit():
+                doc = get_case(case_id=int(case_id))
+            else:
+                # Fallback to filename lookup if it's not a digit
+                project = get_project_by_name(folder)
+                if not project:
+                    return jsonify({"error": f"Project not found: {folder}"}), 404
+                doc = get_case(project_id=project['id'], filename=case_id)
+            
             # Find the filename for logging
             file_name = doc['case_number'] + "-" + doc['version_number'] if doc else "unknown"
         else:
@@ -424,19 +433,23 @@ def trigger_llm_annotation():
 def trigger_bert_annotation():
     try:
         req = request.get_json(silent=True) or {}
+        case_id = req.get("id")
         file_name = (req.get("file") or "").strip()
         folder = (req.get("folder") or "").strip()
 
-        if not file_name or not folder:
-            return jsonify({"error": "Missing file or folder name"}), 400
+        if case_id:
+            doc = get_case(case_id=case_id)
+            file_name = doc['case_number'] + "-" + doc['version_number'] if doc else "unknown"
+        elif file_name and folder:
+            project = get_project_by_name(folder)
+            if not project:
+                return jsonify({"error": f"Project not found: {folder}"}), 404
+            doc = get_case(project_id=project['id'], filename=file_name)
+        else:
+            return jsonify({"error": "Missing case identifier (id or file/folder)"}), 400
 
-        project = get_project_by_name(folder)
-        if not project:
-            return jsonify({"error": f"Project not found: {folder}"}), 404
-
-        doc = get_case(project_id=project['id'], filename=file_name)
         if not doc:
-            return jsonify({"error": f"Document not found: {file_name}"}), 404
+            return jsonify({"error": f"Document not found: {case_id or file_name}"}), 404
 
         def background_task(doc_id):
             import sys
@@ -720,6 +733,90 @@ def export_icsr(case_id):
         return jsonify({"error": str(e)}), 500
     finally:
         conn.close()
+
+# -----------------------------------------------------------------------------
+# Annotation CRUD (Incremental Updates)
+# -----------------------------------------------------------------------------
+@app.route("/api/annotations/", methods=["POST"])
+@cross_origin()
+def create_annotation():
+    try:
+        data = request.get_json()
+        case_id = data.get("case_id")
+        user_note = data.get("note", "Admin")
+        
+        if not case_id:
+            return jsonify({"error": "Missing case_id"}), 400
+
+        conn = get_db_connection()
+        user_id = get_user_by_note(user_note) or 1
+        
+        cursor = conn.execute("""
+            INSERT INTO annotations (case_id, user_id, label, start_offset, end_offset, text_content, note, relationships, adjudication)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            case_id,
+            user_id,
+            data.get("label"),
+            data.get("start"),
+            data.get("end"),
+            data.get("text"),
+            user_note,
+            json.dumps(data.get("relationships", {})),
+            data.get("adjudication")
+        ))
+        new_id = cursor.lastrowid
+        conn.commit()
+        conn.close()
+        
+        return jsonify({"id": new_id, "message": "Annotation created"}), 201
+    except Exception as e:
+        logging.error(f"Create annotation error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/annotations/<int:ann_id>/", methods=["PATCH", "PUT"])
+@cross_origin()
+def update_annotation(ann_id):
+    try:
+        data = request.get_json()
+        conn = get_db_connection()
+        
+        # Build dynamic update
+        updates = []
+        params = []
+        for field in ["label", "note", "relationships", "adjudication"]:
+            if field in data:
+                updates.append(f"{field} = ?")
+                val = data[field]
+                if field == "relationships" and isinstance(val, dict):
+                    val = json.dumps(val)
+                params.append(val)
+        
+        if not updates:
+            return jsonify({"message": "No changes"}), 200
+            
+        params.append(ann_id)
+        conn.execute(f"UPDATE annotations SET {', '.join(updates)} WHERE id = ?", params)
+        conn.commit()
+        conn.close()
+        
+        return jsonify({"message": "Annotation updated"}), 200
+    except Exception as e:
+        logging.error(f"Update annotation error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/annotations/<int:ann_id>/", methods=["DELETE"])
+@cross_origin()
+def delete_annotation(ann_id):
+    try:
+        conn = get_db_connection()
+        conn.execute("DELETE FROM annotations WHERE id = ?", (ann_id,))
+        conn.commit()
+        conn.close()
+        return jsonify({"message": "Annotation deleted"}), 200
+    except Exception as e:
+        logging.error(f"Delete annotation error: {e}")
+        return jsonify({"error": str(e)}), 500
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8862, debug=True)
