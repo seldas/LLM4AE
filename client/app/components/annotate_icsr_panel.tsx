@@ -249,7 +249,10 @@ export default function AnnotateIcsrPanel({ overrideProject, overrideId}: Props)
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ file: overrideId, folder: overrideProject ?? 'AskMyFAERS_Integration' })
       });
-      if (!res.ok) throw new Error('LLM request failed');
+      if (!res.ok) {
+        console.log(res);
+        throw new Error('LLM request failed');
+      };
       
       // Start polling for completion
       pollProcessingStatus('llm');
@@ -292,7 +295,7 @@ export default function AnnotateIcsrPanel({ overrideProject, overrideId}: Props)
           if (type === 'llm') setIsProcessingLlm(false);
           else setIsProcessingBert(false);
           // Reload the entire document to get new annotations
-          dispatch({ type: DocActionTypes.LOAD, payload: { ...data, fileName: overrideId } });
+          dispatch({ type: DocActionTypes.LOAD, payload: { ...data, fileName: overrideId ?? 'default-file-name' } });
         }
       } catch (err) {
         console.error("Polling error", err);
