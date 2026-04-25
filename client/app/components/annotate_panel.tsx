@@ -290,7 +290,14 @@ export default function Annotate_Panel({ overrideProject, overrideId}: Props) {
 
   const onClickLinkAnnotation = (anno: Annotation) => {
       if (currentRelationType && currentAnnotationRelation) {
-          const updated = { ...currentAnnotationRelation, relationships: { ...currentAnnotationRelation.relationships, [currentRelationType]: { text: anno.textContext.text, page: anno.textContext.page, start: anno.textContext.start, end: anno.textContext.end } } };
+          // Use the ID of the target annotation for the relationship
+          const updated = { 
+            ...currentAnnotationRelation, 
+            relationships: { 
+              ...currentAnnotationRelation.relationships, 
+              [currentRelationType]: anno.id 
+            } 
+          };
           dispatch({ type: DocActionTypes.UPDATE_ANNOTATION, payload: { annotation: updated, historyType: 'verify' } });
           setCurrentRelationType(null);
       } else {
@@ -553,9 +560,11 @@ export default function Annotate_Panel({ overrideProject, overrideId}: Props) {
     loadGuidelines();
   }, []);
 
-  // Websocket status updates
+  const [presenceUsers, setPresenceUsers] = useState<string[]>([]);
+
+  // Websocket status updates and presence
   useEffect(() => {
-    if (!overrideId) return;
+    if (!overrideId || !currentUser) return;
     
     // Connect to the socket through the proxy
     const socketPath = API_BASE.replace(/\/api$/, '') + '/socket.io';
@@ -564,6 +573,19 @@ export default function Annotate_Panel({ overrideProject, overrideId}: Props) {
       transports: ['websocket', 'polling']
     });
     
+    // Join the case room for presence tracking
+    socket.emit('join_case', {
+        case_id: parseInt(overrideId),
+        user_id: currentUser.id,
+        username: currentUser.full_name || currentUser.username
+    });
+
+    socket.on('presence_update', (data: { case_id: number, users: string[] }) => {
+        if (data.case_id === parseInt(overrideId)) {
+            setPresenceUsers(data.users);
+        }
+    });
+
     socket.on('status_update', async (update: { case_id: number, llm_status?: string, bert_status?: string }) => {
       if (update.case_id === parseInt(overrideId)) {
         console.log("Received status update via websocket:", update);
@@ -578,9 +600,13 @@ export default function Annotate_Panel({ overrideProject, overrideId}: Props) {
     });
 
     return () => {
+      socket.emit('leave_case', {
+          case_id: parseInt(overrideId),
+          user_id: currentUser.id
+      });
       socket.disconnect();
     };
-  }, [overrideId, API_BASE]);
+  }, [overrideId, API_BASE, currentUser]);
 
   return (
     <div className="app-container h-screen overflow-hidden flex flex-col bg-slate-50 text-slate-900 antialiased">
@@ -750,6 +776,21 @@ export default function Annotate_Panel({ overrideProject, overrideId}: Props) {
           </div>
 
           <main className="flex-1 flex flex-col overflow-hidden">
+            {/* Conflict Warning Banner */}
+            {presenceUsers.length > 1 && (
+              <div className="bg-amber-50 border-b border-amber-200 px-6 py-2 flex items-center gap-3 animate-in fade-in slide-in-from-top duration-500">
+                <div className="w-5 h-5 rounded-full bg-amber-100 flex items-center justify-center">
+                    <svg className="w-3 h-3 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+                </div>
+                <div className="flex-1">
+                    <p className="text-[11px] font-bold text-amber-800">
+                        SIMULTANEOUS EDITING: {presenceUsers.filter(u => u !== (currentUser?.full_name || currentUser?.username)).join(', ')} {presenceUsers.length > 2 ? 'are' : 'is'} also viewing this case.
+                    </p>
+                    <p className="text-[9px] text-amber-600 font-medium">To avoid overwriting changes, please coordinate with other editors.</p>
+                </div>
+              </div>
+            )}
+
             {/* Metadata Overlay */}
             {metaView !== 'none' && (
               <div className="absolute top-0 left-0 right-0 max-h-[40%] bg-white border-b border-slate-200 shadow-xl z-10 overflow-y-auto animate-in slide-in-from-top duration-300">
@@ -800,9 +841,18 @@ export default function Annotate_Panel({ overrideProject, overrideId}: Props) {
                      currentAnnotation={currentAnnotationRelation}
                      onSelectRelationType={setCurrentRelationType}
                      activeRelationType={currentRelationType}
+                     allAnnotations={doc.annotations}
                      onRemoveRelation={(type) => {
                        if (!currentAnnotationRelation) return;
-                       const updated = { ...currentAnnotationRelation, relationships: { ...currentAnnotationRelation.relationships, [type]: { text: '', page: 0, start: 0, end: 0 } } };
+                       const updated = { 
+                         ...currentAnnotationRelation, 
+                         relationships: { 
+                           ...currentAnnotationRelation.relationships, 
+                           [type]: undefined 
+                         } 
+                       };
+                       // Filter out the undefined key before sending to DB if necessary, 
+                       // but for state it's fine.
                        dispatch({ type: DocActionTypes.UPDATE_ANNOTATION, payload: { annotation: updated, historyType: 'verify' } });
                      }}
                    />
@@ -853,11 +903,67 @@ export default function Annotate_Panel({ overrideProject, overrideId}: Props) {
           optionColors={optionColors}
           annotationGuidelines={annotationGuidelines}
           addAnnotation={handleAddAnnotation}
-          handleAddRelationship={(opt) => {
+          handleAddRelationship={async (opt) => {
              if (isReadOnly || !currentAnnotationRelation || !currentRelationType) return;
 
-             const updated = { ...currentAnnotationRelation, relationships: { ...currentAnnotationRelation.relationships, [currentRelationType]: opt === 'Set' ? { text: selectedText, page: doc.currentPageIndex, start: unifiedContextMenu.start, end: unifiedContextMenu.end } : { text: '', page: 0, start: 0, end: 0 } } };
-             dispatch({ type: DocActionTypes.UPDATE_ANNOTATION, payload: { annotation: updated, historyType: 'verify' } });
+             if (opt === 'Set') {
+                // To maintain data integrity, relationships MUST point to an annotation ID.
+                // Check if an annotation exists at this range, or create one.
+                let target = doc.annotations.find(a => 
+                    a.textContext.start === unifiedContextMenu.start && 
+                    a.textContext.end === unifiedContextMenu.end
+                );
+
+                if (!target) {
+                    try {
+                        const response = await createAnnotation({
+                          case_id: parseInt(overrideId || '0'),
+                          label: 'TEMPORAL', // Default label for relationship targets
+                          start: unifiedContextMenu.start as number,
+                          end: unifiedContextMenu.end as number,
+                          text: selectedText,
+                          note: userRole
+                        });
+                        target = {
+                          id: response.id,
+                          label: 'TEMPORAL',
+                          textContext: {
+                            text: selectedText,
+                            start: unifiedContextMenu.start as number,
+                            end: unifiedContextMenu.end as number,
+                            page: doc.currentPageIndex
+                          },
+                          note: userRole,
+                          relationships: {}
+                        };
+                        dispatch({ type: DocActionTypes.ADD_ANNOTATION, payload: { annotation: target, historyType: 'add' } });
+                    } catch (err) {
+                        console.error("Failed to create target annotation:", err);
+                        return;
+                    }
+                }
+
+                if (target) {
+                    const updated = { 
+                      ...currentAnnotationRelation, 
+                      relationships: { 
+                        ...currentAnnotationRelation.relationships, 
+                        [currentRelationType]: target.id 
+                      } 
+                    };
+                    dispatch({ type: DocActionTypes.UPDATE_ANNOTATION, payload: { annotation: updated, historyType: 'verify' } });
+                }
+             } else {
+                // Clear the relationship
+                const updated = { 
+                    ...currentAnnotationRelation, 
+                    relationships: { 
+                        ...currentAnnotationRelation.relationships, 
+                        [currentRelationType]: undefined 
+                    } 
+                };
+                dispatch({ type: DocActionTypes.UPDATE_ANNOTATION, payload: { annotation: updated, historyType: 'verify' } });
+             }
              setUnifiedContextMenu(prev => ({ ...prev, visible: false }));
           }}
           closeContextMenu={() => setUnifiedContextMenu(prev => ({ ...prev, visible: false }))}

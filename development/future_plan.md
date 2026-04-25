@@ -32,5 +32,5 @@ This document summarizes the progress and remaining tasks for migrating the SCAT
 - [x] **Websockets:** Replace 3-second polling with Websockets (Socket.io) for "Done" notifications from AI workers to provide instant UI refreshes.
 
 ### **Data Quality**
-- [ ] **Relationship Validation:** Add backend constraints to ensure that relationships (e.g., latency to drug) always point to existing annotation IDs.
-- [ ] **Conflict Resolution:** Implement a UI warning if two users are editing the same case simultaneously (now possible with the DB refactor).
+- [x] **Relationship Validation:** Add backend constraints to ensure that relationships (e.g., latency to drug) always point to existing annotation IDs.
+- [x] **Conflict Resolution:** Implement a UI warning if two users are editing the same case simultaneously (now possible with the DB refactor).

@@ -156,18 +156,36 @@ const PageDisplayBuilder = ({
         const color = optionColors[currentAnnotationRelation.label.toUpperCase()] || "hsl(210, 10%, 50%)";
         addBox(currentAnnotationRelation.textContext.start ?? 0, currentAnnotationRelation.textContext.end ?? 0, currentAnnotationRelation.label, color, false, currentAnnotationRelation.note, true, true, currentAnnotationRelation);
 
-        Object.entries(currentAnnotationRelation.relationships).forEach(([relType, relCtx]) => {
-          if (relCtx.start === relCtx.end) return;
-           addBox(relCtx.start ?? 0, relCtx.end ?? 0, relType, color, true, "", false);
+        Object.entries(currentAnnotationRelation.relationships).forEach(([relType, targetRef]) => {
+          if (!targetRef) return;
+          
+          if (typeof targetRef === 'number') {
+            const target = annotations.find(a => a.id === targetRef);
+            if (target) {
+              addBox(target.textContext.start ?? 0, target.textContext.end ?? 0, relType, color, true, "", false);
+            }
+          } else if (typeof targetRef === 'object' && 'start' in targetRef) {
+            if (targetRef.start === targetRef.end) return;
+            addBox(targetRef.start ?? 0, targetRef.end ?? 0, relType, color, true, "", false);
+          }
         });
       }
 
       const relationRanges = new Set<string>();
       if (currentAnnotationRelation) {
-        Object.values(currentAnnotationRelation.relationships).forEach(relCtx => {
-          if (relCtx.start === undefined || relCtx.end === undefined) return;
-          if (relCtx.start === relCtx.end) return;
-          relationRanges.add(`${relCtx.start}-${relCtx.end}`);
+        Object.values(currentAnnotationRelation.relationships).forEach(targetRef => {
+          if (!targetRef) return;
+
+          if (typeof targetRef === 'number') {
+            const target = annotations.find(a => a.id === targetRef);
+            if (target && target.textContext.start !== undefined && target.textContext.end !== undefined) {
+              relationRanges.add(`${target.textContext.start}-${target.textContext.end}`);
+            }
+          } else if (typeof targetRef === 'object' && 'start' in targetRef) {
+            if (targetRef.start === undefined || targetRef.end === undefined) return;
+            if (targetRef.start === targetRef.end) return;
+            relationRanges.add(`${targetRef.start}-${targetRef.end}`);
+          }
         });
       }
 

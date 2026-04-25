@@ -1,6 +1,55 @@
 from flask import Flask, request, jsonify, redirect
 from flask_cors import cross_origin
-from flask_socketio import SocketIO
+from flask_socketio import SocketIO, emit, join_room, leave_room
+# ... (inside app.py)
+
+active_case_users = {} # {case_id: {user_id: username}}
+sid_to_user = {} # {sid: (case_id, user_id)}
+
+@socketio.on('join_case')
+def handle_join_case(data):
+    case_id = data.get('case_id')
+    user_id = data.get('user_id')
+    username = data.get('username')
+    if case_id and user_id:
+        join_room(f"case_{case_id}")
+        if case_id not in active_case_users:
+            active_case_users[case_id] = {}
+        active_case_users[case_id][user_id] = username
+        sid_to_user[request.sid] = (case_id, user_id)
+        
+        emit('presence_update', {
+            'case_id': case_id, 
+            'users': list(active_case_users[case_id].values())
+        }, room=f"case_{case_id}")
+        logging.info(f"User {username} joined case {case_id}")
+
+@socketio.on('leave_case')
+def handle_leave_case(data):
+    case_id = data.get('case_id')
+    user_id = data.get('user_id')
+    if case_id and user_id:
+        leave_room(f"case_{case_id}")
+        sid_to_user.pop(request.sid, None)
+        if case_id in active_case_users and user_id in active_case_users[case_id]:
+            username = active_case_users[case_id].pop(user_id)
+            emit('presence_update', {
+                'case_id': case_id, 
+                'users': list(active_case_users[case_id].values())
+            }, room=f"case_{case_id}")
+            logging.info(f"User {username} left case {case_id}")
+
+@socketio.on('disconnect')
+def handle_disconnect():
+    if request.sid in sid_to_user:
+        case_id, user_id = sid_to_user.pop(request.sid)
+        if case_id in active_case_users and user_id in active_case_users[case_id]:
+            username = active_case_users[case_id].pop(user_id)
+            emit('presence_update', {
+                'case_id': case_id, 
+                'users': list(active_case_users[case_id].values())
+            }, room=f"case_{case_id}")
+            logging.info(f"User {username} disconnected, left case {case_id}")
 import logging
 import os
 import threading
@@ -821,6 +870,15 @@ def create_annotation():
         conn = get_db_connection()
         user_id = get_user_by_note(user_note) or 1
         
+        # Validation: Ensure all target IDs in relationships exist in the same case
+        relationships = data.get("relationships", {})
+        if isinstance(relationships, dict):
+            for rel_type, target_id in relationships.items():
+                if isinstance(target_id, int):
+                    res = conn.execute("SELECT 1 FROM annotations WHERE id = ? AND case_id = ?", (target_id, case_id)).fetchone()
+                    if not res:
+                        return jsonify({"error": f"Target annotation {target_id} for relationship {rel_type} not found in this case"}), 400
+
         cursor = conn.execute("""
             INSERT INTO annotations (case_id, user_id, label, start_offset, end_offset, text_content, note, relationships, adjudication)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -832,7 +890,7 @@ def create_annotation():
             data.get("end"),
             data.get("text"),
             user_note,
-            json.dumps(data.get("relationships", {})),
+            json.dumps(relationships),
             data.get("adjudication")
         ))
         new_id = cursor.lastrowid
@@ -867,6 +925,12 @@ def update_annotation(ann_id):
                 updates.append(f"{field} = ?")
                 val = data[field]
                 if field == "relationships" and isinstance(val, dict):
+                    # Validation: Ensure all target IDs in relationships exist in the same case
+                    for rel_type, target_id in val.items():
+                        if isinstance(target_id, int):
+                            res = conn.execute("SELECT 1 FROM annotations WHERE id = ? AND case_id = ?", (target_id, old_anno['case_id'])).fetchone()
+                            if not res:
+                                return jsonify({"error": f"Target annotation {target_id} for relationship {rel_type} not found in this case"}), 400
                     val = json.dumps(val)
                 params.append(val)
         

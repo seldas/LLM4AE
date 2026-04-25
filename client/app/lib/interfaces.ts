@@ -89,13 +89,14 @@ export interface SaveAnnotationsPayload {
 }
 
 export interface AnnotationRelationships {
-    latency?: TextContext,
-    date?: TextContext,
-    time?: TextContext,
-    frequency?: TextContext,
-    temporal_sequence?: TextContext,
-    span?: TextContext,
-    relatives?: TextContext
+    latency?: number | TextContext,
+    date?: number | TextContext,
+    time?: number | TextContext,
+    frequency?: number | TextContext,
+    temporal_sequence?: number | TextContext,
+    span?: number | TextContext,
+    relatives?: number | TextContext,
+    [key: string]: number | TextContext | undefined
 }
 
 export interface TextContext {
