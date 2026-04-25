@@ -2,7 +2,7 @@
 'use client';
 
 import { useState, useReducer, useEffect, useRef, useMemo, JSX, ReactNode } from 'react';
-import { docReducer, initialDocState, DocActionTypes } from '../lib/doc-reducer';
+import { docReducer, initialDocState, DocActionTypes, LoadDocAction } from '../lib/doc-reducer';
 import {
   Annotation,
   AnnotationOptions,
@@ -10,7 +10,7 @@ import {
   TextContext,
   AnnotationGuideline
 } from '../lib/interfaces';
-import { getHistoryFile, getCaseById, saveAnnotationsToDb } from '../lib/api';
+import { getHistoryFile, getCaseById, createAnnotation, updateAnnotation, deleteAnnotation } from '../lib/api';
 import {  
   escapeRegExp,
   generateOptionColors,
@@ -40,6 +40,8 @@ const TEMPORAL_LABELS = new Set(['TEMPORAL','DATE','TIME','DURATION','RELATIVE',
 const IconSave = () => <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"/></svg>;
 const IconExport = () => <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a2 2 0 002 2h12a2 2 0 002-2v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>;
 const IconExit = () => <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>;
+const IconSparkles = () => <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z"/></svg>;
+const IconRobot = () => <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z"/></svg>;
 
 export default function Annotate_Panel({ overrideProject, overrideId}: Props) {
   const [doc, dispatch] = useReducer(docReducer, initialDocState)
@@ -70,6 +72,11 @@ export default function Annotate_Panel({ overrideProject, overrideId}: Props) {
   const [userRole, setUserRole] = useState<string>("Anonymous");
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [isReadOnly, setIsReadOnly] = useState(false);
+  const [isTemporaryMode, setIsTemporaryMode] = useState(false);
+
+  const [isProcessingLlm, setIsProcessingLlm] = useState(false);
+  const [isProcessingBert, setIsProcessingBert] = useState(false);
+
   const META_DATA_OPTIONS: Array<{ key: 'demographic' | 'products' | 'outcomes'; label: string }> = [
     { key: 'demographic', label: 'Demographic' },
     { key: 'products', label: 'Products' },
@@ -100,183 +107,18 @@ export default function Annotate_Panel({ overrideProject, overrideId}: Props) {
           return;
         }
       } else if (key === 'outcomes') {
-        const hasRows = raw && typeof raw === 'object' && Array.isArray(raw.rows) && raw.rows.length > 0;
-        const hasCategories =
-          raw &&
-          typeof raw === 'object' &&
-          raw.categories &&
-          Object.values(raw.categories).some((items: any) => Array.isArray(items) && items.length > 0);
-        if (hasRows || hasCategories) {
+        if (Array.isArray(raw) && raw.length) {
           entries.push({ key, label, type: 'outcomes-structured', data: raw });
           return;
         }
       }
-      if (typeof raw === 'string' && raw.trim()) {
-        entries.push({ key, label, type: 'legacy', html: raw.trim() });
+      
+      if (raw && typeof raw === 'string' && raw.trim()) {
+        entries.push({ key, label, type: 'legacy', html: raw });
       }
     });
     return entries;
   }, [doc.meta]);
-
-  const renderDemographicStructured = (entries: any[]): ReactNode => {
-    const sanitized = entries?.filter(Boolean) || [];
-    if (!sanitized.length) {
-      return <p className="text-sm text-slate-500 italic">No demographic data available.</p>;
-    }
-    return (
-      <div className="space-y-4">
-        {sanitized.map((entry, index) => {
-          const lowerLabel = entry.label?.toLowerCase() || '';
-          const isMedicalHistory = lowerLabel.includes('medical history');
-          const isAttachment = lowerLabel.includes('attachment');
-          return (
-            <div key={`${entry.label}-${index}`} className="bg-white border border-slate-200 rounded-[1.5rem] p-4">
-              {entry.type === 'list' ? (
-                <details
-                  className="space-y-3"
-                  open={!isMedicalHistory && !isAttachment}
-                >
-                  <summary className="text-[9px] uppercase tracking-[0.4em] text-slate-400 cursor-pointer">
-                    {entry.label}
-                  </summary>
-                  <div className="space-y-1 text-sm text-slate-700">
-                    {(entry.items || []).map((item: string, idx: number) => (
-                      <p key={idx} className="leading-snug flex items-start gap-1">
-                        <span className="text-slate-400">•</span>
-                        <span>{item}</span>
-                      </p>
-                    ))}
-                  </div>
-                </details>
-              ) : (
-                <>
-                  <p className="text-[9px] uppercase tracking-[0.4em] text-slate-400 mb-2">{entry.label}</p>
-                  <p className="text-sm text-slate-700">{entry.value}</p>
-                </>
-              )}
-            </div>
-          );
-        })}
-      </div>
-    );
-  };
-
-  const renderProductsStructured = (data: any): ReactNode => {
-    const groups = Array.isArray(data?.groups) ? data.groups : [];
-    if (!groups.length) {
-      return <p className="text-sm text-slate-500 italic">No product data available.</p>;
-    }
-    return (
-      <div className="space-y-4">
-        {groups.map((group: any) => (
-          <div key={group.role} className="space-y-3">
-            <div className="text-[10px] uppercase tracking-[0.3em] text-slate-500">{group.role} Products</div>
-            <div className="space-y-2">
-              {(group.items || []).map((item: any, index: number) => (
-                <div key={`${group.role}-${index}`} className="border border-slate-200 rounded-[1.5rem] bg-white">
-                  <div className="px-4 py-3 border-b border-slate-100">
-                    <p className="text-sm font-semibold text-slate-900">{item.display_name}</p>
-                  </div>
-                  <div className="px-4 py-3 space-y-1 text-[12px] text-slate-700">
-                    {(item.fields || []).map((field: any) => (
-                      <div key={`${field.label}-${field.value}`} className="flex justify-between">
-                        <span className="text-[10px] uppercase tracking-[0.3em] text-slate-400">{field.label}</span>
-                        <span className="font-semibold text-slate-800">{field.value}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        ))}
-      </div>
-    );
-  };
-
-  const renderOutcomesStructured = (data: any): ReactNode => {
-    const rows = Array.isArray(data?.rows) ? data.rows : [];
-    if (!rows.length) {
-      return <p className="text-sm text-slate-500 italic">No outcomes data available.</p>;
-    }
-
-    const formatColonSegments = (value?: string) =>
-      (value || '')
-        .split(':')
-        .map(segment => segment.trim())
-        .filter(Boolean);
-
-    const buildPaths = (row: any) => {
-      const segments = {
-        soc: formatColonSegments(row.soc),
-        hlgt: formatColonSegments(row.hlgt),
-        hlt: formatColonSegments(row.hlt),
-        pt: formatColonSegments(row.pt),
-        llt: formatColonSegments(row.llt),
-      };
-      const maxSegments = Math.max(
-        segments.soc.length,
-        segments.hlgt.length,
-        segments.hlt.length,
-        segments.pt.length,
-        segments.llt.length,
-        1
-      );
-      return Array.from({ length: maxSegments }, (_, idx) => ({
-        soc: segments.soc[idx] || '',
-        hlgt: segments.hlgt[idx] || '',
-        hlt: segments.hlt[idx] || '',
-        pt: segments.pt[idx] || '',
-        llt: segments.llt[idx] || '',
-      }));
-    };
-
-    const renderRowsList = () => (
-      <div className="space-y-4">
-        {rows.map((row: any, idx: number) => (
-          <div
-            key={row.term_id ? `term-${row.term_id}-${idx}` : `term-${idx}`}
-            className="px-4 py-3 space-y-2 text-[12px] text-slate-700"
-          >
-              <p><span className="text-[10px] uppercase tracking-[0.3em] text-slate-500">SOC:</span> {formatColonSegments(row.soc).join(' / ') || '—'}</p>
-              <p><span className="text-[10px] uppercase tracking-[0.3em] text-slate-500">HLGT:</span> {formatColonSegments(row.hlgt).join(' / ') || '—'}</p>
-              <p><span className="text-[10px] uppercase tracking-[0.3em] text-slate-500">HLT:</span> {formatColonSegments(row.hlt).join(' / ') || '—'}</p>
-              <p><span className="text-[10px] uppercase tracking-[0.3em] text-slate-500">PT:</span> {formatColonSegments(row.pt).join(' / ') || '—'}</p>
-              <p><span className="text-[10px] uppercase tracking-[0.3em] text-slate-500">LLT:</span> {formatColonSegments(row.llt).join(' / ') || '—'}</p>
-          </div>
-        ))}
-      </div>
-    );
-
-    return (
-      <div className="space-y-2">
-        {renderRowsList()}
-      </div>
-    );
-  };
-
-  const renderMetaEntryContent = (entry: MetaEntry): ReactNode => {
-    if (!entry) return null;
-    switch (entry.type) {
-      case 'demographic-structured':
-        return renderDemographicStructured(entry.data);
-      case 'products-structured':
-        return renderProductsStructured(entry.data);
-      case 'outcomes-structured':
-        return renderOutcomesStructured(entry.data);
-      case 'legacy':
-      default:
-        return <div className="max-w-none break-words" dangerouslySetInnerHTML={{ __html: entry.html || '' }} />;
-    }
-  };
-
-  const activeMetaEntry = useMemo(() => availableMetaEntries.find(entry => entry.key === metaView) || null, [availableMetaEntries, metaView]);
-
-  useEffect(() => {
-    if (metaView !== 'none' && !availableMetaEntries.some(entry => entry.key === metaView)) {
-      setMetaView('none');
-    }
-  }, [availableMetaEntries, metaView]);
 
   useEffect(() => {
     const storedUser = localStorage.getItem('user');
@@ -288,108 +130,159 @@ export default function Annotate_Panel({ overrideProject, overrideId}: Props) {
       setIsReadOnly(isGuest);
       const displayName = u.full_name || u.username;
       setUserRole(displayName);
+    } else {
+        // If no project provided, it's temporary mode from AskMyFAERS
+        if (!overrideProject) {
+            setIsTemporaryMode(true);
+            setUserRole("ICSR_Annotator");
+        } else {
+            setUserRole("Anonymous");
+        }
     }
-  }, []);
+  }, [overrideProject]);
 
   const [relationshipBuilderMode, setRelationshipBuilderMode] = useState(false);
+  const [currentRelationType, setCurrentRelationType] = useState<keyof AnnotationRelationships | null>(null);
   const [currentAnnotationRelation, setCurrentAnnotationRelation] = useState<Annotation | null>(null);
-  const [currentRelationType, setCurrentRelationType] = useState<keyof AnnotationRelationships | ''>('');
-  
-  const [annotationOptions, setAnnotationOptions] = useState<AnnotationOptions>({});
-  const [annotationGuidelines, setAnnotationGuidelines] = useState<AnnotationGuideline[]>([]);
-  const [optionColors, setOptionColors] = useState<{ [key: string]: string }>({});
-  const [activeLabelFilters, setActiveLabelFilters] = useState<string[]>([]);
-  const [temporalTerms, setTemporalTerms] = useState<Annotation[]>([]);
-  const [showRejected, setShowRejected] = useState(false);
-  
-  const [unifiedContextMenu, setUnifiedContextMenu] = useState<{
-          visible: boolean; x: number; y: number;
-          type: 'annotation' | 'relationship' | 'verification';
-          options?: string[]; start?: number; end?: number;
-        }>({ visible: false, x: 0, y: 0, type: 'annotation' });
 
-  const [selectedPopupLabel, setSelectedPopupLabel] = useState('');
-  const [selectedTermContext, setSelectedTermContext] = useState<{ text: string; start: number; end: number } | null>(null);
+  const [activeLabelFilters, setActiveLabelFilters] = useState<string[]>([]);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [showFinishConfirm, setShowFinishConfirm] = useState(false);
-  
-  const [llmPopup, setLlmPopup] = useState<{ 
-    visible: boolean; x: number; y: number; text: string; start: number; end: number; 
-    type?: 'LLM' | 'BERT' | 'SME' | 'NEW'; label?: string; isVerified?: boolean;
+  const [llmPopup, setLlmPopup] = useState<{
+    visible: boolean;
+    x: number;
+    y: number;
+    text: string;
+    start: number;
+    end: number;
+    label?: string;
+    type?: string;
     note?: string;
+    isVerified?: boolean;
   }>({ visible: false, x: 0, y: 0, text: '', start: 0, end: 0 });
 
-  const currentPageData = doc.pages[doc.currentPageIndex] || null;
+  const [unifiedContextMenu, setUnifiedContextMenu] = useState<{
+    visible: boolean;
+    x: number;
+    y: number;
+    start: number | null;
+    end: number | null;
+  }>({ visible: false, x: 0, y: 0, start: null, end: null });
 
-  // Filter Annotations for Display
-  const visibleAnnotations = useMemo(() => {
-    const enriched = doc.annotations.map(a => {
-      const note = (a.note || "").toUpperCase();
-      const isLLM = note.includes('LLM') || note.includes('LLAMA');
-      const isBERT = note.includes('BERT');
-      const isAI = isLLM || isBERT || note.includes('AI');
-      const isVerified = note.includes('VERIFIED');
-      
-      let layer = 'Human';
-      let priority = 1; // Lower number = Higher priority in our final pick
+  const [selectedPopupLabel, setSelectedPopupLabel] = useState<string>('');
+  const [selectedTermContext, setSelectedTermContext] = useState<TextContext | null>(null);
+  const [annotationGuidelines, setAnnotationGuidelines] = useState<AnnotationGuideline[]>([]);
 
-      if (isLLM && !isVerified) {
-        layer = 'LLM';
-        priority = 2;
-      } else if (isBERT && !isVerified) {
-        layer = 'BERT';
-        priority = 3;
-      } else if (isAI && !isVerified) {
-        layer = 'LLM'; // Default generic AI to LLM for now
-        priority = 2;
-      } else {
-        layer = 'Human'; // Human or Verified AI
-        priority = 1;
+  useEffect(() => {
+    async function loadData() {
+      if (!overrideId) return;
+      const data = await getCaseById(overrideId);
+      if (data) {
+        dispatch({ type: DocActionTypes.LOAD_DOC, payload: data as LoadDocAction['payload'] });
       }
+    }
+    loadData();
+  }, [overrideId, overrideProject]);
 
-      const normalizedLabel = labelNormalizer[a.label.toUpperCase()] || a.label.toUpperCase();
-      return { ...a, priority, layer, normalizedLabel };
-    });
+  const currentPageData = useMemo(() => doc.pages[doc.currentPageIndex] || '', [doc.pages, doc.currentPageIndex]);
 
-    let filtered = enriched.filter(a => {
-      const note = (a.note || "").toUpperCase();
-      if (note.includes('REJECTED') && !showRejected) return false;
-      return activeLayers.includes(a.layer);
-    });
+  const annotationOptions: AnnotationOptions[] = useMemo(() => [
+    { label: 'AE', color: '#ef4444' },
+    { label: 'SDRUG', color: '#3b82f6' },
+    { label: 'CDRUG', color: '#8b5cf6' },
+    { label: 'ODRUG', color: '#6366f1' },
+    { label: 'TREATMENT', color: '#10b981' },
+    { label: 'DIAGNOSTIC', color: '#f59e0b' },
+    { label: 'MEDICAL HISTORY', color: '#ec4899' },
+    { label: 'TEMPORAL', color: '#64748b' },
+    { label: 'AGE', color: '#14b8a6' },
+    { label: 'SEX', color: '#f43f5e' },
+    { label: 'CAUSE OF DEATH', color: '#44403c' },
+  ], []);
 
-    // Display Priority: Human(1) > LLM(2) > BERT(3)
-    const positionMap: Record<string, typeof enriched[0]> = {};
-    // Sort by priority DESC so that higher priority (smaller number) overwrites in the map
-    filtered.sort((a, b) => b.priority - a.priority).forEach(ann => {
-      const key = `${ann.textContext.start}-${ann.textContext.end}`;
-      positionMap[key] = ann;
-    });
-    return Object.values(positionMap);
-  }, [doc.annotations, activeLayers, showRejected]);
+  const optionColors = useMemo(() => {
+    const colors: Record<string, string> = {};
+    annotationOptions.forEach(opt => { colors[opt.label] = opt.color; });
+    return colors;
+  }, [annotationOptions]);
+
+  const linkModeColors = {
+      'Latency': '#6366f1',
+      'Duration': '#8b5cf6',
+      'Frequency': '#ec4899',
+      'Route': '#10b981',
+      'Dose': '#f59e0b',
+      'Verification': '#14b8a6',
+      'Condition': '#64748b'
+  };
 
   const filteredLinkAnnotations = useMemo(() => {
-    return visibleAnnotations.filter(a => {
-      const label = a.label.toUpperCase();
-      const note = a.note.toUpperCase();
-      const isPureAI = (note.includes('LLM') || note.includes('LLAMA') || note.includes('BERT') || note.includes('AI')) && !note.includes('VERIFIED');
-      const isHuman = !isPureAI;
-      const isAEDrug = ['AE', 'SYMPTOM', 'SIGN', 'DRUG', 'SDRUG', 'CDRUG'].includes(label);
-      return isHuman && isAEDrug;
+    if (!relationshipBuilderMode) return [];
+    return doc.annotations.filter(a => activeLayers.includes(a.note.includes('LLM') ? 'LLM' : a.note.includes('BERT') ? 'BERT' : 'Human'));
+  }, [doc.annotations, activeLayers, relationshipBuilderMode]);
+
+  const temporalTerms = useMemo(() => {
+    return doc.annotations.filter(a => TEMPORAL_LABELS.has(a.label.toUpperCase()));
+  }, [doc.annotations]);
+
+  const visibleAnnotations = useMemo(() => {
+    return doc.annotations.filter(a => {
+      const isLlm = a.note.includes('LLM');
+      const isBert = a.note.includes('BERT');
+      if (isLlm && !activeLayers.includes('LLM')) return false;
+      if (isBert && !activeLayers.includes('BERT')) return false;
+      if (!isLlm && !isBert && !activeLayers.includes('Human')) return false;
+      return true;
     });
-  }, [visibleAnnotations]);
+  }, [doc.annotations, activeLayers]);
 
-  const isPrimaryEntitySelected = currentAnnotationRelation
-    ? PRIMARY_ENTITY_LABELS.has(labelNormalizer[currentAnnotationRelation.label.toUpperCase()] || currentAnnotationRelation.label.toUpperCase())
-    : false;
+  const handleTextSelection = (e: any) => {
+    const selection = window.getSelection();
+    if (selection && selection.toString().trim().length > 0) {
+      const range = selection.getRangeAt(0);
+      const text = selection.toString();
+      setSelectedText(text);
 
-  const linkModeColors: Record<string, string> = {
-    'AE': 'hsl(0, 70%, 50%)', 
-    'SYMPTOM': 'hsl(0, 70%, 50%)',
-    'SIGN': 'hsl(0, 70%, 50%)',
-    'DRUG': 'hsl(210, 70%, 50%)', 
-    'SDRUG': 'hsl(210, 70%, 50%)',
-    'CDRUG': 'hsl(210, 70%, 50%)'
+      const span = e.currentTarget;
+      const rect = span.getBoundingClientRect();
+
+      setUnifiedContextMenu({
+        visible: true,
+        x: e.clientX,
+        y: e.clientY,
+        start: 0, // Injected by PageDisplay
+        end: 0    // Injected by PageDisplay
+      });
+    }
+  };
+
+  const onClickAnnotation = (anno: Annotation, x: number, y: number) => {
+    const isAi = anno.note.includes('LLM') || anno.note.includes('BERT') || anno.note.includes('AI');
+    const isVerified = anno.note.includes('VERIFIED');
+
+    setLlmPopup({
+      visible: true,
+      x, y,
+      text: anno.textContext.text,
+      start: anno.textContext.start,
+      end: anno.textContext.end,
+      label: anno.label,
+      type: anno.label,
+      note: anno.note,
+      isVerified
+    });
+    setSelectedTermContext(anno.textContext);
+  };
+
+  const onClickLinkAnnotation = (anno: Annotation) => {
+      if (currentRelationType && currentAnnotationRelation) {
+          const updated = { ...currentAnnotationRelation, relationships: { ...currentAnnotationRelation.relationships, [currentRelationType]: { text: anno.textContext.text, page: anno.textContext.page, start: anno.textContext.start, end: anno.textContext.end } } };
+          dispatch({ type: DocActionTypes.UPDATE_ANNOTATION, payload: { annotation: updated, historyType: 'verify' } });
+          setCurrentRelationType(null);
+      } else {
+          setCurrentAnnotationRelation(anno);
+      }
   };
 
   useEffect(() => {
@@ -409,32 +302,12 @@ export default function Annotate_Panel({ overrideProject, overrideId}: Props) {
   }, [doc.actionHistory.length]);
 
   const handleSave = async (shouldClose = false) => {
-      if (isReadOnly) return;
-      try {
-        await saveAnnotationsToDb({
-          id: overrideId || '',
-          curr_folder: overrideProject ?? 'Playground',
-          pages: doc.pages,
-          annotations: doc.annotations,
-          meta: doc.meta,
-        });
-        setSaveSuccess(true);
-        dispatch({ type: DocActionTypes.COMMIT_HISTORY });
-        setHasUnsavedChanges(false);
-        setTimeout(() => setSaveSuccess(false), 2000);
-        if (shouldClose) window.close();
-      } catch (error: any) {
-        alert(`❌ Failed to save: ${error.message}`);
-      }
-  };
-
-  const handleFinish = () => {
-    if (hasUnsavedChanges) setShowFinishConfirm(true);
-    else window.close();
-  };
-
-  const handleLayerToggle = (layer: string) => {
-    setActiveLayers(prev => prev.includes(layer) ? prev.filter(l => l !== layer) : [...prev, layer]);
+      // Incremental saving is done during actions. 
+      // This is now more of a "Commit" or "Sync" if we had a local buffer.
+      // For now, we'll just show success since actions are synced.
+      setSaveSuccess(true);
+      setTimeout(() => setSaveSuccess(false), 2000);
+      if (shouldClose) window.close();
   };
 
   const handleExport = async () => {
@@ -449,7 +322,14 @@ export default function Annotate_Panel({ overrideProject, overrideId}: Props) {
       { header: 'Provenance', key: 'note', width: 30 },
     ];
     doc.annotations.forEach(anno => {
-      worksheet.addRow({ text: anno.textContext.text, label: anno.label, start: anno.textContext.start, end: anno.textContext.end, page: anno.textContext.page + 1, note: anno.note });
+      worksheet.addRow({ 
+          text: anno.textContext.text, 
+          label: anno.label, 
+          start: anno.textContext.start, 
+          end: anno.textContext.end, 
+          page: anno.textContext.page + 1, 
+          note: anno.note 
+      });
     });
     const buffer = await workbook.xlsx.writeBuffer();
     const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
@@ -458,198 +338,229 @@ export default function Annotate_Panel({ overrideProject, overrideId}: Props) {
     anchor.href = url;
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
     const id = overrideId || 'unknown';
-    anchor.download = `Annotation_${id}_${timestamp}.xlsx`;
+    anchor.download = `annotations_${id}_${timestamp}.xlsx`;
     anchor.click();
     window.URL.revokeObjectURL(url);
   };
 
-  const handleTextSelection = () => {
-      if (isReadOnly) return;
-      const selection = window.getSelection();
-      if (!selection || !selection.toString().trim()) return;
-      const text = selection.toString().trim().replace(/\u00A0/g, ' ');
-      const range = selection.getRangeAt(0);      
-      const startNode = range.startContainer;
-      const container = document.querySelector('.page .text-block');
-      if (!container?.contains(startNode)) return;
-      const rect = range.getBoundingClientRect();
-      const tempRange = document.createRange();
-      tempRange.selectNodeContents(container);
-      tempRange.setEnd(startNode, range.startOffset);
-      const absoluteStart = (tempRange.cloneContents().textContent || "").length;
-      const absoluteEnd = absoluteStart + text.length;
-      setSelectedText(text);
-      if (!relationshipBuilderMode) {
-        if (!annotationGuidelines.length) return;
-        setUnifiedContextMenu({ visible: true, x: rect.left + window.scrollX, y: rect.top + window.scrollY, type: 'annotation', start: absoluteStart, end: absoluteEnd });
-      } else if (currentAnnotationRelation) {
-          setUnifiedContextMenu({ visible: true, x: rect.left + window.scrollX, y: rect.top + window.scrollY, type: 'relationship', start: absoluteStart, end: absoluteEnd, options: ['Set', 'Delete'] });
-      }
+  const handleLayerToggle = (layer: string) => {
+    setActiveLayers(prev => prev.includes(layer) ? prev.filter(l => l !== layer) : [...prev, layer]);
   };
 
-  const handleAddAnnotation = (label: string) => {
-      if (isReadOnly) return;
-      const newAnnotation: Annotation = {
-        textContext: { text: selectedText, page: doc.currentPageIndex, start: unifiedContextMenu.start as number, end: unifiedContextMenu.end as number, disputed: false },
-        label: label,
-        note: userRole,
-        relationships: { latency: {text:'',page:0}, date: {text:'',page:0}, time: {text:'',page:0}, frequency: {text:'',page:0}, temporal_sequence: {text:'',page:0} },
-      };
-      dispatch({ type: DocActionTypes.ADD_ANNOTATION, payload: { annotation: newAnnotation, historyType: 'add' } });
-      setUnifiedContextMenu(prev => ({ ...prev, visible: false }));
-  };
-
-  const handleVerifyAnnotation = (start: number, end: number, text: string, label: string, note: string) => {
-    if (isReadOnly) return;
-    const existingAI = doc.annotations.find(a => a.textContext.start === start && a.textContext.end === end && (a.label.toUpperCase() === label.toUpperCase() || (labelNormalizer[a.label.toUpperCase()] || a.label.toUpperCase()) === label.toUpperCase()) && (a.note.toUpperCase().includes('LLM') || a.note.toUpperCase().includes('AI') || a.note.toLowerCase().includes('llama') || a.note.toLowerCase().includes('bert')));
-    if (existingAI) {
-      const updatedAI = { ...existingAI, note: `${existingAI.note} | VERIFIED BY ${userRole}` };
-      dispatch({ type: DocActionTypes.UPDATE_ANNOTATION, payload: { annotation: updatedAI, historyType: 'verify' } });
-      const newHumanAnnotation: Annotation = {
-        textContext: { text, start, end, page: doc.currentPageIndex, disputed: false },
-        label: label, note: userRole,
-        relationships: { latency: {text:'',page:0}, date: {text:'',page:0}, time: {text:'',page:0}, frequency: {text:'',page:0}, temporal_sequence: {text:'',page:0} },
-      };
-      dispatch({ type: DocActionTypes.ADD_ANNOTATION, payload: { annotation: newHumanAnnotation, historyType: 'add' } });
+  const handleLlmAnnotate = async () => {
+    if (isReadOnly || isProcessingLlm) return;
+    setIsProcessingLlm(true);
+    try {
+      const res = await fetch(`${API_BASE}/llm-annotate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: overrideId })
+      });
+      if (!res.ok) throw new Error('Failed to start LLM annotation');
+      alert("LLM Annotation started. It will refresh automatically when done.");
+    } catch (err) {
+      console.error(err);
+      alert("Error starting LLM annotation");
+    } finally {
+      setIsProcessingLlm(false);
     }
   };
 
-  const handleRejectAnnotation = (start: number, end: number, label: string) => {
+  const handleBertAnnotate = async () => {
+    if (isReadOnly || isProcessingBert) return;
+    setIsProcessingBert(true);
+    try {
+      const res = await fetch(`${API_BASE}/bert-annotate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: overrideId })
+      });
+      if (!res.ok) throw new Error('Failed to start BERT annotation');
+      alert("BERT Annotation started. It will refresh automatically when done.");
+    } catch (err) {
+      console.error(err);
+      alert("Error starting BERT annotation");
+    } finally {
+      setIsProcessingBert(false);
+    }
+  };
+
+  const handleAddAnnotation = async (label: string) => {
+      if (isReadOnly) return;
+      try {
+        const response = await createAnnotation({
+          case_id: parseInt(overrideId || '0'),
+          label: label,
+          start: unifiedContextMenu.start as number,
+          end: unifiedContextMenu.end as number,
+          text: selectedText,
+          note: userRole
+        });
+        const newAnnotation: Annotation = {
+          id: response.id,
+          label,
+          textContext: {
+            text: selectedText,
+            start: unifiedContextMenu.start as number,
+            end: unifiedContextMenu.end as number,
+            page: doc.currentPageIndex
+          },
+          note: userRole,
+          relationships: {}
+        };
+        dispatch({ type: DocActionTypes.ADD_ANNOTATION, payload: { annotation: newAnnotation, historyType: 'add' } });
+        setUnifiedContextMenu(prev => ({ ...prev, visible: false }));
+      } catch (err) {
+        console.error("Add error:", err);
+      }
+  };
+
+  const handleVerifyAnnotation = async (start: number, end: number, text: string, label: string) => {
+    if (isReadOnly) return;
+    const existingAI = doc.annotations.find(a => a.textContext.start === start && a.textContext.end === end && (a.label.toUpperCase() === label.toUpperCase() || (labelNormalizer[a.label.toUpperCase()] || a.label.toUpperCase()) === label.toUpperCase()) && (a.note.toUpperCase().includes('LLM') || a.note.toUpperCase().includes('AI') || a.note.toLowerCase().includes('llama') || a.note.toLowerCase().includes('bert') || a.note.toUpperCase().includes('IMPORTED')));
+    if (existingAI && existingAI.id) {
+      try {
+        const newNote = `${existingAI.note} | VERIFIED BY ${userRole}`;
+        await updateAnnotation(existingAI.id, { note: newNote });
+
+        const updatedAI = { ...existingAI, note: newNote };
+        dispatch({ type: DocActionTypes.UPDATE_ANNOTATION, payload: { annotation: updatedAI, historyType: 'verify' } });
+
+        const response = await createAnnotation({
+          case_id: parseInt(overrideId || '0'),
+          label: label,
+          start, end, text,
+          note: userRole
+        });
+        const humanAnnotation: Annotation = {
+          id: response.id,
+          label,
+          textContext: { text, start, end, page: doc.currentPageIndex },
+          note: userRole,
+          relationships: {}
+        };
+        dispatch({ type: DocActionTypes.ADD_ANNOTATION, payload: { annotation: humanAnnotation, historyType: 'verify' } });
+        setLlmPopup(prev => ({ ...prev, visible: false }));
+        setSelectedTermContext(null);
+      } catch (err) {
+        console.error("Verify error:", err);
+      }
+    }
+  };
+
+  const handleRejectAnnotation = async (start: number, end: number, label: string) => {
     if (isReadOnly) return;
     const existing = doc.annotations.find(a => a.textContext.start === start && a.textContext.end === end && (a.label.toUpperCase() === label.toUpperCase() || (labelNormalizer[a.label.toUpperCase()] || a.label.toUpperCase()) === label.toUpperCase()));
-    if (existing) {
-      const updatedAnnotation = { ...existing, note: `${existing.note} | REJECTED BY ${userRole}` };
-      dispatch({ type: DocActionTypes.UPDATE_ANNOTATION, payload: { annotation: updatedAnnotation, historyType: 'reject' } });
-      setLlmPopup(prev => ({ ...prev, visible: false }));
-      setSelectedTermContext(null);
-    }
-  };
+    if (existing && existing.id) {
+      try {
+        const newNote = `${existing.note} | REJECTED BY ${userRole}`;
+        await updateAnnotation(existing.id, { note: newNote });
 
-  const handleLlmAddAnnotation = (labelOverride?: string) => {
-    if (isReadOnly) return;
-    const { start, end, text, type } = llmPopup;
-    const label = labelOverride || selectedPopupLabel;
-    const newAnnotation: Annotation = {
-      textContext: { text, start, end, page: doc.currentPageIndex, disputed: false },
-      label: label, note: userRole,
-      relationships: { latency: { text: '', page: 0 }, date: { text: '', page: 0 }, time: { text: '', page: 0 }, frequency: { text: '', page: 0 }, temporal_sequence: { text: '', page: 0 } },
-    };
-    if (type === 'LLM' || type === 'BERT') {
-      const existingAI = doc.annotations.find(a => 
-        a.textContext.start === start && 
-        a.textContext.end === end && 
-        (a.label.toUpperCase() === label.toUpperCase() || (labelNormalizer[a.label.toUpperCase()] || a.label.toUpperCase()) === label.toUpperCase()) && 
-        (a.note.toUpperCase().includes('LLM') || a.note.toUpperCase().includes('AI') || a.note.toLowerCase().includes('llama') || a.note.toLowerCase().includes('bert'))
-      );
-      if (existingAI) {
-        const updatedAI = { ...existingAI, note: `${existingAI.note} | VERIFIED BY ${userRole}` };
-        dispatch({ type: DocActionTypes.UPDATE_ANNOTATION, payload: { annotation: updatedAI, historyType: 'verify' } });
-        dispatch({ type: DocActionTypes.ADD_ANNOTATION, payload: { annotation: newAnnotation, historyType: 'add' } });
+        const updatedAnnotation = { ...existing, note: newNote };
+        dispatch({ type: DocActionTypes.UPDATE_ANNOTATION, payload: { annotation: updatedAnnotation, historyType: 'reject' } });
+        setLlmPopup(prev => ({ ...prev, visible: false }));
+        setSelectedTermContext(null);
+      } catch (err) {
+        console.error("Reject error:", err);
       }
-    } else {
-      dispatch({ type: DocActionTypes.ADD_ANNOTATION, payload: { annotation: newAnnotation, historyType: 'add' } });
     }
-    setLlmPopup((prev) => ({ ...prev, visible: false }));
-    setSelectedTermContext(null);
   };
 
-  const handleUnverifyAnnotation = (start: number, end: number, label: number | string) => {
+  const handleLlmAddAnnotation = async (labelOverride?: string) => {
     if (isReadOnly) return;
-    const labelStr = String(label);
-    const humanAnno = doc.annotations.find(a => a.textContext.start === start && a.textContext.end === end && (a.label.toUpperCase() === labelStr.toUpperCase() || (labelNormalizer[a.label.toUpperCase()] || a.label.toUpperCase()) === labelStr.toUpperCase()) && (a.note.toUpperCase().includes('SME') || a.note.toUpperCase().includes('MJ.L') || a.note.toUpperCase().includes('K.L') || a.note.toUpperCase().includes('ADJUDICATOR') || a.note.toUpperCase() === userRole.toUpperCase()));
-    const aiAnno = doc.annotations.find(a => a.textContext.start === start && a.textContext.end === end && (a.label.toUpperCase() === labelStr.toUpperCase() || (labelNormalizer[a.label.toUpperCase()] || a.label.toUpperCase()) === labelStr.toUpperCase()) && (a.note.toUpperCase().includes('LLM') || a.note.toUpperCase().includes('AI') || a.note.toLowerCase().includes('llama') || a.note.toLowerCase().includes('bert')) && a.note.toUpperCase().includes('VERIFIED'));
-    if (aiAnno) {
-      const revertedAiNote = aiAnno.note.split(' | VERIFIED BY')[0];
-      const revertedAi = { ...aiAnno, note: revertedAiNote };
-      dispatch({ type: DocActionTypes.UPDATE_ANNOTATION, payload: { annotation: revertedAi } });
-      if (humanAnno) dispatch({ type: DocActionTypes.REMOVE_ANNOTATION, payload: { annotation: humanAnno } });
+    const { start, end, text } = llmPopup;
+    const label = labelOverride || selectedPopupLabel;
+
+    try {
+        const response = await createAnnotation({
+          case_id: parseInt(overrideId || '0'),
+          label: label,
+          start, end, text,
+          note: userRole
+        });
+        const newAnnotation: Annotation = {
+          id: response.id,
+          label,
+          textContext: { text, start, end, page: doc.currentPageIndex },
+          note: userRole,
+          relationships: {}
+        };
+
+        if (label === llmPopup.label) {
+          const existingAI = doc.annotations.find(a => 
+            a.textContext.start === start && a.textContext.end === end && 
+            (a.label.toUpperCase() === label.toUpperCase() || (labelNormalizer[a.label.toUpperCase()] || a.label.toUpperCase()) === label.toUpperCase()) &&
+            (a.note.toUpperCase().includes('LLM') || a.note.toUpperCase().includes('AI') || a.note.toLowerCase().includes('llama') || a.note.toLowerCase().includes('bert') || a.note.toUpperCase().includes('IMPORTED'))
+          );
+          if (existingAI && existingAI.id) {
+            const newNote = `${existingAI.note} | VERIFIED BY ${userRole}`;
+            await updateAnnotation(existingAI.id, { note: newNote });
+            const updatedAI = { ...existingAI, note: newNote };
+            dispatch({ type: DocActionTypes.UPDATE_ANNOTATION, payload: { annotation: updatedAI, historyType: 'verify' } });
+          }
+        }
+        dispatch({ type: DocActionTypes.ADD_ANNOTATION, payload: { annotation: newAnnotation, historyType: 'add' } });
+        setLlmPopup(prev => ({ ...prev, visible: false }));
+        setSelectedTermContext(null);
+    } catch (err) {
+      console.error("Add from popup error:", err);
     }
-    setLlmPopup(prev => ({ ...prev, visible: false }));
-    setSelectedTermContext(null);
   };
 
-  const onClickAnnotation = (text: string, start: number, end: number, x: number, y: number, note?: string, label?: string) => {
-    let type: 'LLM' | 'BERT' | 'SME' | 'NEW' = 'NEW';
-    let isVerified = false;
-    if (note) {
-      const upperNote = note.toUpperCase();
-      const isLLM = upperNote.includes('LLM') || upperNote.includes('LLAMA');
-      const isBERT = upperNote.includes('BERT');
-      const isAI = isLLM || isBERT || upperNote.includes('AI');
-      
-      if (isAI) { 
-        if (isBERT) type = 'BERT';
-        else type = 'LLM';
-        isVerified = upperNote.includes('VERIFIED'); 
-      } 
-      else { type = 'SME'; }
-    }
-    setLlmPopup({ visible: true, x, y, text, start, end, type, label, isVerified, note });
-    if (label) setSelectedPopupLabel(label);
-  };
-
-  const onClickLinkAnnotation = (a: Annotation) => {
+  const handleUnverifyAnnotation = async (start: number, end: number, labelStr: string) => {
     if (isReadOnly) return;
-    const targetType = currentRelationType || 'latency';
-    if (currentAnnotationRelation?.textContext.start === a.textContext.start) {
-      setCurrentAnnotationRelation(null);
-      setCurrentRelationType('');
-    } else {
-      setCurrentAnnotationRelation(a);
-      setCurrentRelationType(targetType);
+    const humanAnno = doc.annotations.find(a => a.textContext.start === start && a.textContext.end === end && (a.label.toUpperCase() === labelStr.toUpperCase() || (labelNormalizer[a.label.toUpperCase()] || a.label.toUpperCase()) === labelStr.toUpperCase()) && a.note === userRole);
+    const aiAnno = doc.annotations.find(a => a.textContext.start === start && a.textContext.end === end && (a.label.toUpperCase() === labelStr.toUpperCase() || (labelNormalizer[a.label.toUpperCase()] || a.label.toUpperCase()) === labelStr.toUpperCase()) && (a.note.toUpperCase().includes('LLM') || a.note.toUpperCase().includes('AI') || a.note.toLowerCase().includes('llama') || a.note.toLowerCase().includes('bert') || a.note.toUpperCase().includes('IMPORTED')) && a.note.toUpperCase().includes('VERIFIED'));
+
+    try {
+        if (aiAnno && aiAnno.id) {
+          const revertedAiNote = aiAnno.note.split(' | VERIFIED BY')[0];
+          await updateAnnotation(aiAnno.id, { note: revertedAiNote });
+          const revertedAi = { ...aiAnno, note: revertedAiNote };
+          dispatch({ type: DocActionTypes.UPDATE_ANNOTATION, payload: { annotation: revertedAi } });
+        }
+        if (humanAnno && humanAnno.id) {
+          await deleteAnnotation(humanAnno.id);
+          dispatch({ type: DocActionTypes.REMOVE_ANNOTATION, payload: { annotation: humanAnno } });
+        }
+        setLlmPopup(prev => ({ ...prev, visible: false }));
+        setSelectedTermContext(null);
+    } catch (err) {
+      console.error("Unverify error:", err);
     }
   };
 
   useEffect(() => {
-    if (overrideId) {
-      getCaseById(overrideId).then(data => {
-        if (!data) return;
-        dispatch({ type: DocActionTypes.LOAD, payload: { ...data, fileName: overrideId } });
-      });
-    }
-  }, [overrideId]);
-
-  useEffect(() => {
-    const labels = new Set(['DRUG', 'AE', 'MEDICAL HISTORY', 'LAB', 'TEMPORAL', 'AGE', 'SEX', 'COD', 'DIAGNOSTIC']);
-    doc.annotations.forEach(a => labels.add(a.label.toUpperCase()));
-    const arr = Array.from(labels).sort();
-    setAnnotationOptions(Object.fromEntries(arr.map(l => [l, l])));
-    setOptionColors(generateOptionColors(arr));
-    setActiveLabelFilters(prev => {
-      const newFilters = [...prev];
-      let changed = false;
-      arr.forEach(l => { if (!newFilters.includes(l)) { newFilters.push(l); changed = true; } });
-      return changed ? newFilters : prev;
-    });
-  }, [doc.annotations]);
-
-  useEffect(() => {
-    const terms = doc.annotations
-      .filter(a => {
-        const normalized = labelNormalizer[a.label.toUpperCase()] || a.label.toUpperCase();
-        return TEMPORAL_LABELS.has(normalized);
-      })
-      .sort((a, b) => (a.textContext.start || 0) - (b.textContext.start || 0));
-    setTemporalTerms(terms);
-  }, [doc.annotations]);
-
-  useEffect(() => {
-    const loadGuidelines = async () => {
+    async function loadGuidelines() {
       try {
         const res = await fetch(`${API_BASE}/annotation-guidelines`);
-        if (!res.ok) throw new Error('Guidelines fetch failed');
-        const data: AnnotationGuideline[] = await res.json();
-        setAnnotationGuidelines(data);
-      } catch (err) {
-        console.error('Unable to load annotation guidelines', err);
-      }
-    };
+        if (res.ok) setAnnotationGuidelines(await res.json());
+      } catch (err) { console.error("Guidelines load fail:", err); }
+    }
     loadGuidelines();
   }, []);
 
+  // Poll for status updates
+  useEffect(() => {
+    if (!overrideId) return;
+    const interval = setInterval(async () => {
+      const data = await getCaseById(overrideId);
+      if (data && (data.status.llm_status === 'Done' || data.status.bert_status === 'Done')) {
+         // If a tool just finished, reload everything
+         if (doc.status.llm_status === 'working' && data.status.llm_status === 'Done') {
+             dispatch({ type: DocActionTypes.LOAD_DOC, payload: data as LoadDocAction['payload'] });
+         }
+         if (doc.status.bert_status === 'working' && data.status.bert_status === 'Done') {
+             dispatch({ type: DocActionTypes.LOAD_DOC, payload: data as LoadDocAction['payload'] });
+         }
+      }
+    }, 3000);
+    return () => clearInterval(interval);
+  }, [overrideId, doc.status]);
+
   return (
     <div className="app-container h-screen overflow-hidden flex flex-col bg-slate-50 text-slate-900 antialiased">
-      
+
       {/* --- Unified Header --- */}
       <header className="bg-white border-b border-slate-200 h-14 px-6 flex items-center justify-between shadow-sm z-30 shrink-0">
         <div className="flex items-center gap-8">
@@ -658,21 +569,13 @@ export default function Annotate_Panel({ overrideProject, overrideId}: Props) {
             <h1 className="text-sm font-bold text-slate-900 tracking-widest uppercase">LLM4AE</h1>
           </div>
 
-              <div className="h-6 w-px bg-slate-200"></div>
-
-              <div className="flex items-center gap-4">
-                <button 
-                  onClick={async () => {
-                    try {
-                      await handleExport();
-                    } catch (error) {
-                      console.error("Export failed:", error);
-                    }
-                  }} 
-                  className="flex items-center gap-2 px-3 py-1.5 hover:bg-slate-50 rounded text-[11px] font-bold text-slate-500 uppercase tracking-wider transition-colors"
-                >
-                  <IconExport /> Export
-                </button>
+          <div className="flex items-center gap-4">
+            <button
+                onClick={handleExport}
+                className="flex items-center gap-2 px-3 py-1.5 hover:bg-slate-50 rounded text-[11px] font-bold text-slate-500 uppercase tracking-wider transition-colors"
+            >
+                <IconExport /> Export
+            </button>
             {!isReadOnly && (
               <button onClick={() => handleSave(false)} className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded text-[11px] font-bold uppercase tracking-wider shadow-sm transition-colors">
                 <IconSave /> Save
@@ -682,160 +585,170 @@ export default function Annotate_Panel({ overrideProject, overrideId}: Props) {
         </div>
 
         <div className="flex items-center gap-6">
-          {/* User Display */}
-          {isLoggedIn && currentUser && (
+          {/* User Display - Hide in Temporary Mode */}
+          {isLoggedIn && currentUser && !isTemporaryMode && (
             <div className="flex items-center gap-3 border-r border-slate-200 pr-6">
-              <div className="w-7 h-7 rounded bg-slate-800 border border-slate-700 flex items-center justify-center text-[10px] font-bold text-slate-300">
-                {currentUser.username.charAt(0).toUpperCase()}
+              <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center border border-slate-200 overflow-hidden">
+                <span className="text-xs font-bold text-slate-500">{currentUser.username?.[0].toUpperCase()}</span>
               </div>
-              <div className="text-right">
-                <p className="text-[10px] font-bold text-slate-900 leading-none uppercase">{currentUser.username === 'guest' ? 'Anonymous' : (currentUser.full_name || currentUser.username)}</p>
-                <p className="text-[8px] text-slate-400 font-bold uppercase tracking-tighter mt-0.5">{currentUser.username === 'guest' ? 'Guest' : 'Annotator'}</p>
+              <div className="flex flex-col">
+                <span className="text-[10px] font-bold text-slate-900 leading-none">{currentUser.full_name || currentUser.username}</span>
+                <span className="text-[9px] font-medium text-slate-400 mt-0.5 uppercase tracking-tighter">{isReadOnly ? 'Viewer' : 'Expert Annotator'}</span>
               </div>
             </div>
           )}
 
-          <button onClick={handleFinish} className="flex items-center gap-2 px-4 py-1.5 border border-slate-200 hover:bg-red-50 hover:text-red-600 rounded text-[11px] font-bold text-slate-500 uppercase tracking-wider transition-all">
-            <IconExit /> {isReadOnly ? 'Close' : 'Exit'}
+          <button onClick={() => window.close()} className="flex items-center gap-2 px-3 py-1.5 hover:bg-red-50 text-red-600 hover:text-red-700 rounded text-[11px] font-bold uppercase tracking-wider transition-all">
+            <IconExit /> Close
           </button>
         </div>
       </header>
 
-      {/* --- Main Area --- */}
-      <div className="flex-1 flex min-h-0 overflow-hidden">
-        
+      <div className="flex-1 flex overflow-hidden">
         {/* Left Sidebar */}
-        <aside className="w-[400px] flex flex-col border-r border-slate-200 bg-white shrink-0 shadow-sm overflow-hidden">
-          <div className="p-4 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <button onClick={() => setShowRejected(!showRejected)} className={`text-[9px] font-bold uppercase px-2 py-1 rounded transition-colors ${showRejected ? 'bg-red-50 text-red-600' : 'text-slate-400 hover:text-slate-600'}`}>
-                {showRejected ? 'Hiding Rejected' : 'Show Rejected'}
-              </button>
+        <aside className="w-80 bg-white border-r border-slate-200 flex flex-col shrink-0">
+          <div className="p-5 border-b border-slate-100 bg-slate-50/50">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Document</h2>
+              <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-tighter ${isReadOnly ? 'bg-amber-100 text-amber-700' : 'bg-blue-100 text-blue-700'}`}>
+                {isReadOnly ? 'Read Only' : 'Editing'}
+              </span>
             </div>
-          </div>
-
-          <div className="flex-[3] overflow-hidden border-b border-slate-100">
-            {relationshipBuilderMode ? (
-              <div className="flex flex-col h-full p-4">
-                <div className="flex justify-between items-center mb-4 gap-3">
-                  {currentAnnotationRelation && (
-                    <div className="text-[10px] font-bold text-blue-600 px-3 py-1.5 rounded bg-blue-50 border border-blue-100 uppercase tracking-tight">
-                      Active: {currentAnnotationRelation.textContext.text}
-                    </div>
-                  )}
-                </div>
-                <div className="flex-1 overflow-y-auto">
-                  <RelationshipBuilderPanel
-                    annotations={filteredLinkAnnotations}
-                    handleSelectCell={(a, type) => {
-                      if (isReadOnly) return;
-                      setSelectedTermContext(null);
-                      if (currentAnnotationRelation?.textContext.start === a.textContext.start && currentRelationType === type) {
-                        setCurrentAnnotationRelation(null);
-                        setCurrentRelationType('');
-                      } else {
-                        setCurrentAnnotationRelation(a);
-                        setCurrentRelationType(type);
-                      }
-                    }}
-                    currentAnnotation={currentAnnotationRelation}
-                    currentRelationshipType={currentRelationType}
-                    isReadOnly={isReadOnly}
-                    temporalTerms={temporalTerms}
-                    currentAnnotationIsPrimary={isPrimaryEntitySelected}
-                    selectedTermContext={selectedTermContext}
-                  />
-                </div>
+            <div className="space-y-1">
+              <div className="text-sm font-bold text-slate-900 truncate">CASE ID: {overrideId || 'None'}</div>
+              <div className="text-[10px] font-medium text-slate-400 uppercase tracking-tight flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 bg-slate-300 rounded-full"></span>
+                Project: {overrideProject || 'tempo'}
               </div>
-            ) : (
-              <AnnotationPanel
-                annotations={visibleAnnotations}
-                annotationOptions={annotationOptions}
-                setAnnotationOptions={setAnnotationOptions}
-                optionColors={optionColors}
-                setOptionColors={setOptionColors}
-                handleRemoveAnnotation={(a) => !isReadOnly && dispatch({ type: DocActionTypes.REMOVE_ANNOTATION, payload: { annotation: a } })}
-                activeLabelFilters={activeLabelFilters}
-                setActiveLabelFilters={setActiveLabelFilters}
-                selectedTermContext={selectedTermContext}
-                setSelectedTermContext={setSelectedTermContext}
-                handleExtendMatch={() => {}}
-                isReadOnly={isReadOnly}
-                pageData={currentPageData || ""}
-              />
+            </div>
+            
+            {/* AI Tools */}
+            {!isReadOnly && (
+              <div className="mt-5 grid grid-cols-2 gap-2">
+                <button
+                  onClick={handleLlmAnnotate}
+                  disabled={isProcessingLlm || doc.status.llm_status === 'working'}
+                  className="flex items-center justify-center gap-2 py-2 px-3 rounded bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-[10px] font-bold uppercase tracking-wider transition-all disabled:opacity-50 border border-indigo-100"
+                >
+                  <IconSparkles /> vLLM
+                </button>
+                <button
+                  onClick={handleBertAnnotate}
+                  disabled={isProcessingBert || doc.status.bert_status === 'working'}
+                  className="flex items-center justify-center gap-2 py-2 px-3 rounded bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-[10px] font-bold uppercase tracking-wider transition-all disabled:opacity-50 border border-emerald-100"
+                >
+                  <IconRobot /> BERT
+                </button>
+              </div>
             )}
           </div>
-          
-          <div className="flex-[2] overflow-hidden bg-slate-50/20">
-            <ActionHistoryPanel 
-              history={doc.actionHistory}
-              optionColors={optionColors}
-              onUndo={(id) => !isReadOnly && dispatch({ type: DocActionTypes.UNDO_ACTION, payload: { actionId: id } })}
-            />
+
+          <div className="flex-1 overflow-hidden flex flex-col">
+            <div className="flex border-b border-slate-100">
+               <button className="flex-1 py-3 text-[10px] font-bold text-blue-600 uppercase tracking-widest border-b-2 border-blue-600">Annotations</button>
+               <button className="flex-1 py-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest hover:text-slate-600">History</button>
+            </div>
+            <div className="flex-1 overflow-y-auto">
+                <AnnotationPanel
+                  annotations={doc.annotations}
+                  currentPage={doc.currentPageIndex}
+                  optionColors={optionColors}
+                  onFilterChange={setActiveLabelFilters}
+                  activeLayers={activeLayers}
+                />
+            </div>
           </div>
         </aside>
 
-        <div className="flex flex-1 min-w-0 overflow-hidden">
+        {/* Main Workspace */}
+        <div className="flex-1 flex flex-col overflow-hidden relative">
+          {/* Sub-Header: Toolbar */}
+          <div className="h-12 bg-white border-b border-slate-200 px-6 flex items-center justify-between z-20 shrink-0">
+            <div className="flex items-center gap-8">
+              <div className="flex items-center gap-1.5">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Metadata:</span>
+                <div className="flex gap-1">
+                  {availableMetaEntries.map(entry => (
+                    <button
+                      key={entry.key}
+                      onClick={() => setMetaView(metaView === entry.key ? 'none' : entry.key)}
+                      className={`px-3 py-1 rounded text-[9px] font-bold uppercase transition-all ${metaView === entry.key ? 'bg-blue-600 text-white shadow-sm' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}
+                    >
+                      {entry.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              
+              <div className="h-4 w-px bg-slate-200"></div>
 
-          {/* Center Canvas */}
-          <main className="flex-1 flex flex-col min-h-0 overflow-hidden bg-white">
-            <div className="px-8 py-3 border-b border-slate-100 bg-white shrink-0">
-              <div className="flex flex-wrap items-center gap-4 sm:justify-between">
-                <div className="flex flex-wrap items-center gap-3 min-w-0 flex-1">
-                  <div className="flex items-center gap-3 bg-slate-100 rounded-full px-3 py-1 shrink-0">
+              <div className="flex items-center gap-4">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Mode:</span>
+                  <div className="flex bg-slate-100 p-0.5 rounded-full">
                     <button onClick={() => setRelationshipBuilderMode(false)} className={`px-3 py-0.5 rounded-full text-[10px] font-bold transition-all ${!relationshipBuilderMode ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400'}`}>STANDARD</button>
                     <button onClick={() => setRelationshipBuilderMode(true)} className={`px-3 py-0.5 rounded-full text-[10px] font-bold transition-all ${relationshipBuilderMode ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400'}`}>LINK MODE</button>
                   </div>
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Layers:</span>
-                    <div className="flex bg-slate-100 p-0.5 rounded-full gap-0.5">
-                      {['Human', 'LLM', 'BERT'].map(layer => (
-                      <button
-                        key={layer}
-                        onClick={() => handleLayerToggle(layer)}
-                        className={`px-3 py-0.5 rounded-full text-[9px] font-bold uppercase transition-all ${activeLayers.includes(layer) ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
-                      >
-                        {layer}
-                      </button>
-                    ))}
-                    </div>
-                  </div>
                 </div>
                 <div className="flex items-center gap-1.5">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Theme:</span>
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Layers:</span>
                   <div className="flex bg-slate-100 p-0.5 rounded-full gap-0.5">
-                    {['light', 'dark', 'soft'].map(t => (
+                    {['Human', 'LLM', 'BERT'].map(layer => (
                     <button
-                      key={t}
-                      onClick={() => setTheme(t as any)}
-                      className={`px-3 py-0.5 rounded-full text-[9px] font-bold uppercase transition-all ${theme === t ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                      key={layer}
+                      onClick={() => handleLayerToggle(layer)}
+                      className={`px-3 py-0.5 rounded-full text-[9px] font-bold uppercase transition-all ${activeLayers.includes(layer) ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
                     >
-                      {t}
+                      {layer}
                     </button>
                   ))}
                   </div>
                 </div>
               </div>
-              <div className="flex flex-wrap items-center gap-1.5 mt-3">
-                <span className="text-[10px] font-bold text-slate-400 uppercase mr-1">Data:</span>
-                {availableMetaEntries.length > 0 ? (
-                  availableMetaEntries.map(entry => (
-                    <button
-                      key={entry.key}
-                      onClick={() => setMetaView(metaView === entry.key ? 'none' : entry.key)}
-                      className={`px-2 py-0.5 rounded text-[10px] font-bold transition-all border ${metaView === entry.key ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300'}`}
-                    >
-                      {entry.label}
-                    </button>
-                  ))
-                ) : (
-                  <span className="text-[9px] font-black uppercase tracking-[0.3em] text-slate-500">No metadata</span>
-                )}
-              </div>
-              <div className="text-[10px] font-bold text-slate-300 uppercase tracking-tighter whitespace-nowrap mt-3">
-                Record ID: {overrideId || 'Ad-hoc'}
-              </div>
             </div>
+
+            <div className="flex items-center gap-4">
+                <div className="flex items-center gap-1.5">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Theme:</span>
+                    <div className="flex bg-slate-100 p-0.5 rounded-full gap-0.5">
+                        {['light', 'dark', 'soft'].map(t => (
+                        <button
+                            key={t}
+                            onClick={() => setTheme(t as any)}
+                            className={`px-3 py-0.5 rounded-full text-[9px] font-bold uppercase transition-all ${theme === t ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                        >
+                            {t}
+                        </button>
+                        ))}
+                    </div>
+                </div>
+            </div>
+          </div>
+
+          <main className="flex-1 flex flex-col overflow-hidden">
+            {/* Metadata Overlay */}
+            {metaView !== 'none' && (
+              <div className="absolute top-0 left-0 right-0 max-h-[40%] bg-white border-b border-slate-200 shadow-xl z-10 overflow-y-auto animate-in slide-in-from-top duration-300">
+                <div className="p-6">
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-xs font-bold text-slate-900 uppercase tracking-widest">
+                      {availableMetaEntries.find(e => e.key === metaView)?.label} Information
+                    </h3>
+                    <button onClick={() => setMetaView('none')} className="text-slate-400 hover:text-slate-600">
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                    </button>
+                  </div>
+                  <div className="prose prose-slate prose-sm max-w-none">
+                    {(() => {
+                      const entry = availableMetaEntries.find(e => e.key === metaView);
+                      if (!entry) return null;
+                      if (entry.type === 'legacy') return <div dangerouslySetInnerHTML={{ __html: entry.html || '' }} />;
+                      return <pre className="bg-slate-50 p-4 rounded text-[10px] overflow-x-auto">{JSON.stringify(entry.data, null, 2)}</pre>;
+                    })()}
+                  </div>
+                </div>
+              </div>
+            )}
 
             {relationshipBuilderMode ? (
               <div className="flex-1 flex flex-col overflow-hidden">
@@ -857,6 +770,18 @@ export default function Annotate_Panel({ overrideProject, overrideId}: Props) {
                       showTemporalHighlights={relationshipBuilderMode}
                     />
                   </div>
+                </div>
+                <div className="h-48 bg-white border-t border-slate-200 z-10">
+                   <RelationshipBuilderPanel
+                     currentAnnotation={currentAnnotationRelation}
+                     onSelectRelationType={setCurrentRelationType}
+                     activeRelationType={currentRelationType}
+                     onRemoveRelation={(type) => {
+                       if (!currentAnnotationRelation) return;
+                       const updated = { ...currentAnnotationRelation, relationships: { ...currentAnnotationRelation.relationships, [type]: { text: '', page: 0, start: 0, end: 0 } } };
+                       dispatch({ type: DocActionTypes.UPDATE_ANNOTATION, payload: { annotation: updated, historyType: 'verify' } });
+                     }}
+                   />
                 </div>
               </div>
             ) : (
@@ -883,53 +808,19 @@ export default function Annotate_Panel({ overrideProject, overrideId}: Props) {
               </div>
             )}
           </main>
-
-          {/* Metadata Side Panel */}
-          <aside className="w-[360px] shrink-0 flex flex-col border-l border-slate-200 bg-slate-50/60">
-          <div className="px-6 py-5 border-b border-slate-200 flex items-start justify-between gap-3">
-              <div>
-                <p className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-600">Meta Inventory</p>
-                <p className="text-[11px] font-semibold text-slate-800">{activeMetaEntry ? activeMetaEntry.label : 'Select metadata to preview'}</p>
-              </div>
-              <button
-                onClick={() => setMetaView('none')}
-                className="w-8 h-8 rounded-full bg-white text-slate-500 hover:text-slate-900 transition-colors flex items-center justify-center"
-                aria-label="Close metadata panel"
-              >
-                ×
-              </button>
-            </div>
-            <div className="flex-1 overflow-y-auto p-6 space-y-6">
-              {activeMetaEntry ? (
-                <div className="bg-white border border-slate-200 rounded-[2rem] shadow-sm p-5 text-slate-900">
-                  {renderMetaEntryContent(activeMetaEntry)}
-                </div>
-              ) : (
-                <div className="text-sm text-slate-500 uppercase tracking-[0.35em] text-center">
-                  Choose a data source from the top controls
-                </div>
-              )}
-            </div>
-          </aside>
         </div>
+        
+        {/* Right Sidebar - Action History */}
+        <aside className="w-72 bg-white border-l border-slate-200 flex flex-col shrink-0">
+           <div className="p-4 border-b border-slate-100 flex items-center justify-between">
+              <h2 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Action History</h2>
+              <span className="px-2 py-0.5 bg-slate-100 rounded text-[9px] font-bold text-slate-500">{doc.actionHistory.length}</span>
+           </div>
+           <div className="flex-1 overflow-y-auto">
+              <ActionHistoryPanel history={doc.actionHistory} />
+           </div>
+        </aside>
       </div>
-
-      {/* --- Modals & Context --- */}
-      {showFinishConfirm && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
-          <div className="bg-white rounded shadow-2xl max-w-sm w-full p-8 border border-slate-200">
-            <div className="text-center">
-              <h3 className="text-lg font-bold text-slate-900 mb-2 uppercase tracking-tight">Unsaved Session</h3>
-              <p className="text-sm text-slate-500 mb-8 font-medium leading-relaxed">System has detected pending modifications. How would you like to proceed?</p>
-              <div className="grid grid-cols-1 gap-2">
-                <button onClick={() => handleSave(true)} className="bg-blue-600 hover:bg-blue-700 text-white py-2.5 rounded text-xs font-bold uppercase tracking-widest transition-all shadow-md">Commit & Exit</button>
-                <button onClick={() => window.close()} className="bg-white border border-slate-200 hover:bg-red-50 hover:text-red-600 text-slate-500 py-2.5 rounded text-xs font-bold uppercase tracking-widest transition-all">Discard & Exit</button>
-                <button onClick={() => setShowFinishConfirm(false)} className="mt-4 text-[10px] font-bold text-slate-400 hover:text-slate-600 uppercase tracking-widest">Back to Review</button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
 
       {unifiedContextMenu.visible && !isReadOnly && (
         <UnifiedContextMenuDisplay
@@ -945,7 +836,6 @@ export default function Annotate_Panel({ overrideProject, overrideId}: Props) {
              dispatch({ type: DocActionTypes.UPDATE_ANNOTATION, payload: { annotation: updated, historyType: 'verify' } });
              setUnifiedContextMenu(prev => ({ ...prev, visible: false }));
           }}
-
           closeContextMenu={() => setUnifiedContextMenu(prev => ({ ...prev, visible: false }))}
         />
       )}

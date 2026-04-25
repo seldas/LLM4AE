@@ -21,8 +21,8 @@ export default function AnnoToolClient() {
       return;
     }
     
-    if (!project || !id) return;
-    setCurrProject(project);
+    if (!id) return;
+    setCurrProject(project || ''); // project is null if not provided
     setCurrId(id);
     setReady(true);
   }, [project, id, router]);
@@ -31,7 +31,7 @@ export default function AnnoToolClient() {
 
   return (
     <Annotate_Panel
-      overrideProject={currProject}
+      overrideProject={currProject || undefined}
       overrideId={currId}
     />
   );

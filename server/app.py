@@ -645,21 +645,23 @@ def annotate_icsr_intake():
             "full_data": json.dumps(case_data)
         }
         
-        # 1. Ensure project exists
-        project_id = create_project("AskMyFAERS_Integration", description="Integrated ICSR Cases")
+        # 1. Determine project name with prefix
+        raw_project_name = case_data.get("project_name") or "Integration"
+        project_name = f"AskMyFAERS_{raw_project_name}"
         
-        # 2. Upsert Case (Will keep same ID if case_num/ver_num match)
+        # 2. Ensure project exists
+        project_id = create_project(project_name, description="Integrated ICSR Cases")
+        
+        # 3. Upsert Case (Will keep same ID if case_num/ver_num match)
         case_id = upsert_case(case_num, ver_num, attrs)
         
-        # 3. Link to Project
+        # 4. Link to Project
         link_case_to_project(project_id, case_id)
-        
-        # Note: We NO LONGER delete or add simple annotations here. 
-        # Existing annotations in llm4ae.db for this case_id will be loaded by the UI automatically.
         
         frontend_url = os.environ.get("FRONTEND_URL", "https://ncshpc400.fda.gov")
         base_path = os.environ.get("FRONTEND_BASE_PATH", "/annotator")
-        return redirect(f"{frontend_url}{base_path}/annotate_icsr?id={case_id}")
+        # Redirect to /annotate instead of /annotate_icsr
+        return redirect(f"{frontend_url}{base_path}/annotate?id={case_id}&project={project_name}")
     except Exception as e:
         logging.error(f"Error in ICSR intake: {e}")
         return f"Intake Error: {str(e)}", 500
