@@ -158,19 +158,32 @@ function PageDisplay({
     if (!container) return;
     const containerRect = container.getBoundingClientRect();
     const boxes: any[] = [];
-    annotations.forEach((annotation) => {
+    
+    console.log(`Computing highlights for ${annotations.length} annotations. Container rect:`, containerRect);
+
+    annotations.forEach((annotation, annoIdx) => {
       const { start, end } = annotation.textContext;
-      if (typeof start !== 'number' || typeof end !== 'number') return;
+      if (typeof start !== 'number' || typeof end !== 'number') {
+        console.warn(`Annotation ${annoIdx} has invalid offsets:`, annotation.textContext);
+        return;
+      }
       const label = annotation.label.toUpperCase();
       if (!disableFilter && !activeLabelFilters.includes(label)) return;
+      
       const startInfo = getNodeAndOffsetForIndex(container, start);
       const endInfo = getNodeAndOffsetForIndex(container, end);
+      
       if (startInfo && endInfo) {
         try {
           const range = document.createRange();
           range.setStart(startInfo.node, startInfo.offset);
           range.setEnd(endInfo.node, endInfo.offset);
           const rects = range.getClientRects();
+          
+          if (rects.length === 0) {
+            console.warn(`Annotation ${annoIdx} ("${annotation.textContext.text}") produced 0 rects at ${start}-${end}`);
+          }
+
           for (let idx = 0; idx < rects.length; idx++) {
             const r = rects[idx];
             boxes.push({
@@ -186,9 +199,15 @@ function PageDisplay({
               annotationRef: annotation
             });
           }
-        } catch (e) {}
+        } catch (e) {
+          console.error(`Error creating range for annotation ${annoIdx}:`, e);
+        }
+      } else {
+        console.warn(`Could not find nodes for offsets ${start}-${end} in annotation ${annoIdx}. StartInfo:`, startInfo, "EndInfo:", endInfo);
       }
     });
+    
+    console.log(`Generated ${boxes.length} highlight boxes.`);
     setHighlightBoxes(boxes);
   }, [annotations, activeLabelFilters, optionColors, disableFilter]);
 
