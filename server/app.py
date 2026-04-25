@@ -724,7 +724,9 @@ def get_case_by_id(case_id):
         # Get count of annotations
         conn = get_db_connection()
         count_res = conn.execute("SELECT COUNT(*) as count FROM annotations WHERE case_id = ?", (case_id,)).fetchone()
-        final_case['total_annotations'] = count_res['count']
+        total_in_db = count_res['count']
+        final_case['total_annotations'] = total_in_db
+        logging.info(f"Case {case_id}: total annotations in DB = {total_in_db}")
         conn.close()
 
         # Load first chunk of structured annotations (e.g., first 500)
@@ -732,6 +734,7 @@ def get_case_by_id(case_id):
         offset = request.args.get('offset', default=0, type=int)
         
         annotations = get_annotations(case_id, limit=limit, offset=offset)
+        logging.info(f"Case {case_id}: get_annotations returned {len(annotations)} formatted rows")
         
         # Map DB structure to Frontend interface structure
         formatted_annotations = []
@@ -752,6 +755,14 @@ def get_case_by_id(case_id):
                     ann_dict['relationships'] = {}
             else:
                 ann_dict['relationships'] = {}
+
+            # Parse adjudication if it exists as JSON string
+            if ann_dict.get('adjudication'):
+                try:
+                    ann_dict['adjudication'] = json.loads(ann_dict['adjudication'])
+                except:
+                    # If it's not JSON, keep as is or wrap
+                    pass
                 
             formatted_annotations.append(ann_dict)
             

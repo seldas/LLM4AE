@@ -296,8 +296,8 @@ def get_annotations(case_id, limit=None, offset=None):
                 adj.updated_at as adj_updated_at,
                 adjudicator.full_name as adj_user_name
             FROM annotations a 
-            JOIN users u ON a.user_id = u.id 
-            JOIN roles r ON u.role_id = r.id 
+            LEFT JOIN users u ON a.user_id = u.id 
+            LEFT JOIN roles r ON u.role_id = r.id 
             LEFT JOIN adjudications adj ON a.id = adj.annotation_id
             LEFT JOIN users adjudicator ON adj.user_id = adjudicator.id
             WHERE a.case_id = ?
