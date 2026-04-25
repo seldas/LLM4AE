@@ -96,7 +96,7 @@ export default function Annotate_Panel({ overrideProject, overrideId}: Props) {
     const meta = doc.meta || {};
     const entries: MetaEntry[] = [];
     META_DATA_OPTIONS.forEach(({ key, label }) => {
-      const raw = meta[key];
+      const raw = (meta as any)[key];
       if (key === 'demographic') {
         if (Array.isArray(raw) && raw.length) {
           entries.push({ key, label, type: 'demographic-structured', data: raw });

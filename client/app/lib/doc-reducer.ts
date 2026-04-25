@@ -18,6 +18,7 @@ export interface DocState {
     currentPageIndex: number;
     annotations: Annotation[];
     status: CaseMetadata;
+    meta: Record<string, any>;
     highlightedTerms: HighlightedTerms;
     actionHistory: ActionRecord[];
 };
@@ -34,6 +35,7 @@ export const initialDocState: DocState = {
         bert_status: 'idle',
         review_status: 'pending'
     },
+    meta: {},
     highlightedTerms: {},
     actionHistory: []
 }
@@ -226,6 +228,7 @@ export function docReducer(state: DocState, action: DocActions ) {
                     bert_status: action.payload.status?.bert_status || 'idle',
                     review_status: action.payload.status?.review_status || 'pending',
                 },
+                meta: action.payload.meta || {},
                 highlightedTerms: {},
                 actionHistory: [],
             };

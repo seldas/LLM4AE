@@ -110,33 +110,27 @@ def mode_AE_annotation(query: str, prompt_ner: str = prompt_ner_json):
     logging.info(f"Validated {len(validated)} spans from LLM")
     return obj.get("annotated_text", ""), _dedupe_and_resolve_overlaps(validated)
 
-def run_llm_annotation(file_path=None, doc_id=None):
+def run_llm_annotation(doc_id):
     """
-    Main annotation pipeline. Supports both legacy file path and new doc_id.
+    Main annotation pipeline.
     """
     import logging
     logging.info(f"Starting LLM Annotation for doc_id={doc_id}")
     
-    if doc_id:
-        conn = get_db_connection()
-        doc = conn.execute('SELECT pages, meta FROM cases WHERE id = ?', (doc_id,)).fetchone()
-        if not doc: return False, "Doc not found"
-        pages = json.loads(doc['pages'])
-        meta = json.loads(doc['meta']) if doc['meta'] else {}
-        narrative = pages[0]
-        
-        # Determine AI user
-        ai_user_id = get_user_by_note('LLM') or get_user_by_note('Llama4') or 6
-        ai_note = "Llama4"
+    conn = get_db_connection()
+    doc = conn.execute('SELECT pages, meta FROM cases WHERE id = ?', (doc_id,)).fetchone()
+    if not doc: 
         conn.close()
-    else:
-        # Legacy file path logic
-        with open(file_path, 'r', encoding='utf-8') as f:
-            data = json.load(f)
-        narrative = data['pages'][0]
-        meta = data.get('meta', {})
-        ai_user_id = None
-        ai_note = "Llama4"
+        return False, "Doc not found"
+        
+    pages = json.loads(doc['pages'])
+    meta = json.loads(doc['meta']) if doc['meta'] else {}
+    narrative = pages[0]
+    
+    # Determine AI user
+    ai_user_id = get_user_by_note('LLM') or get_user_by_note('Llama4') or 6
+    ai_note = "Llama4"
+    conn.close()
 
     chunks = _split_text_by_token_budget(narrative, MAX_INPUT_TOKENS)
     llm_annotations = []
