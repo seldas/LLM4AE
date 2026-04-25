@@ -212,7 +212,7 @@ export default function AdjudicateClient() {
                 activeLabelFilters={Array.from(new Set(humanAnnotations.map(a => a.label.toUpperCase())))}
                 disableFilter={true}
                 annotationSet="SME"
-                selectedTermContext={selectedAnn ? { text: selectedAnn.textContext.text, start: selectedAnn.textContext.start, end: selectedAnn.textContext.end } : null}
+                selectedTermContext={selectedAnn ? { text: selectedAnn.textContext.text, start: selectedAnn.textContext.start ?? 0, end: selectedAnn.textContext.end ?? 0 } : null}
                 setSelectedTermContext={(ctx) => {
                   if (ctx) {
                     const found = humanAnnotations.find(a => a.textContext.start === ctx.start);
