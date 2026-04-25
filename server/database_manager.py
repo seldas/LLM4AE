@@ -232,7 +232,7 @@ def get_case(case_id=None, project_id=None, filename=None):
         return res
     finally: conn.close()
 
-def get_annotations(case_id):
+def get_annotations(case_id, limit=None, offset=None):
     conn = get_db_connection()
     try:
         # Join with adjudications table to get structured data
@@ -251,8 +251,17 @@ def get_annotations(case_id):
             LEFT JOIN adjudications adj ON a.id = adj.annotation_id
             LEFT JOIN users adjudicator ON adj.user_id = adjudicator.id
             WHERE a.case_id = ?
+            ORDER BY a.start_offset ASC
         '''
-        return conn.execute(query, (case_id,)).fetchall()
+        params = [case_id]
+        if limit is not None:
+            query += " LIMIT ?"
+            params.append(limit)
+        if offset is not None:
+            query += " OFFSET ?"
+            params.append(offset)
+            
+        return conn.execute(query, params).fetchall()
     finally: conn.close()
 
 def get_user_by_note(note):

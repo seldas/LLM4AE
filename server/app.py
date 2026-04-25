@@ -713,13 +713,35 @@ def get_case_by_id(case_id):
         
         final_case = dict(case)
         
-        # Load structured annotations
-        annotations = get_annotations(case_id)
+        # Get count of annotations
+        conn = get_db_connection()
+        count_res = conn.execute("SELECT COUNT(*) as count FROM annotations WHERE case_id = ?", (case_id,)).fetchone()
+        final_case['total_annotations'] = count_res['count']
+        conn.close()
+
+        # Load first chunk of structured annotations (e.g., first 500)
+        limit = request.args.get('limit', default=500, type=int)
+        offset = request.args.get('offset', default=0, type=int)
+        
+        annotations = get_annotations(case_id, limit=limit, offset=offset)
         final_case['annotations'] = [dict(a) for a in annotations]
         
         return jsonify(final_case), 200
     except Exception as e:
         logging.error(f"Error getting case by ID: {e}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/case/<int:case_id>/annotations", methods=["GET"])
+@cross_origin()
+def get_case_annotations(case_id):
+    try:
+        limit = request.args.get('limit', default=500, type=int)
+        offset = request.args.get('offset', default=0, type=int)
+        
+        annotations = get_annotations(case_id, limit=limit, offset=offset)
+        return jsonify([dict(a) for a in annotations]), 200
+    except Exception as e:
+        logging.error(f"Error getting annotations: {e}")
         return jsonify({"error": str(e)}), 500
 
 @app.route("/api/export_icsr/<int:case_id>", methods=["GET"])

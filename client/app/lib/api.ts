@@ -23,7 +23,10 @@ export const getCaseById = async (id: string) => {
     const response: AxiosResponse = await client.get(`/case/${id}`);
     const data: any = response.data;
 
-    if (data && data.full_data) {
+    // Prioritize structured annotations from DB if present
+    if (data && data.annotations && Array.isArray(data.annotations)) {
+      // Annotations are already there from the DB
+    } else if (data && data.full_data) {
       try {
         const fullData = JSON.parse(data.full_data);
         data.annotations = fullData.annotations || [];
@@ -114,3 +117,16 @@ export const deleteAnnotation = async (id: number) => {
     throw error;
   }
 };
+
+export const getCaseAnnotations = async (caseId: number, limit = 500, offset = 0) => {
+  try {
+    const response: AxiosResponse = await client.get(`/case/${caseId}/annotations`, {
+      params: { limit, offset }
+    });
+    return response.data as Annotation[];
+  } catch (error) {
+    console.error('Error loading annotations:', error);
+    throw error;
+  }
+};
+

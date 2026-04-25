@@ -28,7 +28,7 @@ This document summarizes the progress and remaining tasks for migrating the SCAT
 - [x] **Audit Trail:** Create a `history_log` table in the database to track every incremental change (who changed what and when) for regulatory compliance.
 
 ### **Performance & Scalability**
-- [ ] **Lazy Loading:** For very long narratives, implement offset-based loading for annotations to keep the UI responsive.
+- [x] **Lazy Loading:** For very long narratives, implement offset-based loading for annotations to keep the UI responsive.
 - [ ] **Websockets:** Replace 3-second polling with Websockets (Socket.io) for "Done" notifications from AI workers to provide instant UI refreshes.
 
 ### **Data Quality**

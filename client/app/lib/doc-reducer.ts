@@ -57,6 +57,12 @@ export enum DocActionTypes {
     UNDO_ACTION = "UNDO_ACTION",
     COMMIT_HISTORY = "COMMIT_HISTORY",
     SYNC_ANNOTATION_ID = "SYNC_ANNOTATION_ID",
+    APPEND_ANNOTATIONS = "APPEND_ANNOTATIONS",
+};
+
+export interface APPEND_ANNOTATIONS_Action {
+    type: DocActionTypes.APPEND_ANNOTATIONS;
+    payload: { annotations: Annotation[] }
 };
 
 export interface SYNC_ANNOTATION_ID_Action {
@@ -161,12 +167,24 @@ export type DocActions =
     AddRelationDocAction |
     ChangeVerificationDocAction |
     UndoActionDocAction |
-    CommitHistoryDocAction
+    CommitHistoryDocAction |
+    APPEND_ANNOTATIONS_Action
     ;
 
 
 export function docReducer(state: DocState, action: DocActions ) {
     switch (action.type) {
+        case DocActionTypes.APPEND_ANNOTATIONS: {
+            // Filter out any annotations that are already in the state (by ID if available, otherwise by context)
+            const existingIds = new Set(state.annotations.map(a => a.id).filter(id => id !== undefined));
+            const newAnnotations = action.payload.annotations.filter(a => !existingIds.has(a.id));
+            
+            return {
+                ...state,
+                annotations: [...state.annotations, ...newAnnotations]
+            };
+        };
+
         case DocActionTypes.CLEAR: {
             return {
                 ...initialDocState

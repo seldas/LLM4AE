@@ -10,7 +10,7 @@ import {
   TextContext,
   AnnotationGuideline
 } from '../lib/interfaces';
-import { getHistoryFile, getCaseById, createAnnotation, updateAnnotation, deleteAnnotation } from '../lib/api';
+import { getHistoryFile, getCaseById, createAnnotation, updateAnnotation, deleteAnnotation, getCaseAnnotations } from '../lib/api';
 import {  
   escapeRegExp,
   generateOptionColors,
@@ -179,7 +179,19 @@ export default function Annotate_Panel({ overrideProject, overrideId}: Props) {
       if (!overrideId) return;
       const data = await getCaseById(overrideId);
       if (data) {
-        dispatch({ type: DocActionTypes.LOAD_DOC, payload: data as LoadDocAction['payload'] });
+        dispatch({ type: DocActionTypes.LOAD, payload: data as LoadDocAction['payload'] });
+        
+        // Lazy load more annotations if total_annotations > initially loaded (500)
+        if (data.total_annotations > 500) {
+          const total = data.total_annotations;
+          const limit = 500;
+          for (let offset = 500; offset < total; offset += limit) {
+            const moreAnnos = await getCaseAnnotations(parseInt(overrideId), limit, offset);
+            if (moreAnnos) {
+              dispatch({ type: DocActionTypes.APPEND_ANNOTATIONS, payload: { annotations: moreAnnos } });
+            }
+          }
+        }
       }
     }
     loadData();
@@ -548,10 +560,10 @@ export default function Annotate_Panel({ overrideProject, overrideId}: Props) {
       if (data && (data.status.llm_status === 'Done' || data.status.bert_status === 'Done')) {
          // If a tool just finished, reload everything
          if (doc.status.llm_status === 'working' && data.status.llm_status === 'Done') {
-             dispatch({ type: DocActionTypes.LOAD_DOC, payload: data as LoadDocAction['payload'] });
+             dispatch({ type: DocActionTypes.LOAD, payload: data as LoadDocAction['payload'] });
          }
          if (doc.status.bert_status === 'working' && data.status.bert_status === 'Done') {
-             dispatch({ type: DocActionTypes.LOAD_DOC, payload: data as LoadDocAction['payload'] });
+             dispatch({ type: DocActionTypes.LOAD, payload: data as LoadDocAction['payload'] });
          }
       }
     }, 3000);
