@@ -18,9 +18,9 @@ export const getHistoryFile = async (fileName: string, curr_folder: string) => {
   }
 };
 
-export const getCaseById = async (id: string, project: string) => {
+export const getCaseById = async (id: string) => {
   try {
-    const response: AxiosResponse = await client.get(`/history/${id}?project=${encodeURIComponent(project)}`);
+    const response: AxiosResponse = await client.get(`/case/${id}`);
     const data: FileData = response.data;
     return data;
   } catch (error) {

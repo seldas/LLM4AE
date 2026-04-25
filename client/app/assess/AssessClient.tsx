@@ -27,7 +27,7 @@ export default function AssessClient() {
       if (!folder || (!file && !id)) return;
       setLoading(true);
       const data = id 
-        ? await getCaseById(id, folder!)
+        ? await getCaseById(id)
         : await getHistoryFile(file!, folder!);
       if (data) setFileData(data);
       setLoading(false);

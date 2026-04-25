@@ -375,7 +375,10 @@ def get_annotation_guidelines():
 @app.route("/api/llm-annotate", methods=["POST"])
 @cross_origin()
 def trigger_llm_annotation():
+    app.logger.debug("Received request for LLM annotation")
     try:
+        req = request.get_json(silent=True) or {}
+        app.logger.debug(f"Request JSON: {req}")
         req = request.get_json(silent=True) or {}
         case_id = req.get("id")
         file_name = (req.get("file") or "").strip()
@@ -419,6 +422,7 @@ def trigger_llm_annotation():
         return jsonify({"message": f"LLM annotation started", "file_locked": file_name}), 200
 
     except Exception as e:
+        app.logger.error(f"Error in LLM annotation: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
 @app.route("/api/bert-annotate", methods=["POST"])
@@ -657,6 +661,18 @@ def annotate_icsr_intake():
     except Exception as e:
         logging.error(f"Error in ICSR intake: {e}")
         return f"Intake Error: {str(e)}", 500
+
+@app.route("/api/case/<int:case_id>", methods=["GET"])
+@cross_origin()
+def get_case_by_id(case_id):
+    try:
+        case = get_case(case_id=case_id)
+        if not case:
+            return jsonify({"error": "Case not found"}), 404
+        return jsonify(dict(case)), 200
+    except Exception as e:
+        logging.error(f"Error getting case by ID: {e}")
+        return jsonify({"error": str(e)}), 500
 
 @app.route("/api/export_icsr/<int:case_id>", methods=["GET"])
 @cross_origin()

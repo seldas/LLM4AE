@@ -130,49 +130,50 @@ export default function AnnotateIcsrPanel({ overrideProject, overrideId}: Props)
 
   // Filter Annotations for Display
   const visibleAnnotations = useMemo(() => {
+    if (!doc.annotations) return [];
     const enriched = doc.annotations.map(a => {
-      const note = (a.note || "").toUpperCase();
-      const isLLM = note.includes('LLM') || note.includes('LLAMA');
-      const isBERT = note.includes('BERT');
-      const isAI = isLLM || isBERT || note.includes('AI');
-      const isVerified = note.includes('VERIFIED');
-      const isImported = note.includes('IMPORTED');
-      
-      let layer = 'Human';
-      let priority = 1;
+        const note = (a.note || "").toUpperCase();
+        const isLLM = note.includes('LLM') || note.includes('LLAMA');
+        const isBERT = note.includes('BERT');
+        const isAI = isLLM || isBERT || note.includes('AI');
+        const isVerified = note.includes('VERIFIED');
+        const isImported = note.includes('IMPORTED');
+        
+        let layer = 'Human';
+        let priority = 1;
 
-      if (isLLM && !isVerified) {
-        layer = 'LLM';
-        priority = 2;
-      } else if (isBERT && !isVerified) {
-        layer = 'BERT';
-        priority = 3;
-      } else if (isAI && !isVerified) {
-        layer = 'LLM';
-        priority = 2;
-      } else if (isImported) {
-        layer = 'BERT'; // Reuse BERT layer for imported ones for visibility
-        priority = 4;
-      } else {
-        layer = 'Human';
-        priority = 1;
-      }
+        if (isLLM && !isVerified) {
+          layer = 'LLM';
+          priority = 2;
+        } else if (isBERT && !isVerified) {
+          layer = 'BERT';
+          priority = 3;
+        } else if (isAI && !isVerified) {
+          layer = 'LLM';
+          priority = 2;
+        } else if (isImported) {
+          layer = 'BERT'; // Reuse BERT layer for imported ones for visibility
+          priority = 4;
+        } else {
+          layer = 'Human';
+          priority = 1;
+        }
 
-      const normalizedLabel = labelNormalizer[a.label.toUpperCase()] || a.label.toUpperCase();
-      return { ...a, priority, layer, normalizedLabel };
-    });
+        const normalizedLabel = labelNormalizer[a.label.toUpperCase()] || a.label.toUpperCase();
+        return { ...a, priority, layer, normalizedLabel };
+      });
 
-    let filtered = enriched.filter(a => {
-      const note = (a.note || "").toUpperCase();
-      if (note.includes('REJECTED') && !showRejected) return false;
-      return activeLayers.includes(a.layer);
-    });
+      let filtered = enriched.filter(a => {
+        const note = (a.note || "").toUpperCase();
+        if (note.includes('REJECTED') && !showRejected) return false;
+        return activeLayers.includes(a.layer);
+      });
 
-    const positionMap: Record<string, typeof enriched[0]> = {};
-    filtered.sort((a, b) => b.priority - a.priority).forEach(ann => {
-      const key = `${ann.textContext.start}-${ann.textContext.end}-${ann.label}`;
-      positionMap[key] = ann;
-    });
+      const positionMap: Record<string, typeof enriched[0]> = {};
+      filtered.sort((a, b) => b.priority - a.priority).forEach(ann => {
+        const key = `${ann.textContext.start}-${ann.textContext.end}-${ann.label}`;
+        positionMap[key] = ann;
+      });
     return Object.values(positionMap);
   }, [doc.annotations, activeLayers, showRejected]);
 
@@ -250,7 +251,8 @@ export default function AnnotateIcsrPanel({ overrideProject, overrideId}: Props)
         body: JSON.stringify({ file: overrideId, folder: overrideProject ?? 'AskMyFAERS_Integration' })
       });
       if (!res.ok) {
-        console.log(res);
+        console.log('Response status:', res.status);
+        console.log('Response text:', await res.text());
         throw new Error('LLM request failed');
       };
       
@@ -284,7 +286,7 @@ export default function AnnotateIcsrPanel({ overrideProject, overrideId}: Props)
   const pollProcessingStatus = (type: 'llm' | 'bert') => {
     const interval = setInterval(async () => {
       try {
-        const data = await getCaseById(overrideId || '', overrideProject ?? 'AskMyFAERS_Integration');
+        const data = await getCaseById(overrideId || '');
         if (!data) return;
         
         const meta = data.meta || {};
@@ -481,26 +483,28 @@ export default function AnnotateIcsrPanel({ overrideProject, overrideId}: Props)
   };
 
   useEffect(() => {
-    if (overrideProject && overrideId) {
-      getCaseById(overrideId, overrideProject).then(data => {
+    if (overrideId) {
+      getCaseById(overrideId).then(data => {
         if (!data) return;
         dispatch({ type: DocActionTypes.LOAD, payload: { ...data, fileName: overrideId } });
       });
     }
-  }, [overrideProject, overrideId]);
+  }, [overrideId]);
 
   useEffect(() => {
-    const labels = new Set(['DRUG', 'AE', 'MEDICAL HISTORY', 'LAB', 'TEMPORAL', 'AGE', 'SEX', 'COD', 'DIAGNOSTIC']);
-    doc.annotations.forEach(a => labels.add(a.label.toUpperCase()));
-    const arr = Array.from(labels).sort();
-    setAnnotationOptions(Object.fromEntries(arr.map(l => [l, l])));
-    setOptionColors(generateOptionColors(arr));
-    setActiveLabelFilters(prev => {
-      const newFilters = [...prev];
-      let changed = false;
-      arr.forEach(l => { if (!newFilters.includes(l)) { newFilters.push(l); changed = true; } });
-      return changed ? newFilters : prev;
-    });
+    if (doc.annotations) {
+      const labels = new Set(['DRUG', 'AE', 'MEDICAL HISTORY', 'LAB', 'TEMPORAL', 'AGE', 'SEX', 'COD', 'DIAGNOSTIC']);
+      doc.annotations.forEach(a => labels.add(a.label.toUpperCase()));
+      const arr = Array.from(labels).sort();
+      setAnnotationOptions(Object.fromEntries(arr.map(l => [l, l])));
+      setOptionColors(generateOptionColors(arr));
+      setActiveLabelFilters(prev => {
+        const newFilters = [...prev];
+        let changed = false;
+        arr.forEach(l => { if (!newFilters.includes(l)) { newFilters.push(l); changed = true; } });
+        return changed ? newFilters : prev;
+      });
+    }
   }, [doc.annotations]);
 
   useEffect(() => {

@@ -36,7 +36,7 @@ export default function AdjudicateClient() {
       setLoading(true);
       
       const data = id 
-        ? await getCaseById(id, folder)
+        ? await getCaseById(id)
         : await getHistoryFile(file!, folder);
 
       if (data) {

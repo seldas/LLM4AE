@@ -601,13 +601,13 @@ export default function Annotate_Panel({ overrideProject, overrideId}: Props) {
   };
 
   useEffect(() => {
-    if (overrideProject && overrideId) {
-      getCaseById(overrideId, overrideProject).then(data => {
+    if (overrideId) {
+      getCaseById(overrideId).then(data => {
         if (!data) return;
         dispatch({ type: DocActionTypes.LOAD, payload: { ...data, fileName: overrideId } });
       });
     }
-  }, [overrideProject, overrideId]);
+  }, [overrideId]);
 
   useEffect(() => {
     const labels = new Set(['DRUG', 'AE', 'MEDICAL HISTORY', 'LAB', 'TEMPORAL', 'AGE', 'SEX', 'COD', 'DIAGNOSTIC']);
