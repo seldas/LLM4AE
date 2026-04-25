@@ -705,6 +705,11 @@ export default function Annotate_Panel({ overrideProject, overrideId}: Props) {
                   optionColors={optionColors}
                   onFilterChange={setActiveLabelFilters}
                   activeLayers={activeLayers}
+                  isReadOnly={isReadOnly}
+                  pageData={currentPageData}
+                  selectedTermContext={selectedTermContext}
+                  setSelectedTermContext={setSelectedTermContext}
+                  handleRemoveAnnotation={(ann) => handleRejectAnnotation(ann.textContext.start ?? 0, ann.textContext.end ?? 0, ann.label)}
                 />
             </div>
           </div>

@@ -1,21 +1,18 @@
-import { useState, useEffect, useRef, useMemo, useCallback } from "react";
+import { useState, useEffect, useRef, useMemo, useCallback, Dispatch, SetStateAction } from "react";
 import { Annotation, AnnotationOptions } from "../lib/interfaces";
 import { escapeRegExp } from "../lib/util";
 
 interface Props {
   annotations: Annotation[];
-  annotationOptions: AnnotationOptions;
-  setAnnotationOptions: (opts: AnnotationOptions) => void;
+  currentPage?: number;
   optionColors: { [key: string]: string };
-  setOptionColors: (colors: { [key: string]: string }) => void;
-  handleRemoveAnnotation: (annotation: Annotation) => void;
-  activeLabelFilters: string[]; 
-  setActiveLabelFilters: (labels: string[]) => void;
-  selectedTermContext: { text: string; start: number; end: number } | null;  
-  setSelectedTermContext: (context: { text: string; start: number; end: number } | null) => void;  
-  handleExtendMatch: (annotation: Annotation) => void;  
+  onFilterChange: (labels: string[]) => void;
+  activeLayers: string[];
   isReadOnly?: boolean;
   pageData?: string;
+  selectedTermContext?: { text: string; start: number; end: number } | null;  
+  setSelectedTermContext?: (context: { text: string; start: number; end: number } | null) => void;  
+  handleRemoveAnnotation?: (annotation: Annotation) => void;
 }
 
 const AnnotationPanel = (props: Props) => {
@@ -45,14 +42,20 @@ const AnnotationPanel = (props: Props) => {
   };
 
   const groupedData = useMemo(() => {
-    const filtered = props.annotations.filter(annotation => {
-      const matchesLabel = props.activeLabelFilters
-        .map((l) => l.toLowerCase())
-        .includes(annotation.label.toLowerCase());
+    const filtered = props.annotations.filter(ann => {
+      // Layer filtering
+      const note = (ann.note || "").toUpperCase();
+      const isLlm = note.includes('LLM');
+      const isBert = note.includes('BERT');
+      if (isLlm && !props.activeLayers.includes('LLM')) return false;
+      if (isBert && !props.activeLayers.includes('BERT')) return false;
+      if (!isLlm && !isBert && !props.activeLayers.includes('Human')) return false;
+
+      // Keyword filtering
       const matchesKeyword = filterKeyword
-        ? annotation.textContext.text.toLowerCase().includes(filterKeyword.toLowerCase())
+        ? ann.textContext.text.toLowerCase().includes(filterKeyword.toLowerCase())
         : true;
-      return matchesLabel && matchesKeyword;
+      return matchesKeyword;
     });
 
     const groups: Record<string, Record<string, Record<string, Annotation[]>>> = {};
@@ -69,7 +72,7 @@ const AnnotationPanel = (props: Props) => {
     });
 
     return groups;
-  }, [props.annotations, props.activeLabelFilters, filterKeyword]);
+  }, [props.annotations, props.activeLayers, filterKeyword]);
 
   useEffect(() => {
     const selectedTerm = props.selectedTermContext?.text.toLowerCase();
@@ -205,11 +208,13 @@ const AnnotationPanel = (props: Props) => {
                                             <div 
                                               key={idx}
                                               onClick={() => {
-                                                props.setSelectedTermContext({
-                                                  text: ann.textContext.text,
-                                                  start: ann.textContext.start ?? 0,
-                                                  end: ann.textContext.end ?? 0,
-                                                });
+                                                if (props.setSelectedTermContext) {
+                                                    props.setSelectedTermContext({
+                                                      text: ann.textContext.text,
+                                                      start: ann.textContext.start ?? 0,
+                                                      end: ann.textContext.end ?? 0,
+                                                    });
+                                                }
                                                 // Jump to narrative position
                                                 setTimeout(() => {
                                                   const element = document.getElementById(`ann-match-${ann.textContext.start}`);
@@ -231,11 +236,11 @@ const AnnotationPanel = (props: Props) => {
                                                 {isVerified && <span className="ml-1 text-emerald-500">✓</span>}
                                               </span>
                                               
-                                              {!props.isReadOnly && (
+                                              {!props.isReadOnly && props.handleRemoveAnnotation && (
                                                 <button
                                                   onClick={(e) => {
                                                     e.stopPropagation();
-                                                    props.handleRemoveAnnotation(ann);
+                                                    props.handleRemoveAnnotation!(ann);
                                                   }}
                                                   className={`text-[10px] opacity-0 group-hover:opacity-100 transition-opacity ${
                                                     isSelected ? 'text-white/60 hover:text-white' : 'text-slate-300 hover:text-red-500'
