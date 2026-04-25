@@ -250,23 +250,22 @@ export default function Annotate_Panel({ overrideProject, overrideId}: Props) {
     });
   }, [doc.annotations, activeLayers]);
 
-  const handleTextSelection = (e: any) => {
+  const handleTextSelection = (e?: any) => {
     const selection = window.getSelection();
     if (selection && selection.toString().trim().length > 0) {
       const range = selection.getRangeAt(0);
       const text = selection.toString();
       setSelectedText(text);
 
-      const span = e.currentTarget;
-      const rect = span.getBoundingClientRect();
-
-      setUnifiedContextMenu({
-        visible: true,
-        x: e.clientX,
-        y: e.clientY,
-        start: 0, // Injected by PageDisplay
-        end: 0    // Injected by PageDisplay
-      });
+      if (e) {
+        setUnifiedContextMenu({
+          visible: true,
+          x: e.clientX,
+          y: e.clientY,
+          start: 0, // Injected by PageDisplay
+          end: 0    // Injected by PageDisplay
+        });
+      }
     }
   };
 
