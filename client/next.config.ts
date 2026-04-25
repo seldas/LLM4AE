@@ -3,7 +3,7 @@ import type { NextConfig } from "next";
 const rawBasePath =
   process.env.NEXT_PUBLIC_BASE_PATH !== undefined
     ? process.env.NEXT_PUBLIC_BASE_PATH
-    : "/annotator";
+    : "";
 
 const normalizedBasePath =
   rawBasePath === ""
