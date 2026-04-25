@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState, useCallback, useMemo } from "react";
+import React, { useEffect, useLayoutEffect, useRef, useState, useCallback, useMemo } from "react";
 import { Annotation, TextContext } from "../lib/interfaces";
 
 interface Props {
@@ -26,18 +26,16 @@ interface Props {
 }
 
 function getNodeAndOffsetForIndex(rootNode: Node, index: number): { node: Node; offset: number } | null {
-  let stack: ChildNode[] = [rootNode as ChildNode];
+  const walk = document.createTreeWalker(rootNode, NodeFilter.SHOW_TEXT);
+  let currentNode = walk.nextNode();
   let count = 0;
-  while (stack.length > 0) {
-    const node = stack.shift();
-    if (!node) continue;
-    if (node.nodeType === Node.TEXT_NODE) {
-      const text = node.textContent || "";
-      if (count + text.length >= index) return { node, offset: index - count };
-      count += text.length;
-    } else if (node.hasChildNodes()) {
-      stack = Array.from(node.childNodes).concat(stack);
+  while (currentNode) {
+    const text = currentNode.textContent || "";
+    if (count + text.length >= index) {
+      return { node: currentNode, offset: index - count };
     }
+    count += text.length;
+    currentNode = walk.nextNode();
   }
   return null;
 }
@@ -194,7 +192,7 @@ function PageDisplay({
     setHighlightBoxes(boxes);
   }, [annotations, activeLabelFilters, optionColors, disableFilter]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     computeHighlightBoxes();
     updateLineCount();
   }, [computeHighlightBoxes, updateLineCount, pageData]);
