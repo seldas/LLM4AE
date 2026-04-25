@@ -75,6 +75,16 @@ const AnnotationPanel = (props: Props) => {
   }, [props.annotations, props.activeLayers, filterKeyword]);
 
   useEffect(() => {
+    const labels = new Set<string>();
+    Object.values(groupedData).forEach(terms => {
+      Object.values(terms).forEach(labelsMap => {
+        Object.keys(labelsMap).forEach(l => labels.add(l));
+      });
+    });
+    props.onFilterChange(Array.from(labels));
+  }, [groupedData]);
+
+  useEffect(() => {
     const selectedTerm = props.selectedTermContext?.text.toLowerCase();
     if (selectedTerm) {
       Object.entries(groupedData).forEach(([category, terms]) => {

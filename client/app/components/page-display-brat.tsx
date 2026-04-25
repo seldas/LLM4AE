@@ -168,7 +168,7 @@ function PageDisplay({
         return;
       }
       const label = annotation.label.toUpperCase();
-      if (!disableFilter && !activeLabelFilters.includes(label)) return;
+      if (!disableFilter && !activeLabelFilters.some(f => f.toUpperCase() === label)) return;
       
       const startInfo = getNodeAndOffsetForIndex(container, start);
       const endInfo = getNodeAndOffsetForIndex(container, end);
