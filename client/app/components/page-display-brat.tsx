@@ -18,7 +18,7 @@ interface Props {
   disableFilter?: boolean;
   userRole: string;
   annotationSet: string;  
-  onClickAnnotation?: (text: string, start: number, end: number, x: number, y: number, note?: string, label?: string) => void;
+  onClickAnnotation?: (anno: Annotation, x: number, y: number) => void;
   selectedTermContext: TextContext | null;
   setSelectedTermContext: (context: TextContext | null) => void;
   isReadOnly?: boolean;
@@ -151,7 +151,8 @@ function PageDisplay({
               note: annotation.note,
               color: optionColors[label] || "hsl(60, 100%, 50%)",
               start, end,
-              isFirstBox: idx === 0
+              isFirstBox: idx === 0,
+              annotationRef: annotation
             });
           }
         } catch (e) {}
@@ -201,8 +202,11 @@ function PageDisplay({
               onMouseLeave={() => setHoveredBox(null)}
               onClick={(e) => {
                 const rect = e.currentTarget.getBoundingClientRect();
-                if (onClickAnnotation) onClickAnnotation(pageData.substring(box.start, box.end), box.start, box.end, rect.left + window.scrollX, rect.top + window.scrollY, box.note, box.label);
-                else setSelectedTermContext({ text: pageData.substring(box.start, box.end), start: box.start, end: box.end });
+                if (onClickAnnotation && box.annotationRef) {
+                   onClickAnnotation(box.annotationRef, rect.left + window.scrollX, rect.top + window.scrollY);
+                } else {
+                   setSelectedTermContext({ text: pageData.substring(box.start, box.end), start: box.start, end: box.end });
+                }
               }}
               style={{
                 position: "absolute",
