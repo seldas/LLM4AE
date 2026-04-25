@@ -18,7 +18,7 @@ interface Props {
   disableFilter?: boolean;
   userRole: string;
   annotationSet: string;  
-  onClickAnnotation?: (anno: Annotation, x: number, y: number) => void;
+  onAnnotationClick?: (anno: Annotation, x: number, y: number) => void;
   selectedTermContext: TextContext | null;
   setSelectedTermContext: (context: TextContext | null) => void;
   isReadOnly?: boolean;
@@ -63,7 +63,7 @@ function PageDisplay({
   handleTextSelection,
   activeLabelFilters,
   disableFilter = false,
-  onClickAnnotation,
+  onAnnotationClick,
   selectedTermContext,
   setSelectedTermContext,
   isReadOnly,
@@ -202,8 +202,8 @@ function PageDisplay({
               onMouseLeave={() => setHoveredBox(null)}
               onClick={(e) => {
                 const rect = e.currentTarget.getBoundingClientRect();
-                if (onClickAnnotation && box.annotationRef) {
-                   onClickAnnotation(box.annotationRef, rect.left + window.scrollX, rect.top + window.scrollY);
+                if (onAnnotationClick && box.annotationRef) {
+                   onAnnotationClick(box.annotationRef, rect.left + window.scrollX, rect.top + window.scrollY);
                 } else {
                    setSelectedTermContext({ text: pageData.substring(box.start, box.end), start: box.start, end: box.end });
                 }

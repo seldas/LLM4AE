@@ -163,13 +163,14 @@ export default function Annotate_Panel({ overrideProject, overrideId}: Props) {
     isVerified?: boolean;
   }>({ visible: false, x: 0, y: 0, text: '', start: 0, end: 0 });
 
-  const [unifiedContextMenu, setUnifiedContextMenu] = useState<{
-    visible: boolean;
-    x: number;
-    y: number;
-    start: number | null;
-    end: number | null;
-  }>({ visible: false, x: 0, y: 0, start: null, end: null });
+  const [unifiedContextMenu, setUnifiedContextMenu] = useState<ContextMenu>({
+    visible: false,
+    x: 0,
+    y: 0,
+    type: 'annotation',
+    start: undefined,
+    end: undefined
+  });
 
   const [selectedPopupLabel, setSelectedPopupLabel] = useState<string>('');
   const [selectedTermContext, setSelectedTermContext] = useState<TextContext | null>(null);
@@ -262,6 +263,7 @@ export default function Annotate_Panel({ overrideProject, overrideId}: Props) {
           visible: true,
           x: e.clientX,
           y: e.clientY,
+          type: relationshipBuilderMode ? 'relationship' : 'annotation',
           start: 0, // Injected by PageDisplay
           end: 0    // Injected by PageDisplay
         });
@@ -876,7 +878,7 @@ export default function Annotate_Panel({ overrideProject, overrideId}: Props) {
                     activeLabelFilters={activeLabelFilters}
                     disableFilter={false}
                     annotationSet="SME"
-                    onClickAnnotation={onClickAnnotation}
+                    onAnnotationClick={onClickAnnotation}
                     selectedTermContext={selectedTermContext}
                     setSelectedTermContext={setSelectedTermContext}
                     isReadOnly={isReadOnly}
