@@ -237,7 +237,7 @@ def mode_AE_annotation(query: str, provider='vllm', prompt_ner: str = prompt_ner
     
     # Default 'span' strategy
     raw = call_llm(query, provider, prompt_ner)
-    logging.info(f"DEBUG: Full LLM Response from {provider}:\n{raw}")
+    # logging.info(f"DEBUG: Full LLM Response from {provider}:\n{raw}")
     
     obj = _extract_json_object(raw)
     
@@ -247,6 +247,7 @@ def mode_AE_annotation(query: str, provider='vllm', prompt_ner: str = prompt_ner
     if obj:
         annotated_text = obj.get("annotated_text", "")
         spans = obj.get("spans", [])
+        logging.info(f"DEBUG: Full LLM Response from {annotated_text}:\n{spans}")
     else:
         logging.warning("JSON parsing failed, attempting regex extraction of 'annotated_text'")
         patterns = [

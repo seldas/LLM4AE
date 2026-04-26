@@ -42,12 +42,13 @@ export interface CaseMetadata {
 }
 
 export interface Annotation {
-    id: number; // Now mandatory for all DB-synced annotations
+    id?: number; // Now optional to accommodate new annotations
     textContext: TextContext,
     label: string,
     note: string
     disputed?: boolean
     adjudication?: string;
+    relationships?: any;
 }
 
 export interface AnnotationOptions {

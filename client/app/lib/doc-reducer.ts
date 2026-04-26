@@ -182,9 +182,9 @@ export function docReducer(state: DocState, action: DocActions ) {
     switch (action.type) {
         case DocActionTypes.APPEND_ANNOTATIONS: {
             // Filter out any annotations that are already in the state (by ID if available, otherwise by context)
-            const existingIds = new Set(state.annotations.map(a => a.id).filter(id => id !== undefined));
-            const newAnnotations = action.payload.annotations.filter(a => !existingIds.has(a.id));
-            
+            const existingIds = new Set(state.annotations.map(a => a.id).filter((id): id is number => id !== undefined));
+            const newAnnotations = action.payload.annotations.filter(a => a.id === undefined || !existingIds.has(a.id));
+                        
             return {
                 ...state,
                 annotations: [...state.annotations, ...newAnnotations]

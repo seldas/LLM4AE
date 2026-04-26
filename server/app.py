@@ -414,10 +414,8 @@ def get_annotation_guidelines():
 @app.route("/api/llm-annotate", methods=["POST"])
 @cross_origin()
 def trigger_llm_annotation():
-    app.logger.debug("Received request for LLM annotation")
     try:
         req = request.get_json(silent=True) or {}
-        app.logger.debug(f"Request JSON: {req}")
         
         # Support both 'id' (modern) and 'file' (legacy/integrated)
         case_id = req.get("id") or req.get("file")
