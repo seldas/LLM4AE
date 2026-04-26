@@ -55,6 +55,43 @@ def _extract_field_via_regex(s: str, field_name: str) -> str | None:
         return val
     return None
 
+def _repair_truncated_json(s: str) -> str:
+    """
+    Attempt to close dangling JSON structures if the response was truncated.
+    """
+    s = s.strip()
+    # If it ends with a comma or incomplete key/value, trim it back to the last valid object end
+    last_brace = s.rfind('}')
+    last_bracket = s.rfind(']')
+    
+    if last_brace == -1 and last_bracket == -1:
+        return s
+        
+    # Find the last "clean" break point (the end of an object in the list)
+    cut_point = max(last_brace, last_bracket) + 1
+    repaired = s[:cut_point]
+    
+    # Balance the main structure
+    open_braces = repaired.count('{') - repaired.count('}')
+    open_brackets = repaired.count('[') - repaired.count(']')
+    
+    repaired += '}' * open_braces
+    repaired += ']' * open_brackets
+    
+    # One more check for validity
+    try:
+        json.loads(repaired, strict=False)
+        return repaired
+    except:
+        # If it still fails, try closing the 'entities' array specifically for the json strategy
+        if '"entities"' in s and open_brackets > 0:
+            try:
+                test = repaired + ']}'
+                json.loads(test, strict=False)
+                return test
+            except: pass
+    return repaired
+
 def _extract_json_object(s: str) -> dict | None:
     s = (s or "").strip()
     
@@ -69,7 +106,11 @@ def _extract_json_object(s: str) -> dict | None:
         block = m.group(1)
         try:
             return json.loads(block, strict=False)
-        except: pass
+        except:
+            # Try repairing the block if it's truncated
+            repaired = _repair_truncated_json(block)
+            try: return json.loads(repaired, strict=False)
+            except: pass
 
     # 3. Try finding the first { and last }
     m = re.search(r"(\{.*\})", s, flags=re.DOTALL)
@@ -84,6 +125,16 @@ def _extract_json_object(s: str) -> dict | None:
                 return json.loads(fixed, strict=False)
             except: pass
             
+    # 4. Final attempt: Find the first '{' and repair everything from that point to the end.
+    # This handles cases where it starts with markdown (```json {) or prose and then truncates.
+    first_brace = s.find('{')
+    if first_brace != -1:
+        block = s[first_brace:]
+        repaired = _repair_truncated_json(block)
+        try: 
+            return json.loads(repaired, strict=False)
+        except: pass
+
     logging.error(f"Failed to extract valid JSON from LLM response (first 500 chars): {s[:500]}...")
     return None
 
@@ -143,7 +194,6 @@ def mode_AE_annotation_json_strategy(query: str, provider='vllm'):
     We then match ALL occurrences of these entities in the text.
     """
     raw = call_llm(query, provider, prompt_ner_simple_json)
-    logging.info(f"DEBUG: Full LLM Response (JSON Strategy) from {provider}:\n{raw}")
     
     obj = _extract_json_object(raw)
     if not obj or "entities" not in obj:
