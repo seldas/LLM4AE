@@ -34,3 +34,35 @@ This document summarizes the progress and remaining tasks for migrating the SCAT
 ### **Data Quality**
 - [x] **Relationship Validation:** Add backend constraints to ensure that relationships (e.g., latency to drug) always point to existing annotation IDs.
 - [x] **Conflict Resolution:** Implement a UI warning if two users are editing the same case simultaneously (now possible with the DB refactor).
+
+
+logging.info(f"DEBUG: Full LLM Response from {annotated_text}:\n{spans}")
+
+annotator-backend   | [2026-04-26 01:26:41 +0000] [7] [INFO] DEBUG: Full LLM Response from Case 2019FE07533 is a serious spontaneous case received from a pharmacist in Turkey. 
+annotator-backend   | 
+annotator-backend   | This report concerns a <Age>47-year-old</Age> <Sex>female</Sex> who experienced <AE>hypotension</AE> and <AE>fainting</AE> during treatment with oral <SDrug>PICOPREP (sodium picosulfate, mgo, citric acid) powder for oral solution</SDrug>, unknown concentration, <Dose>2 x 16.1 g</Dose> for <IND>bowel preparation</IND> on <Date>07-Nov-2019</Date>.
+annotator-backend   |  
+annotator-backend   | A pharmacist from a hospital reported 6 events in relation to a colon cleansing protocol at the gastroenterology unit which was using <SDrug>PICOPREP</SDrug> and <CDrug>Bekunis</CDrug> at the same time. <SDrug>PICOPREP</SDrug> was used according to label and additionally patients received <CDrug>Bekunis (content is Sennoside 3mg/bisakodil 5mg)</CDrug>.
+annotator-backend   | On <Date>07-Nov-2019</Date>, the patient experienced <AE>hypotension</AE> and <AE>fainting</AE> and went to the emergency unit at a hospital. 
+annotator-backend   |  
+annotator-backend   | Action taken to <SDrug>PICOPREP</SDrug> was not applicable. 
+annotator-backend   | On <Date>07-Nov-2019</Date>, the outcome of <AE>hypotension</AE> and <AE>fainting</AE> was <Status>recovered</Status>.
+annotator-backend   |  
+annotator-backend   | The following concomitant medication was reported: <CDrug>Bekunis</CDrug> (on <Date>07-Nov-2019</Date>).
+annotator-backend   |  
+annotator-backend   | The events in the case were reported as serious (<Status>hospitalisation</Status>).
+annotator-backend   | 
+annotator-backend   | At the time of reporting the case outcome was <Status>recovered</Status>.
+annotator-backend   |  
+annotator-backend   | Overall listedness (core label) is unlisted.
+annotator-backend   | Reporter Causality: Related
+annotator-backend   | Company Causality: Related
+annotator-backend   |  
+annotator-backend   | Other case numbers:
+annotator-backend   | Link: same reporter = 2019FE07532. 
+annotator-backend   | Link: same reporter = 2019FE07507. 
+annotator-backend   | Link: same reporter = 2019FE07531. 
+annotator-backend   | Link: same reporter = 2019FE07536. 
+annotator-backend   | Link: same reporter = 2019FE07534. 
+annotator-backend   | Internal # - Affiliate = SAR-2019-17.:
+annotator-backend   | [{'label': 'Age', 'text': '47-year-old'}, {'label': 'Sex', 'text': 'female'}, {'label': 'AE', 'text': 'hypotension'}, {'label': 'AE', 'text': 'fainting'}, {'label': 'SDrug', 'text': 'PICOPREP (sodium picosulfate, mgo, citric acid) powder for oral solution'}, {'label': 'Dose', 'text': '2 x 16.1 g'}, {'label': 'IND', 'text': 'bowel preparation'}, {'label': 'Date', 'text': '07-Nov-2019'}, {'label': 'SDrug', 'text': 'PICOPREP'}, {'label': 'CDrug', 'text': 'Bekunis'}, {'label': 'SDrug', 'text': 'PICOPREP'}, {'label': 'CDrug', 'text': 'Bekunis (content is Sennoside 3mg/bisakodil 5mg)'}, {'label': 'Date', 'text': '07-Nov-2019'}, {'label': 'AE', 'text': 'hypotension'}, {'label': 'AE', 'text': 'fainting'}, {'label': 'SDrug', 'text': 'PICOPREP'}, {'label': 'Date', 'text': '07-Nov-2019'}, {'label': 'AE', 'text': 'hypotension'}, {'label': 'AE', 'text': 'fainting'}, {'label': 'Status', 'text': 'recovered'}, {'label': 'CDrug', 'text': 'Bekunis'}, {'label': 'Date', 'text': '07-Nov-2019'}, {'label': 'Status', 'text': 'hospitalisation'}, {'label': 'Status', 'text': 'recovered'}]
