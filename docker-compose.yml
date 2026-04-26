@@ -12,6 +12,7 @@ services:
       HOST: 0.0.0.0
     volumes:
       - ./server/database:/app/database
+      - ./server/BERT_MODEL:/app/BERT_MODEL
     networks:
       - apps-network
 

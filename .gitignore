@@ -39,5 +39,6 @@ development/NER/data
 # data folder
 /server/history
 /server/database/
+/server/BERT_MODEL/
 
 .geminiignore

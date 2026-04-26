@@ -31,4 +31,5 @@ MANIFEST
 .gitignore
 history/
 database/
+BERT_MODEL/
 ./ipynb_checkpoints/
