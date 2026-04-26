@@ -98,10 +98,37 @@ Return ONLY valid JSON (no prose, no markdown fences) in this exact shape:
 {{
   "annotated_text": "<string>",
   "spans": [
-    {{"label":"AE","start":123,"end":140,"text":"..."}},
+    {{"label":"AE","text":"..."}},
     ...
   ]
 }}
 
 If you are unsure about a span, omit it (prefer precision over recall).
+'''.format(annotation_guideline=annotation_guideline)
+
+prompt_ner_simple_json = '''
+You are an expert medical annotator for FAERS narratives.
+
+Goal:
+- Extract all clinical concepts and temporal features from the narrative.
+- Return a simple list of entities found.
+
+CRITICAL RULES:
+- Return ONLY valid JSON.
+- Do NOT return the original or annotated narrative text.
+- Each object in the list must have "label" and "text".
+- Labels must be one of:
+  [SDrug, CDrug, ODrug, Dose, Treatment, AE, mAE, bSYM, RO, Dx, CoD, Lab, FHx, MHx, IND, Status, Age, Sex, Date, Time, Duration, Relative, Latency, Temporal]
+
+{annotation_guideline}
+
+OUTPUT (STRICT):
+Return ONLY a JSON object with a key "entities" containing the list:
+{{
+  "entities": [
+    {{"label":"AE", "text":"..."}},
+    {{"label":"SDrug", "text":"..."}},
+    ...
+  ]
+}}
 '''.format(annotation_guideline=annotation_guideline)

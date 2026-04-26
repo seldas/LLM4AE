@@ -75,6 +75,7 @@ export default function Annotate_Panel({ overrideProject, overrideId}: Props) {
   const [activeLeftTab, setActiveLeftTab] = useState<'annotations' | 'history'>('annotations');
   const [leftSidebarOpen, setLeftSidebarOpen] = useState(true);
 
+  const [selectedAiModel, setSelectedAiModel] = useState<'vllm' | 'gemini' | 'elsa'>('vllm');
   const [isProcessingLlm, setIsProcessingLlm] = useState(false);
   const [isProcessingBert, setIsProcessingBert] = useState(false);
 
@@ -402,18 +403,27 @@ export default function Annotate_Panel({ overrideProject, overrideId}: Props) {
 
   const handleLlmAnnotate = async () => {
     if (isReadOnly || isProcessingLlm) return;
+    
+    if (doc.status.llm_status === 'working') {
+      const confirmRetry = window.confirm("An AI annotation process is already running for this case. Do you want to start a new one? This will overwrite the current progress.");
+      if (!confirmRetry) return;
+    } else if (doc.status.llm_status === 'Done') {
+      const confirmReassess = window.confirm("AI annotation has already been completed for this case. Do you want to re-assess? This will replace existing AI annotations.");
+      if (!confirmReassess) return;
+    }
+
     setIsProcessingLlm(true);
     try {
       const res = await fetch(`${API_BASE}/llm-annotate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: overrideId })
+        body: JSON.stringify({ id: overrideId, provider: selectedAiModel })
       });
       if (!res.ok) throw new Error('Failed to start LLM annotation');
-      alert("LLM Annotation started. It will refresh automatically when done.");
+      alert("AI Annotation started. It will refresh automatically when done.");
     } catch (err) {
       console.error(err);
-      alert("Error starting LLM annotation");
+      alert("Error starting AI annotation");
     } finally {
       setIsProcessingLlm(false);
     }
@@ -678,21 +688,35 @@ export default function Annotate_Panel({ overrideProject, overrideId}: Props) {
             
             {/* AI Tools */}
             {!isReadOnly && (
-              <div className="mt-5 grid grid-cols-2 gap-2">
-                <button
-                  onClick={handleLlmAnnotate}
-                  disabled={isProcessingLlm || doc.status.llm_status === 'working'}
-                  className="flex items-center justify-center gap-2 py-2 px-3 rounded bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-bold uppercase tracking-wider transition-all disabled:opacity-50 shadow-sm"
-                >
-                  <IconSparkles /> vLLM
-                </button>
-                <button
-                  onClick={handleBertAnnotate}
-                  disabled={isProcessingBert || doc.status.bert_status === 'working'}
-                  className="flex items-center justify-center gap-2 py-2 px-3 rounded bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-bold uppercase tracking-wider transition-all disabled:opacity-50 shadow-sm"
-                >
-                  <IconRobot /> BERT
-                </button>
+              <div className="mt-5 space-y-3">
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em]">Select Model</label>
+                  <select 
+                    value={selectedAiModel}
+                    onChange={(e) => setSelectedAiModel(e.target.value as any)}
+                    className={`w-full px-2.5 py-2 rounded-lg border text-[10px] font-bold outline-none transition-all shadow-sm ${theme === 'dark' ? 'bg-slate-900 border-slate-700 text-slate-200' : 'bg-white border-slate-200 text-slate-700'}`}
+                  >
+                    <option value="elsa">ELSA</option>
+                    <option value="vllm">Llama</option>
+                    <option value="gemini">GEMINI</option>
+                  </select>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    onClick={handleLlmAnnotate}
+                    disabled={isProcessingLlm}
+                    className="flex items-center justify-center gap-2 py-2 px-3 rounded bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-bold uppercase tracking-wider transition-all disabled:opacity-50 shadow-sm"
+                  >
+                    <IconSparkles /> AI
+                  </button>
+                  <button
+                    onClick={handleBertAnnotate}
+                    disabled={isProcessingBert || doc.status.bert_status === 'working'}
+                    className="flex items-center justify-center gap-2 py-2 px-3 rounded bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-bold uppercase tracking-wider transition-all disabled:opacity-50 shadow-sm"
+                  >
+                    <IconRobot /> BERT
+                  </button>
+                </div>
               </div>
             )}
             <div className="mt-2">

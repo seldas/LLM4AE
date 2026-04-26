@@ -441,7 +441,9 @@ def trigger_llm_annotation():
         if not doc:
             return jsonify({"error": f"Document not found: {case_id or file_name}"}), 404
 
-        def background_task(doc_id):
+        provider = req.get("provider", "vllm")
+
+        def background_task(doc_id, provider_name):
             conn = get_db_connection()
             cursor = conn.execute('SELECT id FROM users WHERE role_id = (SELECT id FROM roles WHERE name = "AI")')
             ai_user_ids = [row['id'] for row in cursor.fetchall()]
@@ -456,15 +458,9 @@ def trigger_llm_annotation():
             conn.commit()
             conn.close()
 
-            run_llm_annotation(doc_id=doc_id)
+            run_llm_annotation(doc_id=doc_id, provider=provider_name)
             
-            # Update status to Done after completion
-            conn = get_db_connection()
-            conn.execute('UPDATE cases SET llm_status = "Done" WHERE id = ?', (doc_id,))
-            conn.commit()
-            conn.close()
-
-        threading.Thread(target=background_task, args=(doc['id'],), daemon=True).start()
+        threading.Thread(target=background_task, args=(doc['id'], provider), daemon=True).start()
         return jsonify({"message": f"LLM annotation started", "file_locked": file_name}), 200
 
     except Exception as e:
