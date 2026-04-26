@@ -32,7 +32,6 @@ def _count_tokens(text: str) -> int:
 def _split_text_by_token_budget(text: str, token_budget: int) -> list[str]:
     if _count_tokens(text) <= token_budget:
         return [text]
-    # Simple split for now
     approx_chars = token_budget * 4
     return [text[i:i+approx_chars] for i in range(0, len(text), approx_chars)]
 
@@ -41,105 +40,53 @@ def call_llm(message, provider='vllm', prompt='Help answer the following request
     ai_client = AIClient(provider=provider)
     return ai_client.call(message=message, system_prompt=prompt, temperature=0.0, max_tokens=max_output_tokens)
 
-def _extract_field_via_regex(s: str, field_name: str) -> str | None:
-    """
-    Attempt to extract a specific field value from a string that looks like JSON,
-    even if the JSON itself is malformed.
-    """
-    pattern = rf'"{field_name}"\s*:\s*"(.*?)(?<!\\)"'
-    match = re.search(pattern, s, re.DOTALL)
-    if match:
-        val = match.group(1)
-        # Unescape common JSON escapes
-        val = val.replace('\\"', '"').replace('\\n', '\n').replace('\\t', '\t').replace('\\\\', '\\')
-        return val
-    return None
-
 def _repair_truncated_json(s: str) -> str:
-    """
-    Attempt to close dangling JSON structures if the response was truncated.
-    """
     s = s.strip()
-    # If it ends with a comma or incomplete key/value, trim it back to the last valid object end
     last_brace = s.rfind('}')
     last_bracket = s.rfind(']')
-    
-    if last_brace == -1 and last_bracket == -1:
-        return s
-        
-    # Find the last "clean" break point (the end of an object in the list)
+    if last_brace == -1 and last_bracket == -1: return s
     cut_point = max(last_brace, last_bracket) + 1
     repaired = s[:cut_point]
-    
-    # Balance the main structure
     open_braces = repaired.count('{') - repaired.count('}')
     open_brackets = repaired.count('[') - repaired.count(']')
-    
     repaired += '}' * open_braces
     repaired += ']' * open_brackets
-    
-    # One more check for validity
-    try:
-        json.loads(repaired, strict=False)
-        return repaired
-    except:
-        # If it still fails, try closing the 'entities' array specifically for the json strategy
-        if '"entities"' in s and open_brackets > 0:
-            try:
-                test = repaired + ']}'
-                json.loads(test, strict=False)
-                return test
-            except: pass
     return repaired
 
 def _extract_json_object(s: str) -> dict | None:
     s = (s or "").strip()
-    
-    # 1. Try direct parse with strict=False (allows literal newlines in strings)
-    try: 
-        return json.loads(s, strict=False)
+    try: return json.loads(s, strict=False)
     except: pass
     
-    # 2. Try extracting from markdown blocks
     m = re.search(r"```(?:json)?\s*(.*?)\s*```", s, flags=re.DOTALL)
     if m:
         block = m.group(1)
-        try:
-            return json.loads(block, strict=False)
+        try: return json.loads(block, strict=False)
         except:
-            # Try repairing the block if it's truncated
             repaired = _repair_truncated_json(block)
             try: return json.loads(repaired, strict=False)
             except: pass
 
-    # 3. Try finding the first { and last }
-    m = re.search(r"(\{.*\})", s, flags=re.DOTALL)
-    if m:
-        block = m.group(1)
-        try:
-            return json.loads(block, strict=False)
-        except:
-            # Try to fix common trailing comma issue before closing brace
-            try:
-                fixed = re.sub(r",\s*([\]\}])", r"\1", block)
-                return json.loads(fixed, strict=False)
-            except: pass
-            
-    # 4. Final attempt: Find the first '{' and repair everything from that point to the end.
-    # This handles cases where it starts with markdown (```json {) or prose and then truncates.
+    # Regex search for first {
     first_brace = s.find('{')
     if first_brace != -1:
         block = s[first_brace:]
-        repaired = _repair_truncated_json(block)
-        try: 
-            return json.loads(repaired, strict=False)
-        except: pass
+        try: return json.loads(block, strict=False)
+        except:
+            repaired = _repair_truncated_json(block)
+            try: return json.loads(repaired, strict=False)
+            except: pass
+    return None
 
-    logging.error(f"Failed to extract valid JSON from LLM response (first 500 chars): {s[:500]}...")
+def _extract_field_via_regex(s: str, field_name: str) -> str | None:
+    pattern = rf'"{field_name}"\s*:\s*"(.*?)(?<!\\)"'
+    match = re.search(pattern, s, re.DOTALL)
+    if match:
+        val = match.group(1)
+        return val.replace('\\"', '"').replace('\\n', '\n').replace('\\t', '\t').replace('\\\\', '\\')
     return None
 
 def _dedupe_and_resolve_overlaps(spans: list[dict]) -> list[dict]:
-    # Sort by start (asc) then length (desc)
     spans = sorted(spans, key=lambda x: (x["start"], -(x["end"] - x["start"])))
     out = []
     last_end = -1
@@ -151,167 +98,111 @@ def _dedupe_and_resolve_overlaps(spans: list[dict]) -> list[dict]:
 
 def _extract_spans_from_tagged_text(tagged_text: str, original_text: str) -> list[dict]:
     """
-    Backup method: If 'spans' key is missing but LLM provided 'annotated_text',
-    we can reconstruct the spans by parsing the XML tags and mapping them back to original text.
+    Priority 1: Mapping tagged text to original narrative.
     """
-    if not tagged_text or not original_text:
-        return []
-
+    if not tagged_text or not original_text: return []
     spans = []
-    # Match <TAG>content</TAG>
     pattern = re.compile(r"<([A-Za-z]+)>(.*?)</\1>", flags=re.DOTALL)
-    
-    current_pos_in_original = 0
-    matches = list(pattern.finditer(tagged_text))
-    
-    for match in matches:
+    current_pos = 0
+    for match in pattern.finditer(tagged_text):
         label = match.group(1).upper()
         content = match.group(2)
+        if label not in _ALLOWED_LABELS: continue
         
-        # Find the content in the original text, starting from where we left off
-        start_idx = original_text.find(content, current_pos_in_original)
-        
+        # Sequential search in original to maintain instance mapping
+        start_idx = original_text.find(content, current_pos)
         if start_idx == -1:
-            # Try searching near the previous position if find fails
-            start_idx = original_text.find(content, max(0, current_pos_in_original - 50))
-
+            start_idx = original_text.find(content, max(0, current_pos - 100)) # Fuzzy lookback
+        
         if start_idx != -1:
             end_idx = start_idx + len(content)
-            if label in _ALLOWED_LABELS:
-                spans.append({
-                    "label": label,
-                    "start": start_idx,
-                    "end": end_idx,
-                    "text": content
-                })
-            current_pos_in_original = end_idx
-            
+            spans.append({"label": label, "start": start_idx, "end": end_idx, "text": content})
+            current_pos = end_idx
     return spans
 
-def mode_AE_annotation_json_strategy(query: str, provider='vllm'):
+def _get_all_occurrences(text: str, original_text: str, label: str) -> list[dict]:
     """
-    Alternative strategy: LLM returns only a list of entities.
-    We then match ALL occurrences of these entities in the text.
+    Priority 3: Global match for missing offsets.
     """
-    raw = call_llm(query, provider, prompt_ner_simple_json)
-    
-    obj = _extract_json_object(raw)
-    if not obj or "entities" not in obj:
-        logging.error("Failed to extract 'entities' from LLM response in JSON strategy")
-        return "", []
-    
-    entities = obj.get("entities", [])
-    spans = []
-    
-    for ent in entities:
-        label = str(ent.get("label", "")).upper()
-        text = str(ent.get("text", ""))
-        
-        if not text or label not in _ALLOWED_LABELS:
-            continue
-            
-        # Find ALL occurrences of this text in the query narrative
-        # We use regex with word boundaries for better accuracy
-        try:
-            # Escape text for regex
-            pattern = re.compile(re.escape(text), flags=re.IGNORECASE)
-            for match in pattern.finditer(query):
-                spans.append({
-                    "label": label,
-                    "start": match.start(),
-                    "end": match.end(),
-                    "text": query[match.start():match.end()]
-                })
-        except Exception as e:
-            logging.debug(f"Error matching entity '{text}': {e}")
-            
-    # Deduplicate and resolve overlaps (e.g. "blood" and "blood test")
-    return "", _dedupe_and_resolve_overlaps(spans)
-
+    if not text: return []
+    matches = []
+    try:
+        pattern = re.compile(re.escape(text), flags=re.IGNORECASE)
+        for m in pattern.finditer(original_text):
+            matches.append({
+                "label": label,
+                "start": m.start(),
+                "end": m.end(),
+                "text": original_text[m.start():m.end()]
+            })
+    except: pass
+    return matches
 
 def mode_AE_annotation(query: str, provider='vllm', prompt_ner: str = prompt_ner_json):
     strategy = os.getenv("LLM_STRATEGY", "span").lower()
-    
-    if strategy == "json":
-        return mode_AE_annotation_json_strategy(query, provider)
-    
-    # Default 'span' strategy
-    raw = call_llm(query, provider, prompt_ner)
-    # logging.info(f"DEBUG: Full LLM Response from {provider}:\n{raw}")
+    raw = call_llm(query, provider, prompt_ner_simple_json if strategy == "json" else prompt_ner)
+    logging.info(f"DEBUG: Full LLM Response from {provider}:\n{raw}")
     
     obj = _extract_json_object(raw)
     
     annotated_text = ""
-    spans = []
+    spans_from_json = []
     
     if obj:
         annotated_text = obj.get("annotated_text", "")
-        spans = obj.get("spans", [])
-        logging.info(f"DEBUG: Full LLM Response from {annotated_text}:\n{spans}")
+        spans_from_json = obj.get("spans") or obj.get("entities") or []
     else:
-        logging.warning("JSON parsing failed, attempting regex extraction of 'annotated_text'")
-        patterns = [
-            r'"annotated_text"\s*:\s*"(.*?)(?<!\\)"',
-            r'"annotated_text"\s*:\s*\'(.*?)(?<!\\)\'',
-            r'annotated_text\s*:\s*"(.*?)(?<!\\)"'
-        ]
-        for p in patterns:
-            match = re.search(p, raw, re.DOTALL)
-            if match:
-                annotated_text = match.group(1)
-                annotated_text = annotated_text.replace('\\"', '"').replace('\\n', '\n').replace('\\t', '\t').replace('\\\\', '\\')
-                logging.info(f"Successfully recovered annotated_text via regex")
-                break
-    
-    if annotated_text and (not spans):
-        logging.info("Recovering spans from annotated_text via tag parsing")
-        spans = _extract_spans_from_tagged_text(annotated_text, query)
-    
-    if not annotated_text and not spans:
-        if "<" in raw and "</" in raw:
-            logging.info("Attempting direct tag parsing from raw response")
-            spans = _extract_spans_from_tagged_text(raw, query)
-            if spans: annotated_text = raw
-        
-        if not spans: return "", []
+        # If JSON failed, try regex for annotated_text as it's the highest accuracy source
+        annotated_text = _extract_field_via_regex(raw, "annotated_text")
 
-    validated = []
-    for sp in spans:
-        try:
-            label = str(sp.get("label", "")).upper()
-            start = int(sp.get("start", -1))
-            end = int(sp.get("end", -1))
-            text = sp.get("text", "")
+    final_spans = []
+
+    # 1. Try TAGGED TEXT mapping (Highest Priority)
+    if annotated_text:
+        logging.info("Step 1: Attempting tag-based extraction from annotated_text")
+        final_spans = _extract_spans_from_tagged_text(annotated_text, query)
+
+    # 2. Try STRUCTURED SPANS (Fallback)
+    if not final_spans and spans_from_json:
+        logging.info("Step 2: Attempting fallback to structured spans/entities list")
+        for entry in spans_from_json:
+            label = str(entry.get("label", "")).upper()
+            text = str(entry.get("text", ""))
+            start = entry.get("start")
+            end = entry.get("end")
             
-            if label in _ALLOWED_LABELS and 0 <= start < end <= len(query):
-                actual_text = query[start:end]
-                if actual_text.lower() == text.lower():
-                    validated.append({"label": label, "start": start, "end": end, "text": actual_text})
-                else:
-                    found_idx = query.find(text, max(0, start-100))
-                    if found_idx == -1: found_idx = query.find(text)
-                    if found_idx != -1:
-                        validated.append({"label": label, "start": found_idx, "end": found_idx + len(text), "text": text})
-        except: continue
+            if not text or label not in _ALLOWED_LABELS: continue
             
-    return annotated_text, _dedupe_and_resolve_overlaps(validated)
+            # If start/end provided, validate them
+            if isinstance(start, int) and isinstance(end, int) and 0 <= start < end <= len(query):
+                if query[start:end].lower() == text.lower():
+                    final_spans.append({"label": label, "start": start, "end": end, "text": query[start:end]})
+                    continue
+            
+            # If offsets missing or invalid, search globally (Priority 3)
+            final_spans.extend(_get_all_occurrences(text, query, label))
+
+    # 3. Final Ditch: Raw response parsing if nothing else worked
+    if not final_spans and "<" in raw and "</" in raw:
+        logging.info("Step 3: Attempting direct tag parsing from raw string")
+        final_spans = _extract_spans_from_tagged_text(raw, query)
+
+    logging.info(f"Extraction complete. Total unique spans found: {len(final_spans)}")
+    return annotated_text, _dedupe_and_resolve_overlaps(final_spans)
 
 def run_llm_annotation(doc_id, provider='vllm'):
     """
     Main annotation pipeline.
     """
     logging.info(f"Starting LLM Annotation for doc_id={doc_id} using provider={provider}")
-    
     conn = get_db_connection()
     doc = conn.execute('SELECT id, pages, meta FROM cases WHERE id = ?', (doc_id,)).fetchone()
     if not doc: 
         conn.close()
         return False, "Doc not found"
-        
     pages = json.loads(doc['pages'])
     meta = json.loads(doc['meta']) if doc['meta'] else {}
     narrative = pages[0]
-    
     ai_user_id = get_user_by_note('LLM') or get_user_by_note('Llama4') or 6
     ai_note = f"LLM ({provider})"
     conn.close()
@@ -337,7 +228,6 @@ def run_llm_annotation(doc_id, provider='vllm'):
         conn = get_db_connection()
         logging.info(f"Saving {len(llm_annotations)} annotations to database for doc_id={doc_id}")
         conn.execute('DELETE FROM annotations WHERE case_id = ? AND user_id = ?', (doc_id, ai_user_id))
-
         for ann in llm_annotations:
             conn.execute('''
                 INSERT INTO annotations (case_id, user_id, label, start_offset, end_offset, text_content, note, relationships, adjudication)

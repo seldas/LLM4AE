@@ -75,35 +75,46 @@ Your task is to apply these annotation principles to the provided FAERS case rep
 '''
 
 prompt_ner_json = '''
-You are an expert medical annotator for FAERS narratives.
+You are an expert medical annotator tasked with identifying and tagging key clinical and contextual attributes in a FAERS (FDA Adverse Event Reporting System) case report narrative. Follow these instructions meticulously:**
 
-Goal:
-- Identify spans in the narrative that match the allowed labels below.
-- Return BOTH:
-  (1) `annotated_text`: the original narrative with inline XML-style tags inserted.
-  (2) `spans`: a list of span objects with character offsets referencing the ORIGINAL (untagged) narrative.
+### ✳️ Annotation Format and Rules
+1. Perform **in-text annotation** by enclosing the relevant text with appropriate XML-style tags.
+2. **Do not alter the original text in any way**. Your task is solely to insert annotation tags.
+3. Use capitalized tags in this format: `<TAG>relevant text</TAG>`.
+4. Ensure all tags are properly opened and closed. For example: `<SDRUG>atenolol</SDRUG>`.
+5. Be precise in your tag placement. Include only the specific words that correspond to the entity being tagged.
 
-CRITICAL RULES:
-- Do NOT change, normalize, rewrite, or reformat any characters in the narrative (including spaces, punctuation, newlines).
-- Offsets in `spans` MUST reference the ORIGINAL narrative string as provided (0-based, python slicing: text[start:end]).
-- `spans[i].text` MUST exactly equal the substring of the original narrative at [start:end].
-- Tags in `annotated_text` must be properly opened/closed, not overlapping, and must preserve the original text order.
-- Do NOT invent labels. Labels must be one of:
-  [SDrug, CDrug, ODrug, Dose, Treatment, AE, mAE, bSYM, RO, Dx, CoD, Lab, FHx, MHx, IND, Status, Age, Sex, Date, Time, Duration, Relative, Latency, Temporal]
+### 🏷️ Tag Types
+Include a list of all possible tags here, such as SDRUG, CDRUG, AE, DATE, DOSE, etc., with a brief description of each.
+
+### ✅ Annotation Example  
+Original text:  
+Concomitant medications included on an unknown date, atenolol tablet at a dose of 25 milligrams twice a day via unknown route for unknown indication.
+
+Correctly annotated text:  
+Concomitant medications included on an unknown date, atenolol tablet at a dose of 25 milligramstwice a day via unknown route for unknown indication.
+
+### 🚫 Common Mistakes to Avoid
+1. Incomplete tags (e.g., `<SDRUG>atenolol` without a closing tag)
+2. Altering the original text content
+3. Inconsistent capitalization of tags
+4. Overlapping or nested tags
+
+Your task is to apply these annotation principles to the provided FAERS case report narrative. Maintain accuracy and consistency throughout your annotations.
+---
 
 {annotation_guideline}
+
+> 🔔 *Note:* Adverse Events should be tagged as `<AE>...</AE>` only when clearly distinguishable from general diagnoses.
+> 🔔 *Note:* The tag can only be chosen from the first column, which is from: [SDrug, CDrug, ODrug, Dose, Treatment, AE, mAE, bSYM, RO, Dx, CoD, Lab, FHx, MHx, IND, Status, Age, Sex, Date, Time, Duration, Relative, Latency, Temporal].
+    DO NOT add other tags.
+---
 
 OUTPUT (STRICT):
 Return ONLY valid JSON (no prose, no markdown fences) in this exact shape:
 {{
-  "annotated_text": "<string>",
-  "spans": [
-    {{"label":"AE","text":"..."}},
-    ...
-  ]
+  "annotated_text": "<string>"
 }}
-
-If you are unsure about a span, omit it (prefer precision over recall).
 '''.format(annotation_guideline=annotation_guideline)
 
 prompt_ner_simple_json = '''
