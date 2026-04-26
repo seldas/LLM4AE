@@ -27,7 +27,10 @@ services:
     env_file:
       - .env
     environment:
-      NODE_ENV: production
+      - NODE_ENV=production
+      - NEXT_PUBLIC_BASE_PATH=/annotator
+      - NEXT_PUBLIC_API_BASE=/annotator_api/api
+      - BACKEND_HOST=backend
     networks:
       - apps-network
 
