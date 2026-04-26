@@ -129,11 +129,6 @@ def trigger_batch_bert_annotation():
             logging.info("Starting background batch BERT annotation")
             # We use a simplified single-process version for the server
             # to avoid complex multiprocessing/CUDA issues in Flask
-            
-            # Import NERClient here to avoid issues if not needed
-            import sys
-            from pathlib import Path
-            sys.path.append(str(Path(__file__).resolve().parent.parent / "development" / "NER" / "scripts"))
             from ner_client import get_ner_client
             
             client = get_ner_client()
@@ -490,8 +485,6 @@ def trigger_bert_annotation():
 
         def background_task(doc_id):
             import sys
-            from pathlib import Path
-            sys.path.append(str(Path(__file__).resolve().parent.parent / "development" / "NER" / "scripts"))
             from ner_client import get_ner_client
             
             client = get_ner_client()
