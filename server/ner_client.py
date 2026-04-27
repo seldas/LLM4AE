@@ -8,7 +8,7 @@ class NERClient:
     def __init__(self, model_path=None):
         if model_path is None:
             # Default path relative to this file (server/ner_client.py)
-            model_path = "/app/BERT_MODEL/model-best"
+            model_path = Path(__file__).resolve().parents[0] / "BERT_MODEL" / "model-best" 
         
         self.model_path = model_path
         self.nlp = None
