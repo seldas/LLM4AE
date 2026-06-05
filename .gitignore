@@ -35,6 +35,7 @@ development/BERT/new_results/model
 development/BERT/new_results/data
 development/NER/output/model-best/transformer/model
 development/NER/data
+development/InfoVIP_export_1_Meta.xlsx
 
 # data folder
 /server/history
