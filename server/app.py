@@ -12,7 +12,7 @@ from history_management import history_blueprint
 from project_management import project_blueprint
 from text_processing import *  # noqa: F403
 from llm_annotation import run_llm_annotation, call_llm  # noqa: F401
-from database_manager import get_db_connection, get_project_by_name, get_case, upsert_case, get_annotations, get_user_by_note, authenticate_user, create_project, link_case_to_project
+from database_manager import get_db_connection, get_project_by_name, get_case, upsert_case, get_annotations, get_user_by_note, authenticate_user, create_project, link_case_to_project, init_db
 from llm_prompts import annotation_guideline
 from ai_client import call_ai as ai_call
 
@@ -31,6 +31,14 @@ if __name__ != '__main__':
     # Ensure root logging also goes to gunicorn handlers
     logging.getLogger().handlers = gunicorn_logger.handlers
     logging.getLogger().setLevel(gunicorn_logger.level)
+
+# Ensure database is initialized on every startup (idempotent — uses IF NOT EXISTS)
+try:
+    init_db()
+    logging.info("Database initialized successfully.")
+except Exception as _db_init_err:
+    logging.error(f"Database initialization failed: {_db_init_err}")
+    raise
 
 app.register_blueprint(history_blueprint)
 app.register_blueprint(project_blueprint)
