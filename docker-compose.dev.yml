@@ -7,8 +7,8 @@ services:
     ports:
       - "8862:8862"
     volumes:
-      - ./server:/app
-      - ./server/database:/app/database
+      - ${LOCAL_WORKSPACE_FOLDER:-.}/server:/app
+      - ${LOCAL_WORKSPACE_FOLDER:-.}/server/database:/app/database
     environment:
       - FLASK_ENV=development
       - FRONTEND_URL=http://localhost:8861
@@ -26,7 +26,7 @@ services:
     ports:
       - "8861:8861"
     volumes:
-      - ./client:/app
+      - ${LOCAL_WORKSPACE_FOLDER:-.}/client:/app
       - /app/node_modules
       - /app/.next
     environment:
