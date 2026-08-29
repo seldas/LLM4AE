@@ -41,3 +41,14 @@ development/NER/data
 /server/database/
 
 .geminiignore
+
+.claude/
+.venv/
+__pycache__/
+.ipynb_checkpoints/
+publication/results/**/workdir/
+
+.env
+
+publication/Datasets/FAERS_D1_clean/*.json
+publication/Datasets/VAERS/*.json
