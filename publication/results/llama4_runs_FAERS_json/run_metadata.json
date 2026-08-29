@@ -1,0 +1,27 @@
+{
+  "data_dir": "/compute001/lwu/projects/LLM4AE/LLM4AE-dev/publication/Datasets/FAERS_D1_clean",
+  "results_dir": "/compute001/lwu/projects/LLM4AE/LLM4AE-dev/publication/results/llama4_runs_FAERS_json",
+  "prompt_file": "/compute001/lwu/projects/LLM4AE/LLM4AE-dev/publication/scripts/annotation_prompts.py",
+  "prompt_variable": "P1_JSON",
+  "prompt_sha256": "bdf5ade3febc4038b2debee44b9caa95646d47e661e5f64e5b3bb61c58cc309a",
+  "llm_url": "http://ncslphpcgpu02:8814/v1",
+  "llm_model": "llama-4-maverick",
+  "documents_requested": 3,
+  "documents_completed": 3,
+  "documents_failed": 0,
+  "mean_entity_mapping_coverage": 1.0,
+  "gold_annotation_stats": {
+    "sme1_seen": 83,
+    "kept": 66,
+    "excluded": 17
+  },
+  "overall_metrics": {
+    "M": 28,
+    "C": 4,
+    "S": 38,
+    "N": 34,
+    "precision": 0.7229,
+    "recall": 0.4545,
+    "f1": 0.5581
+  }
+}

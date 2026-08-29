@@ -1,0 +1,15 @@
+2026-08-29 15:51:43,972 | INFO | Run started
+2026-08-29 15:51:43,972 | INFO | Data directory: /compute001/lwu/projects/LLM4AE/LLM4AE-dev/publication/Datasets/FAERS_D1_clean
+2026-08-29 15:51:43,973 | INFO | Results directory: /compute001/lwu/projects/LLM4AE/LLM4AE-dev/publication/results/llama4_runs_FAERS_json
+2026-08-29 15:51:43,973 | INFO | Prompt file: /compute001/lwu/projects/LLM4AE/LLM4AE-dev/publication/scripts/annotation_prompts.py
+2026-08-29 15:51:43,973 | INFO | P1_JSON SHA256: bdf5ade3febc4038b2debee44b9caa95646d47e661e5f64e5b3bb61c58cc309a
+2026-08-29 15:51:43,973 | INFO | LLM URL: http://ncslphpcgpu02:8814/v1
+2026-08-29 15:51:43,973 | INFO | LLM model: llama-4-maverick
+2026-08-29 15:51:43,973 | INFO | Documents: 3
+2026-08-29 15:51:43,973 | INFO | Resume cache: 0 successful documents
+2026-08-29 15:51:50,776 | INFO | 10064257-1.json | source=api | gold=9 pred=8 | mapping_coverage=1.000000 | M=2 C=1 S=5 N=6 | warnings=0 | 6.80s
+2026-08-29 15:52:09,035 | INFO | 10086156-2.json | source=api | gold=37 pred=30 | mapping_coverage=1.000000 | M=16 C=0 S=14 N=21 | warnings=0 | 18.26s
+2026-08-29 15:52:33,126 | INFO | 10210333-1.json | source=api | gold=20 pred=32 | mapping_coverage=1.000000 | M=10 C=3 S=19 N=7 | warnings=0 | 24.09s
+2026-08-29 15:52:33,281 | INFO | Run finished
+2026-08-29 15:52:33,281 | INFO | Completed=3 Failed=0
+2026-08-29 15:52:33,281 | INFO | Overall: {'M': 28, 'C': 4, 'S': 38, 'N': 34, 'precision': 0.7229, 'recall': 0.4545, 'f1': 0.5581}

@@ -1060,7 +1060,12 @@ def main() -> None:
             else:
                 # Critical leakage boundary: the prompt is constructed ONLY from
                 # page_text. We do not call load_gold() until after this response.
-                prompt = prompt_template.format(text=page_text, suspect_drugs="[]", primary_events="[]")
+                prompt = (
+                    prompt_template
+                    .replace("{text}", page_text)
+                    .replace("{suspect_drugs}", "[]")
+                    .replace("{primary_events}", "[]")
+                )
                 tagged_output, api_meta = client.annotate(prompt)
                 source = "api"
 

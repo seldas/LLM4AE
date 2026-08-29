@@ -136,15 +136,24 @@ Each detected entity must be represented as:
 
 {
   "text": "exact substring from narrative",
+  "start": 0,
+  "end": 0,
   "is_reported": false,
   "mapped_term": null
 }
 
-### Rules for "text"
+### Rules for "text", "start", and "end"
 
 - "text" MUST be copied verbatim from the narrative.
+- "start" MUST be the 0-based character offset of the first character of "text" in the supplied narrative.
+- "end" MUST be the 0-based exclusive character offset immediately after the last character of "text".
+- The intended relationship is: narrative[start:end] == text.
+- Count every character exactly as it appears in the supplied narrative, including spaces, punctuation, and newline characters.
 - Do not normalize, rewrite, expand, abbreviate, or correct the text.
 - Do not include unnecessary contextual words around the entity.
+- If the same entity text occurs multiple times, use the offsets of the specific occurrence being annotated.
+- Each explicit occurrence must be represented separately.
+- Within each category, order entities by ascending "start", then ascending "end".
 
 ### Rules for "is_reported"
 
@@ -175,12 +184,15 @@ They must NOT determine whether an entity is annotated.
 - Do not create a mapped term that is not present in the supplied
   Reported Suspect Drugs or Reported Events.
 
-### Completeness Rules
+### Completeness and Ordering Rules
 
 - Include every supported entity occurrence found in the narrative.
+- Repeated occurrences must be returned as separate objects.
+- Do not collapse repeated mentions into a single object.
 - If a category has no entities, return an empty list.
 - Return all 17 keys, even when their values are empty lists.
 - Do not return duplicate objects for the same occurrence.
+- Within each category list, order annotations by ascending "start", then ascending "end".
 
 ### Narrative
 
@@ -427,21 +439,33 @@ Return exactly one JSON object containing all 14 keys below:
 Each detected entity must be represented as:
 
 {
-  "text": "exact substring from narrative"
+  "text": "exact substring from narrative",
+  "start": 0,
+  "end": 0
 }
 
-### Rules for "text"
+### Rules for "text", "start", and "end"
 
 - "text" MUST be copied verbatim from the narrative.
+- "start" MUST be the 0-based character offset of the first character of "text" in the supplied narrative.
+- "end" MUST be the 0-based exclusive character offset immediately after the last character of "text".
+- The intended relationship is: narrative[start:end] == text.
+- Count every character exactly as it appears in the supplied narrative, including spaces, punctuation, and newline characters.
 - Do not normalize, rewrite, expand, abbreviate, or correct the text.
 - Do not include unnecessary contextual words around the entity.
+- If the same entity text occurs multiple times, use the offsets of the specific occurrence being annotated.
+- Each explicit occurrence must be represented separately.
+- Within each category, order entities by ascending "start", then ascending "end".
 
-### Completeness Rules
+### Completeness and Ordering Rules
 
 - Include every supported entity occurrence found in the narrative.
+- Repeated occurrences must be returned as separate objects.
+- Do not collapse repeated mentions into a single object.
 - If a category has no entities, return an empty list.
 - Return all 14 keys, even when their values are empty lists.
 - Do not return duplicate objects for the same occurrence.
+- Within each category list, order annotations by ascending "start", then ascending "end".
 
 ### Narrative
 

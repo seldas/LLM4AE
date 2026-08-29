@@ -299,3 +299,269 @@ Correct:
 5. Apart from the inserted annotation tags, every character of the
    original narrative must remain unchanged.
 '''
+# ============================================================
+# VAERS shared annotation schema for JSON and tagged-text tasks
+# ============================================================
+
+ANNOTATION_GUIDE_VAERS = r'''
+### Annotation Schema
+
+Annotate ONLY the following 14 VAERS clinical/contextual concept categories:
+
+| Clinical Concept | Definition | Annotation Rule | Trigger Words / Phrases |
+|---|---|---|---|
+| **SYM: Symptom / Adverse-Event Sign** | A patient-reported symptom, sign, complaint, or other clinical manifestation occurring as part of the post-vaccination adverse-event narrative. | Annotate the symptom/sign itself when it is described as experienced, observed, reported, or developed in the adverse-event context and is not presented as a formal diagnosis. Prefer SYM for manifestations such as pain, fever, dizziness, rash, weakness, swelling, nausea, or other signs/symptoms when no diagnostic label is being assigned. | symptom, symptoms, complained of, reported, experienced, developed, presented with, pain, fever, dizziness, rash, swelling, weakness, nausea, vomiting, headache, fatigue |
+| **sDx: Confirmed AE Diagnosis** | A formal diagnosis or diagnosed clinical condition explicitly identified as an adverse event in the vaccination-related episode. | Annotate a diagnosed condition as **sDx** when the narrative presents it as a confirmed/established diagnosis belonging to the adverse-event episode. Use sDx rather than SYM when the text names a diagnosis rather than a symptom, and rather than DX when the diagnosis itself is part of the adverse-event outcome being reported. | diagnosed with, diagnosis of, confirmed, final diagnosis, determined to have, diagnosed as, assessment was, impression was |
+| **pDx: Provisional AE Diagnosis** | A tentative, suspected, possible, or provisional diagnosis considered during evaluation of the adverse-event episode but not established as final. | Annotate a condition as **pDx** when the narrative explicitly frames it as suspected, possible, probable, provisional, differential, or otherwise uncertain during the adverse-event evaluation. Do not use pDx merely because the annotator is uncertain; uncertainty must be present in the narrative. | possible, probable, suspected, concern for, concerning for, provisional, differential diagnosis, may have, might have, could represent, likely, presumed |
+| **DX: Diagnosis (Non-AE Context)** | A diagnosis or clinical condition mentioned in a diagnostic or clinical context that is not functioning as the reported adverse event, provisional AE diagnosis, medical history, or family history. | Annotate a diagnosis as **DX** when it is a current or contextual diagnosis but the narrative does not present it as the adverse event itself. Do not use DX for pre-existing conditions (MHx), family history (FHx), confirmed AEs (sDx), provisional AEs (pDx), symptoms (SYM), or diagnostic procedures. | diagnosis, diagnosed, condition, disease, disorder, assessment, impression, clinical diagnosis |
+| **VAX: Vaccine** | A vaccine product, vaccination, immunization, or vaccine dose described as the administered or potentially causative exposure in the VAERS narrative. | Annotate the vaccine product/name or explicit vaccine reference when it identifies the immunization associated with the report. Annotate the vaccine entity itself, not surrounding administration verbs or temporal phrases. | vaccine, vaccination, immunization, immunized, COVID-19 vaccine, influenza vaccine, flu vaccine, Pfizer, Moderna, Janssen, dose of vaccine, shot |
+| **MHx: Medical History** | A symptom, diagnosis, condition, or medical finding that pre-existed the vaccination/adverse-event episode or is explicitly described as part of the patient's past or chronic medical history. | Annotate the historical/pre-existing clinical condition itself. Do not include contextual phrases such as "history of" when the underlying condition can be separately captured. | past medical history, medical history, PMH, history of, baseline, chronic, pre-existing, underlying condition, known condition, longstanding, prior diagnosis |
+| **FHx: Family History** | A disease, condition, or clinically relevant finding explicitly attributed to the patient's family members or family medical history. | Annotate the condition/finding attributed to family history. Do not classify the patient's own condition as FHx. | family history, FHx, mother had, father had, sibling had, familial, hereditary, inherited, genetic predisposition |
+| **Lab: Laboratory Finding / Vital Sign** | A laboratory test, laboratory result, vital sign, physiologic measurement, or other objective measured clinical finding. | Annotate the test/measurement and its reported result when expressed as one clinically meaningful span when practical. Include normal, abnormal, positive, negative, quantitative, and qualitative findings. Include vital signs and objective measurements when they are reported as clinical findings. | laboratory, lab, level, result, value, positive, negative, elevated, decreased, normal, abnormal, CBC, WBC, hemoglobin, platelet, creatinine, glucose, temperature, blood pressure, heart rate, oxygen saturation |
+| **TEMPO: Temporal Expression** | A date, time, duration, interval, relative-time phrase, latency, or other expression locating an event in time. | Annotate the temporal expression itself. Include absolute dates/times and relative expressions such as time since vaccination, onset latency, duration, or sequence timing. Do not include the clinical event unless it is inseparable from the temporal phrase. | on, at, after, before, later, same day, next day, hours later, days later, weeks later, for 3 days, since vaccination, shortly after, immediately after, date, time |
+| **DOSE: Dose / Lot Information** | Vaccine dose information, dose number, amount, sequence, administration-dose descriptor, or vaccine lot/batch number. | Annotate explicit vaccine dose or lot information, including ordinal dose number and lot/batch identifier. Keep vaccine product name under VAX rather than DOSE. | first dose, second dose, third dose, booster, dose 1, dose 2, dose, dosage, lot, lot number, batch, batch number, 0.5 mL |
+| **STATUS: Patient Status / Outcome** | A statement describing the patient's clinical course, disposition, recovery, persistence, worsening, hospitalization status, disability, death status, or other outcome. | Annotate the status/outcome expression itself. STATUS describes what happened to the patient or event over time, not the underlying symptom/diagnosis. | recovered, recovering, resolved, improved, worsened, stable, persistent, ongoing, hospitalized, admitted, discharged, emergency room, disability, life-threatening, outcome, died, death |
+| **TX: Treatment / Provider / Intervention** | A treatment, therapeutic intervention, clinical management action, procedure used for treatment, or explicitly mentioned treating/provider service associated with management of the patient. | Annotate the treatment/intervention/provider entity or therapeutic action used to manage the patient or adverse event. Do not annotate the indication as TX. Drug names used as treatment may be included as TX when explicitly administered therapeutically. | treated with, treatment, therapy, given, administered, prescribed, managed with, IV fluids, acetaminophen, antihistamine, steroids, epinephrine, surgery, physician, provider, emergency department |
+| **AGE: Patient Age** | The patient's exact or approximate age or age category during the reported vaccination/adverse-event episode. | Annotate explicit references to the patient's age or age category only when they clearly refer to the patient. | year-old, years old, aged, age, infant, child, adolescent, adult, elderly, older adult |
+| **SEX: Patient Sex** | The biological sex of the patient as explicitly described in the VAERS narrative. | Annotate explicit references to the patient's biological sex only when they clearly refer to the patient. | male, female, man, woman, boy, girl |
+
+### General Annotation Rules
+
+1. **Use narrative context, not keyword matching.**
+   Trigger words and phrases are contextual clues only. A trigger word does not automatically determine an annotation.
+
+2. **Annotate the clinical entity, not the contextual trigger phrase.**
+   Examples:
+   - "history of asthma" -> annotate "asthma" as MHx.
+   - "treated with acetaminophen" -> annotate "acetaminophen" as TX.
+   - "two days after vaccination" -> annotate "two days after vaccination" or the smallest complete temporal expression as TEMPO, while the vaccine itself remains VAX when separately expressed.
+
+3. **Use exact text spans.**
+   Every annotated span must occur verbatim in the source narrative. Do not normalize spelling, capitalization, abbreviations, numbers, or units.
+
+4. **Prefer the smallest complete clinically meaningful span.**
+   Do not include unnecessary surrounding words, punctuation, conjunctions, or trigger phrases.
+
+5. **Do not infer unsupported clinical relationships.**
+   Use only information expressed or clearly established in the narrative. Do not infer causality, chronology, diagnosis certainty, medical history, or treatment role solely from medical knowledge.
+
+6. **Do not annotate the same text span with multiple categories.**
+   Choose the category that best represents the role of that occurrence in its local narrative context.
+
+7. **Do not create overlapping or nested annotations.**
+
+8. **SYM vs sDx vs pDx vs DX must follow the narrative role.**
+   - SYM = symptom/sign/complaint without a formal diagnostic role.
+   - sDx = established/confirmed diagnosis functioning as an adverse event in the reported episode.
+   - pDx = tentative/suspected/provisional diagnosis in the adverse-event episode.
+   - DX = diagnosis in a current/contextual non-AE role.
+   Do not convert a symptom into a diagnosis based only on medical knowledge.
+
+9. **sDx vs pDx is determined by diagnostic certainty expressed in the text.**
+   A diagnosis is pDx only when the narrative itself indicates uncertainty, suspicion, possibility, probability, or provisional status.
+
+10. **MHx and FHx take precedence when history is explicit.**
+    - MHx = patient's own pre-existing/historical condition.
+    - FHx = condition attributed to family members/family history.
+    Do not relabel these occurrences as SYM, sDx, pDx, or DX solely because the same condition could be clinically relevant to the current event.
+
+11. **VAX identifies the vaccine exposure, not the timing or dose descriptor.**
+    Example: "second dose of Pfizer vaccine"
+    - "second dose" -> DOSE
+    - "Pfizer vaccine" -> VAX
+
+12. **DOSE includes vaccine sequence and lot information.**
+    Dose number, amount, booster designation, and lot/batch identifiers belong to DOSE when explicitly stated.
+
+13. **TEMPO captures temporal information only.**
+    Dates, times, durations, latency, and relative temporal phrases belong to TEMPO. Do not absorb the associated symptom, diagnosis, vaccine, or treatment into the temporal span unless the phrase cannot be separated without losing its meaning.
+
+14. **Lab includes objective laboratory findings and vital signs.**
+    Diagnostic labels inferred from those findings should not be added unless explicitly stated elsewhere in the narrative.
+
+15. **STATUS describes course, disposition, or outcome.**
+    Do not label the underlying symptom or diagnosis as STATUS merely because its course or outcome is discussed.
+
+16. **TX includes therapeutic management/intervention.**
+    Annotate what was done to treat or manage the patient. Do not label the condition being treated as TX.
+
+17. **Repeated mentions may be annotated separately.**
+    If the same concept appears multiple times, annotate each explicit occurrence according to its local context.
+
+18. **Annotate only the 14 VAERS categories defined above.**
+    Do not invent or add additional categories.
+'''
+
+
+P1_JSON_VAERS = r'''
+You are an expert medical annotator analyzing a VAERS
+(Vaccine Adverse Event Reporting System) case report narrative.
+
+Your task is to identify clinical and contextual entities in the narrative
+according to the annotation schema below and return the annotations as
+structured JSON.
+
+''' + ANNOTATION_GUIDE_VAERS + r'''
+
+### JSON Output Schema
+
+Return exactly one JSON object containing all 14 keys below:
+
+{
+  "sym": [],
+  "sdx": [],
+  "pdx": [],
+  "dx": [],
+  "vax": [],
+  "mhx": [],
+  "fhx": [],
+  "lab": [],
+  "temporal": [],
+  "dose": [],
+  "status": [],
+  "tx": [],
+  "age": [],
+  "sex": []
+}
+
+Each detected entity must be represented as:
+
+{
+  "text": "exact substring from narrative"
+}
+
+### Rules for "text"
+
+- "text" MUST be copied verbatim from the narrative.
+- Do not normalize, rewrite, expand, abbreviate, or correct the text.
+- Do not include unnecessary contextual words around the entity.
+
+### Completeness Rules
+
+- Include every supported entity occurrence found in the narrative.
+- If a category has no entities, return an empty list.
+- Return all 14 keys, even when their values are empty lists.
+- Do not return duplicate objects for the same occurrence.
+
+### Narrative
+
+{text}
+
+### CRITICAL OUTPUT REQUIREMENTS
+
+1. Return ONLY valid JSON.
+2. Do NOT use Markdown code fences.
+3. Do NOT include ```json or ```.
+4. Do NOT include explanations, headings, comments, or conversational text.
+5. The first character of the response must be "{".
+6. The final character of the response must be "}".
+'''
+
+
+P2_TAG_VAERS = r'''
+You are an expert medical annotator analyzing a VAERS
+(Vaccine Adverse Event Reporting System) case report narrative.
+
+Your task is to identify clinical and contextual entities according to the
+annotation schema below and insert XML-style annotation tags directly into
+the original narrative.
+
+''' + ANNOTATION_GUIDE_VAERS + r'''
+
+### Allowed Tags
+
+Use ONLY these tags:
+
+<SYM>...</SYM>
+<SDX>...</SDX>
+<PDX>...</PDX>
+<DX>...</DX>
+<VAX>...</VAX>
+<MHX>...</MHX>
+<FHX>...</FHX>
+<LAB>...</LAB>
+<TEMPO>...</TEMPO>
+<DOSE>...</DOSE>
+<STATUS>...</STATUS>
+<TX>...</TX>
+<AGE>...</AGE>
+<SEX>...</SEX>
+
+Do NOT create any other tag.
+
+### In-Text Annotation Rules
+
+1. Insert tags around the exact entity span in the original narrative.
+
+2. Do NOT alter the original narrative in any way other than inserting
+   annotation tags.
+
+3. Preserve exactly:
+   - wording
+   - spelling
+   - capitalization
+   - punctuation
+   - numbers
+   - whitespace
+   - paragraph structure
+
+4. Every opening tag must have the corresponding closing tag.
+
+5. Tags must NOT overlap or nest.
+
+6. Annotate only the smallest complete clinically meaningful span.
+
+7. Contextual or trigger phrases should normally remain outside the tag.
+
+### Examples
+
+Original:
+A 45-year-old female received the second dose of Pfizer COVID-19 vaccine and developed fever and headache the next day.
+
+Correct:
+A <AGE>45-year-old</AGE> <SEX>female</SEX> received the <DOSE>second dose</DOSE> of <VAX>Pfizer COVID-19 vaccine</VAX> and developed <SYM>fever</SYM> and <SYM>headache</SYM> <TEMPO>the next day</TEMPO>.
+
+Original:
+She was diagnosed with myocarditis and treated with ibuprofen.
+
+Correct:
+She was diagnosed with <SDX>myocarditis</SDX> and treated with <TX>ibuprofen</TX>.
+
+Original:
+The emergency physician was concerned for possible myocarditis.
+
+Correct:
+The emergency physician was concerned for possible <PDX>myocarditis</PDX>.
+
+Original:
+Past medical history included asthma.
+
+Correct:
+Past medical history included <MHX>asthma</MHX>.
+
+Original:
+Temperature was 39.1 C and heart rate was 112 bpm.
+
+Correct:
+<LAB>Temperature was 39.1 C</LAB> and <LAB>heart rate was 112 bpm</LAB>.
+
+Original:
+Symptoms resolved after two days and the patient was discharged home.
+
+Correct:
+Symptoms <STATUS>resolved</STATUS> <TEMPO>after two days</TEMPO> and the patient was <STATUS>discharged home</STATUS>.
+
+### Narrative
+
+{text}
+
+### CRITICAL OUTPUT REQUIREMENTS
+
+1. Return ONLY the fully annotated narrative.
+2. Do NOT add an introductory sentence such as
+   "The annotated text is shown as below:".
+3. Do NOT use Markdown code fences.
+4. Do NOT provide explanations, comments, summaries, or lists.
+5. Apart from the inserted annotation tags, every character of the
+   original narrative must remain unchanged.
+'''
