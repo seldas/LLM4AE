@@ -1055,6 +1055,7 @@ def _gpu_worker_process(
 ):
     """
     Dedicated worker process pinned to gpu_id, pulling runs from task_queue.
+    All stdout/stderr from child training is isolated to log files.
     """
     work_dir = Path(work_dir_str)
     ref_scorer = Path(ref_scorer_str)
@@ -1076,6 +1077,17 @@ def _gpu_worker_process(
         dev_recs = task["dev_recs"]
         test_recs = task["test_recs"]
 
+        task_start = time.time()
+        result_queue.put({
+            "status": "started",
+            "run_id": run_id,
+            "worker_id": worker_id,
+            "gpu_id": gpu_id,
+            "fold_name": fold_name,
+            "seed": seed,
+            "time_str": time.strftime("%H:%M:%S"),
+        })
+
         try:
             raw_df, overall_row, cat_df = run_single_run(
                 fold_idx=fold_idx,
@@ -1094,6 +1106,7 @@ def _gpu_worker_process(
                 min_label_count=min_label_count,
                 eval_batch_size=eval_batch_size,
             )
+            duration_s = time.time() - task_start
             result_queue.put({
                 "status": "success",
                 "run_id": run_id,
@@ -1102,12 +1115,15 @@ def _gpu_worker_process(
                 "fold_idx": fold_idx,
                 "fold_name": fold_name,
                 "seed": seed,
+                "duration_s": duration_s,
+                "time_str": time.strftime("%H:%M:%S"),
                 "raw_df": raw_df,
                 "overall_row": overall_row,
                 "cat_df": cat_df,
             })
         except Exception as e:
             tb = traceback.format_exc()
+            duration_s = time.time() - task_start
             result_queue.put({
                 "status": "error",
                 "run_id": run_id,
@@ -1116,6 +1132,8 @@ def _gpu_worker_process(
                 "fold_idx": fold_idx,
                 "fold_name": fold_name,
                 "seed": seed,
+                "duration_s": duration_s,
+                "time_str": time.strftime("%H:%M:%S"),
                 "error": str(e),
                 "traceback": tb,
             })
@@ -1304,29 +1322,45 @@ def main():
             p.start()
             processes.append(p)
 
-        pbar = tqdm(total=total_runs, desc="Parallel BioBERT Runs", unit="run")
+        pbar = tqdm(total=total_runs, desc="Overall Runs Progress", unit="run", dynamic_ncols=True)
         completed_count = 0
 
         while completed_count < total_runs:
             try:
-                res = result_queue.get(timeout=3.0)
-                completed_count += 1
-                pbar.update(1)
+                res = result_queue.get(timeout=2.0)
 
-                if res["status"] == "success":
+                status = res.get("status")
+                if status == "started":
+                    t_str = res.get("time_str", "")
+                    console_print(
+                        f"[{t_str}] [GPU {res['gpu_id']} | Worker {res['worker_id']:02d}] >> START Fold [{res['fold_name']}] Seed {res['seed']}"
+                    )
+
+                elif status == "success":
+                    completed_count += 1
+                    pbar.update(1)
                     all_raw_dfs.append(res["raw_df"])
                     all_overall_rows.append(res["overall_row"])
                     all_cat_dfs.append(res["cat_df"])
                     row = res["overall_row"]
+                    dur_min = res.get("duration_s", 0) / 60.0
+                    t_str = res.get("time_str", "")
                     console_print(
-                        f"  [DONE] Fold [{row['fold_name']}] Seed {row['seed']} (GPU {res['gpu_id']}): "
-                        f"Strict F1 = {row['strict_F1']:.4f} | ADE F1 = {row['ade_F1']:.4f} | Det F1 = {row['detection_F1']:.4f}"
+                        f"[{t_str}] [GPU {res['gpu_id']} | Worker {res['worker_id']:02d}] << DONE  Fold [{row['fold_name']}] Seed {row['seed']} "
+                        f"in {dur_min:.1f}m -> Strict F1 = {row['strict_F1']:.4f} | ADE F1 = {row['ade_F1']:.4f} | Det F1 = {row['detection_F1']:.4f} "
+                        f"({completed_count}/{total_runs})"
                     )
-                else:
-                    console_print(f"  [FAILED] Run {res['run_id']} on GPU {res['gpu_id']}: {res['error']}")
+
+                elif status == "error":
+                    completed_count += 1
+                    pbar.update(1)
+                    t_str = res.get("time_str", "")
+                    console_print(
+                        f"[{t_str}] [GPU {res['gpu_id']} | Worker {res['worker_id']:02d}] xx FAILED Run {res['run_id']} ({res['fold_name']} Seed {res['seed']}): {res['error']}"
+                    )
                     console_print(res.get("traceback", ""))
+
             except queue.Empty:
-                # Check if all processes are still alive
                 alive = any(p.is_alive() for p in processes)
                 if not alive and completed_count < total_runs:
                     console_print(f"WARNING: All worker processes terminated early ({completed_count}/{total_runs} done).")
