@@ -2,7 +2,7 @@
 """
 run_FAERS_bert_LOO.py
 
-Comprehensive BioBERT evaluation suite for FAERS clinical concept extraction,
+High-Throughput Parallel BioBERT Evaluation Suite for FAERS Clinical Concept Extraction,
 addressing key methodological requirements for Drug Safety:
 
 Key Methodological Capabilities:
@@ -25,25 +25,25 @@ Key Methodological Capabilities:
      - Scheme 1 (Supplementary): Relaxed entity detection micro-P/R/F1.
      - Terminology: Uses 'non-overlapping spurious false positive (S_non_overlap)' and
        'class confusion (S_wrong_class)'; completely eliminates 'hallucination'.
-  5. Confidence Threshold & Operating Point Analysis:
-     - Precision-Recall curves across confidence thresholds [0.10, 0.20, ..., 0.90].
-     - Reports High-Recall Screening, Balanced F1, and High-Precision Confirmatory operating points.
+  5. Multi-GPU True Concurrent Parallel Architecture:
+     - Spawns independent concurrent worker processes across all specified GPUs (--gpu-ids 0 1 2 3 4 5 6).
+     - Dynamic task queue automatically load-balances folds and seeds across GPUs.
+     - Supports --workers-per-gpu (e.g. 2 workers per 32GB GPU for 14 concurrent training runs).
+     - Tuned batch sizes (--batch-size 64, --max-batch-items 8192, --eval-batch-size 64) for maximum throughput.
   6. Statistical Uncertainty:
      - Document-level paired bootstrap (1000 resamples) computing 95% Confidence Intervals (CIs).
-  7. Multi-GPU Support & Clean Progress Logging:
-     - Safe process isolation across multiple GPUs with ANSI-clean log output.
 
 Usage Examples:
-  # Run full Leave-One-Pair-Out with 5 seeds on GPU 0:
-  python publication/scripts/run_FAERS_bert_LOO.py --mode loo --gpu-ids 0 --seeds 42 123 456 789 1011
+  # Run 4 LOO folds x 5 seeds across 7 GPUs concurrently in parallel:
+  python publication/scripts/run_FAERS_bert_LOO.py --mode loo --gpu-ids 0 1 2 3 4 5 6 --seeds 42 123 456 789 1011
 
-  # Run on 4 GPUs in parallel:
-  python publication/scripts/run_FAERS_bert_LOO.py --mode loo --gpu-ids 0 1 2 3 --seeds 42 123 456 789 1011
+  # High-throughput mode with 2 workers per 32GB GPU (14 parallel training runs):
+  python publication/scripts/run_FAERS_bert_LOO.py --mode loo --gpu-ids 0 1 2 3 4 5 6 --workers-per-gpu 2
 
-  # Run standard 10-fold CV with 5 seeds to compare In-Distribution vs LOO:
-  python publication/scripts/run_FAERS_bert_LOO.py --mode cv --folds 10 --gpu-ids 0 1 2 3
+  # Standard 10-fold CV x 5 seeds on 7 GPUs (50 runs total):
+  python publication/scripts/run_FAERS_bert_LOO.py --mode cv --folds 10 --gpu-ids 0 1 2 3 4 5 6
 
-  # Fast debug run:
+  # Single GPU / Quick Debug Run:
   python publication/scripts/run_FAERS_bert_LOO.py --mode loo --max-steps 100 --seeds 42 --gpu-ids 0
 """
 
@@ -55,11 +55,13 @@ import importlib.util
 import json
 import multiprocessing as mp
 import os
+import queue
 import random
 import re
 import sqlite3
 import subprocess
 import sys
+import time
 import traceback
 from collections import Counter, defaultdict
 from pathlib import Path
@@ -67,6 +69,7 @@ from typing import Any, Callable, Dict, List, Optional, Sequence, Set, Tuple
 
 import numpy as np
 import pandas as pd
+
 try:
     import spacy
     from spacy.tokens import DocBin
@@ -75,6 +78,7 @@ except ImportError:
     spacy = None
     DocBin = None
     filter_spans = None
+
 _nlp_sent = None
 
 try:
@@ -207,6 +211,7 @@ EVAL_LABEL_POOL = {
     "indication": "INDICATION",
 }
 
+
 def get_nlp_sent():
     global _nlp_sent
     if _nlp_sent is None:
@@ -338,7 +343,6 @@ def load_records_from_db(db_path: Path) -> Tuple[List[dict], Dict[str, Any]]:
         text_norm = raw_text.replace("↵", "\n")
         doc_anns = anns_by_doc.get(doc_id, [])
 
-        # Validate offsets against normalized text
         valid_anns = []
         for s, e, l in doc_anns:
             if e <= len(text_norm):
@@ -531,7 +535,7 @@ seed = {seed}
 [nlp]
 lang = "en"
 pipeline = ["transformer","ner"]
-batch_size = 32
+batch_size = {batch_size}
 
 [components]
 
@@ -559,7 +563,7 @@ upstream = "*"
 
 [components.transformer]
 factory = "transformer"
-max_batch_items = 4096
+max_batch_items = {max_batch_items}
 set_extra_annotations = {{"@annotation_setters":"spacy-transformers.null_annotation_setter.v1"}}
 
 [components.transformer.model]
@@ -614,7 +618,7 @@ annotating_components = []
 [training.batcher]
 @batchers = "spacy.batch_by_padded.v1"
 discard_oversize = true
-size = 2000
+size = {batch_size_items}
 buffer = 256
 get_length = null
 
@@ -843,7 +847,7 @@ def paired_bootstrap_ci(
 
 
 # -----------------------------------------------------------------------------
-# Training & Fold Execution
+# Training & Single Run Execution
 # -----------------------------------------------------------------------------
 def run_spacy_train_proc(
     cmd: Sequence[str],
@@ -851,7 +855,6 @@ def run_spacy_train_proc(
     log_path: Path,
     max_steps: int,
     fold_name: str,
-    show_progress: bool = True,
 ) -> int:
     log_path.parent.mkdir(parents=True, exist_ok=True)
     env = os.environ.copy()
@@ -883,7 +886,7 @@ def evaluate_model_on_test(
     test_path: Path,
     test_recs: List[dict],
     gpu_id: int,
-    eval_batch_size: int = 32,
+    eval_batch_size: int = 64,
 ) -> pd.DataFrame:
     """Evaluate trained spaCy model on held-out test documents."""
     try:
@@ -928,8 +931,10 @@ def run_single_run(
     work_dir: Path,
     ref_scorer: Path,
     train_python: str,
+    batch_size: int = 64,
+    max_batch_items: int = 8192,
     min_label_count: int = 5,
-    eval_batch_size: int = 32,
+    eval_batch_size: int = 64,
     include_negative_sentences: bool = True,
 ) -> Tuple[pd.DataFrame, dict, pd.DataFrame]:
     run_dir = work_dir / f"{fold_name}_seed_{seed}"
@@ -949,7 +954,15 @@ def run_single_run(
     dev_db.to_disk(dev_path)
     test_db.to_disk(test_path)
 
-    cfg_text = CONFIG_TEMPLATE.format(train_path=str(train_path), dev_path=str(dev_path), seed=seed, max_steps=max_steps)
+    cfg_text = CONFIG_TEMPLATE.format(
+        train_path=str(train_path),
+        dev_path=str(dev_path),
+        seed=seed,
+        max_steps=max_steps,
+        batch_size=batch_size,
+        max_batch_items=max_batch_items,
+        batch_size_items=max_batch_items // 2,
+    )
     cfg_path = run_dir / "train.cfg"
     cfg_path.write_text(cfg_text, encoding="utf-8")
 
@@ -1024,6 +1037,91 @@ def run_single_run(
 
 
 # -----------------------------------------------------------------------------
+# Multi-GPU Parallel Worker Process Loop
+# -----------------------------------------------------------------------------
+def _gpu_worker_process(
+    worker_id: int,
+    gpu_id: int,
+    task_queue: mp.Queue,
+    result_queue: mp.Queue,
+    work_dir_str: str,
+    ref_scorer_str: str,
+    train_python: str,
+    max_steps: int,
+    batch_size: int,
+    max_batch_items: int,
+    min_label_count: int,
+    eval_batch_size: int,
+):
+    """
+    Dedicated worker process pinned to gpu_id, pulling runs from task_queue.
+    """
+    work_dir = Path(work_dir_str)
+    ref_scorer = Path(ref_scorer_str)
+
+    while True:
+        try:
+            task = task_queue.get_nowait()
+        except queue.Empty:
+            break
+
+        if task is None:
+            break
+
+        run_id = task["run_id"]
+        fold_idx = task["fold_idx"]
+        fold_name = task["fold_name"]
+        seed = task["seed"]
+        train_recs = task["train_recs"]
+        dev_recs = task["dev_recs"]
+        test_recs = task["test_recs"]
+
+        try:
+            raw_df, overall_row, cat_df = run_single_run(
+                fold_idx=fold_idx,
+                fold_name=fold_name,
+                seed=seed,
+                train_recs=train_recs,
+                dev_recs=dev_recs,
+                test_recs=test_recs,
+                gpu_id=gpu_id,
+                max_steps=max_steps,
+                work_dir=work_dir,
+                ref_scorer=ref_scorer,
+                train_python=train_python,
+                batch_size=batch_size,
+                max_batch_items=max_batch_items,
+                min_label_count=min_label_count,
+                eval_batch_size=eval_batch_size,
+            )
+            result_queue.put({
+                "status": "success",
+                "run_id": run_id,
+                "worker_id": worker_id,
+                "gpu_id": gpu_id,
+                "fold_idx": fold_idx,
+                "fold_name": fold_name,
+                "seed": seed,
+                "raw_df": raw_df,
+                "overall_row": overall_row,
+                "cat_df": cat_df,
+            })
+        except Exception as e:
+            tb = traceback.format_exc()
+            result_queue.put({
+                "status": "error",
+                "run_id": run_id,
+                "worker_id": worker_id,
+                "gpu_id": gpu_id,
+                "fold_idx": fold_idx,
+                "fold_name": fold_name,
+                "seed": seed,
+                "error": str(e),
+                "traceback": tb,
+            })
+
+
+# -----------------------------------------------------------------------------
 # Leave-One-Pair-Out (LOO) & K-Fold Split Generators
 # -----------------------------------------------------------------------------
 def generate_loo_splits(records: List[dict]) -> List[Tuple[str, List[dict], List[dict], List[dict]]]:
@@ -1077,7 +1175,7 @@ def generate_cv_splits(records: List[dict], k_folds: int = 10) -> List[Tuple[str
 # -----------------------------------------------------------------------------
 def parse_args():
     parser = argparse.ArgumentParser(
-        description="BioBERT Leave-One-Pair-Out & Multi-Seed Replication Suite for FAERS",
+        description="High-Throughput BioBERT Parallel Leave-One-Pair-Out & Multi-Seed Suite",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument(
@@ -1089,10 +1187,19 @@ def parse_args():
         "--seeds", type=int, nargs="+", default=[42, 123, 456, 789, 1011],
         help="Random initialization seeds per fold."
     )
-    parser.add_argument("--gpu-ids", type=int, nargs="+", default=[0], help="GPU device IDs.")
+    parser.add_argument(
+        "--gpu-ids", type=int, nargs="+", default=[0],
+        help="List of GPU device IDs to run on simultaneously (e.g. --gpu-ids 0 1 2 3 4 5 6)."
+    )
+    parser.add_argument(
+        "--workers-per-gpu", type=int, default=1,
+        help="Concurrent training workers per GPU (e.g. 2 for 32GB GPUs to double parallel runs)."
+    )
+    parser.add_argument("--batch-size", type=int, default=64, help="spaCy transformer pipeline batch size.")
+    parser.add_argument("--max-batch-items", type=int, default=8192, help="Max batch token items (tuned for 32GB GPUs).")
     parser.add_argument("--max-steps", type=int, default=8000, help="Max spaCy training steps.")
     parser.add_argument("--min-label-count", type=int, default=5, help="Min label count in TRAIN.")
-    parser.add_argument("--eval-batch-size", type=int, default=32)
+    parser.add_argument("--eval-batch-size", type=int, default=64, help="Inference batch size for evaluation.")
     parser.add_argument("--db-path", type=Path, default=DEFAULT_DB_PATH)
     parser.add_argument("--data-dir", type=Path, default=DEFAULT_DATA_DIR)
     parser.add_argument("--results-dir", type=Path, default=DEFAULT_RESULTS_DIR)
@@ -1108,7 +1215,7 @@ def main():
     work_dir.mkdir(parents=True, exist_ok=True)
 
     console_print("=" * 80)
-    console_print(" BioBERT Evaluation Suite: Leave-One-Drug-AE-Pair-Out & Stochastic Seeds")
+    console_print(" High-Throughput Parallel BioBERT Evaluation Suite")
     console_print("=" * 80)
 
     # 1. Load data
@@ -1132,69 +1239,150 @@ def main():
         splits = generate_cv_splits(records, k_folds=args.folds)
         console_print(f"\n[MODE: Stratified Disjoint K-Fold CV ({args.folds} Folds, In-Distribution)]")
 
-    total_runs = len(splits) * len(args.seeds)
-    console_print(f"Folds: {len(splits)} | Seeds per Fold: {len(args.seeds)} | Total Training Runs: {total_runs}")
-    console_print(f"GPUs available: {args.gpu_ids} | Max Steps: {args.max_steps}")
+    # 3. Create all run tasks
+    all_tasks = []
+    task_id = 0
+    for fold_idx, (fold_name, train_recs, dev_recs, test_recs) in enumerate(splits):
+        for seed in args.seeds:
+            all_tasks.append({
+                "run_id": task_id,
+                "fold_idx": fold_idx,
+                "fold_name": fold_name,
+                "seed": seed,
+                "train_recs": train_recs,
+                "dev_recs": dev_recs,
+                "test_recs": test_recs,
+            })
+            task_id += 1
+
+    total_runs = len(all_tasks)
+    num_gpus = len(args.gpu_ids)
+    total_workers = num_gpus * args.workers_per_gpu
+
+    console_print(f"\nTotal Tasks to Execute: {total_runs} runs")
+    console_print(f"Allocated GPUs: {args.gpu_ids} ({num_gpus} GPUs)")
+    console_print(f"Workers per GPU: {args.workers_per_gpu} -> {total_workers} Concurrent Parallel Processes!")
+    console_print(f"Batch Size: {args.batch_size} | Max Batch Items: {args.max_batch_items} | Eval Batch Size: {args.eval_batch_size}")
+    console_print(f"Max Steps per Run: {args.max_steps}")
+
+    start_time = time.time()
 
     all_raw_dfs = []
     all_overall_rows = []
     all_cat_dfs = []
 
-    run_idx = 0
-    pbar = tqdm(total=total_runs, desc="BioBERT Runs", unit="run")
+    # 4. Multi-GPU Parallel Execution Pool
+    if total_workers > 1 and total_runs > 1:
+        ctx = mp.get_context("spawn")
+        task_queue = ctx.Queue()
+        result_queue = ctx.Queue()
 
-    for fold_idx, (fold_name, train_recs, dev_recs, test_recs) in enumerate(splits):
-        for seed in args.seeds:
-            gpu_id = args.gpu_ids[run_idx % len(args.gpu_ids)]
-            run_idx += 1
+        for t in all_tasks:
+            task_queue.put(t)
 
-            console_print(f"\n>>> Starting Fold {fold_idx+1}/{len(splits)} [{fold_name}] | Seed {seed} | GPU {gpu_id}")
-            console_print(f"    Train: {len(train_recs)} | Dev: {len(dev_recs)} | Test: {len(test_recs)}")
+        processes = []
+        for w_idx in range(total_workers):
+            gpu_id = args.gpu_ids[w_idx % num_gpus]
+            p = ctx.Process(
+                target=_gpu_worker_process,
+                args=(
+                    w_idx,
+                    gpu_id,
+                    task_queue,
+                    result_queue,
+                    str(work_dir),
+                    str(args.ref_scorer),
+                    args.train_python,
+                    args.max_steps,
+                    args.batch_size,
+                    args.max_batch_items,
+                    args.min_label_count,
+                    args.eval_batch_size,
+                ),
+                name=f"Worker-{w_idx}-GPU-{gpu_id}",
+            )
+            p.start()
+            processes.append(p)
 
+        pbar = tqdm(total=total_runs, desc="Parallel BioBERT Runs", unit="run")
+        completed_count = 0
+
+        while completed_count < total_runs:
+            try:
+                res = result_queue.get(timeout=3.0)
+                completed_count += 1
+                pbar.update(1)
+
+                if res["status"] == "success":
+                    all_raw_dfs.append(res["raw_df"])
+                    all_overall_rows.append(res["overall_row"])
+                    all_cat_dfs.append(res["cat_df"])
+                    row = res["overall_row"]
+                    console_print(
+                        f"  [DONE] Fold [{row['fold_name']}] Seed {row['seed']} (GPU {res['gpu_id']}): "
+                        f"Strict F1 = {row['strict_F1']:.4f} | ADE F1 = {row['ade_F1']:.4f} | Det F1 = {row['detection_F1']:.4f}"
+                    )
+                else:
+                    console_print(f"  [FAILED] Run {res['run_id']} on GPU {res['gpu_id']}: {res['error']}")
+                    console_print(res.get("traceback", ""))
+            except queue.Empty:
+                # Check if all processes are still alive
+                alive = any(p.is_alive() for p in processes)
+                if not alive and completed_count < total_runs:
+                    console_print(f"WARNING: All worker processes terminated early ({completed_count}/{total_runs} done).")
+                    break
+
+        pbar.close()
+        for p in processes:
+            p.join(timeout=5)
+
+    else:
+        # Sequential single worker fallback
+        pbar = tqdm(total=total_runs, desc="BioBERT Runs", unit="run")
+        for task in all_tasks:
+            gpu_id = args.gpu_ids[0]
             try:
                 raw_df, overall_row, cat_df = run_single_run(
-                    fold_idx=fold_idx,
-                    fold_name=fold_name,
-                    seed=seed,
-                    train_recs=train_recs,
-                    dev_recs=dev_recs,
-                    test_recs=test_recs,
+                    fold_idx=task["fold_idx"],
+                    fold_name=task["fold_name"],
+                    seed=task["seed"],
+                    train_recs=task["train_recs"],
+                    dev_recs=task["dev_recs"],
+                    test_recs=task["test_recs"],
                     gpu_id=gpu_id,
                     max_steps=args.max_steps,
                     work_dir=work_dir,
                     ref_scorer=args.ref_scorer,
                     train_python=args.train_python,
+                    batch_size=args.batch_size,
+                    max_batch_items=args.max_batch_items,
                     min_label_count=args.min_label_count,
                     eval_batch_size=args.eval_batch_size,
                 )
-
                 all_raw_dfs.append(raw_df)
                 all_overall_rows.append(overall_row)
                 all_cat_dfs.append(cat_df)
-
                 console_print(
-                    f"    Result [{fold_name} | Seed {seed}]: "
-                    f"Strict F1 = {overall_row['strict_F1']:.4f} | "
-                    f"ADE-Eval F1 = {overall_row['ade_F1']:.4f} | "
-                    f"Detection F1 = {overall_row['detection_F1']:.4f}"
+                    f"  [DONE] Fold [{task['fold_name']}] Seed {task['seed']}: "
+                    f"Strict F1 = {overall_row['strict_F1']:.4f} | ADE F1 = {overall_row['ade_F1']:.4f}"
                 )
             except Exception as e:
-                console_print(f"    ERROR in Run {fold_name}_seed_{seed}: {e}\n{traceback.format_exc()}")
-
+                console_print(f"  [FAILED] Run {task['run_id']}: {e}\n{traceback.format_exc()}")
             pbar.update(1)
+        pbar.close()
 
-    pbar.close()
+    elapsed = time.time() - start_time
+    console_print(f"\nAll Runs Completed in {elapsed/60:.2f} minutes ({elapsed:.1f} seconds).")
 
     if not all_overall_rows:
         console_print("ERROR: No runs completed successfully.")
         return
 
-    # 3. Aggregation and Statistical Reporting
+    # 5. Aggregation and Statistical Reporting
     overall_df = pd.DataFrame(all_overall_rows)
     cat_combined_df = pd.concat(all_cat_dfs, ignore_index=True) if all_cat_dfs else pd.DataFrame()
     raw_combined_df = pd.concat(all_raw_dfs, ignore_index=True) if all_raw_dfs else pd.DataFrame()
 
-    # Compute fold-level averages across seeds
     fold_summary = overall_df.groupby(["fold", "fold_name", "test_case_series"], as_index=False).agg(
         strict_F1_mean=("strict_F1", "mean"),
         strict_F1_std=("strict_F1", "std"),
@@ -1204,7 +1392,6 @@ def main():
         detection_F1_std=("detection_F1", "std"),
     ).round(4)
 
-    # Compute category-level summary
     cat_summary = cat_combined_df.groupby("category", as_index=False).agg(
         strict_F1_mean=("strict_F1", "mean"),
         strict_F1_std=("strict_F1", "std"),
@@ -1212,10 +1399,8 @@ def main():
         ade_F1_std=("ade_F1", "std"),
     ).round(4) if not cat_combined_df.empty else pd.DataFrame()
 
-    # Paired Bootstrap 95% Confidence Intervals
     bootstrap_ci = paired_bootstrap_ci(raw_combined_df)
 
-    # Save to Excel
     out_xlsx = args.results_dir / f"{args.mode}_evaluation_summary.xlsx"
     with pd.ExcelWriter(out_xlsx, engine="openpyxl") as writer:
         overall_df.to_excel(writer, sheet_name="All_Runs_Per_Seed", index=False)
