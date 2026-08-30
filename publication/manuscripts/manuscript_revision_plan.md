@@ -143,21 +143,21 @@
 
 #### 3.3 In-Depth Error Anatomy (*Reviewer #3, Comments 3.10, 3.14, 3.21*)
 - **Category C Granularity:** Mean IoU (BioBERT 0.57, LLMs 0.47). Show that 85%–90% of C mismatches are superphrase context extensions (*Figure 5a*).
-- **Category S Misclassification Matrix:** Document top confusing pairs (LAB $\to$ AE/DX [583 cases], DRUG $\to$ DX [577 cases], AE $\to$ HX [279 cases], AE $\to$ STATUS [1,050 cases in VAERS]).
-- **Pure Hallucinations ($S_{\text{hallucination}}$):** Group into normal physiological terms (52%), negation scope errors (28%), and non-target schema overflow (20%).
+- **Class Confusion Matrix ($C_{\text{class}}$):** Document top confusing pairs (LAB $\to$ AE/DX [583 cases], DRUG $\to$ DX [577 cases], AE $\to$ HX [279 cases], AE $\to$ STATUS [1,050 cases in VAERS]).
+- **Non-Overlapping Spurious Predictions ($S_{\text{non\_overlap}}$):** Group into normal physiological/anatomical terms (52%), negation scope errors (28%), and non-target schema overflow (20%).
 - **Axis Alignment:** Align Figure 5b and 5c horizontal axes to identical range ($0 - 180$) (*Reviewer #3, Comment 3.14*).
 - **VAERS Error Breakdown:** Add **Figure 6** presenting Category C IoU distribution and S confusion matrix for VAERS (*Reviewer #3, Comment 3.21*).
 
 #### 3.4 Impact of Output Format Paradigm (Tagged XML vs. JSON) (*Reviewer #3, Comment 3.23*)
 - Present **Table 5: LLaMA 4 FAERS Tagged XML (`P2_TAG`) vs. Structured JSON (`P1_JSON`)**:
-  - Show that JSON output reduces pure hallucinations by **46.52%** (from 15,269 to 8,166 spans), boosting Scheme 1 Precision from 0.8648 to **0.9201**.
-  - Show that Tagged XML maintains superior narrative co-reference, yielding **+11.26% higher Recall** in Scheme 1 (0.8476 vs. 0.7350).
+  - Show that JSON output reduces non-overlapping spurious false positives ($S_{\text{non\_overlap}}$) by **46.52%** (from 15,269 to 8,166 spans), substantially improving precision in structured extraction.
+  - Show that Tagged XML maintains superior narrative co-reference, yielding **+11.26% higher Recall** (0.8476 vs. 0.7350).
 
 ---
 
 ### Section 4: Discussion & Limitations
 - **4.1 Cross-Corpus Synthesis:** Relocate synthesis paragraph from Section 3.4 to Section 4.1 (*Reviewer #2, Comment 2.13*).
-- **4.2 The Semantic vs. Boundary Decoupling:** Discuss why LLMs achieve $\ge 85\% - 91\%$ raw entity detection while trailing supervised models on exact token boundaries.
+- **4.2 The Semantic vs. Boundary Decoupling:** Discuss why LLMs achieve high raw entity detection while trailing supervised models on exact token boundaries.
 - **4.3 Hybrid Pharmacovigilance Pipeline:** Propose the two-stage architecture: Stage 1 Frontier LLM Semantic Recall Filter $\to$ Stage 2 Fine-Tuned Small Encoder Boundary & Taxonomy Regularizer.
 - **4.4 Limitations:**
   - *Single-Annotator Constraint & Transparent Framing:* Formally acknowledge single-expert annotation (SME1) as a study limitation; reframe the dataset from a "definitive gold standard" to an "expert-curated clinical reference benchmark"; highlight the multi-pass calibration, detailed operational guidelines (Supplementary S1), and open-source platform release as enablers for community adjudication (*Reviewer #2, Weakness 1, Comment 2.4*).
@@ -180,6 +180,6 @@
 |---|---|---|
 | [`publication/results/dataset_stats.md`](../results/dataset_stats.md) | Section 2.1, Table 1 | Full corpus scale, sentence/token counts, unique vocabulary stats. |
 | [`publication/results/comparison_three_schemes/three_schemes_summary.xlsx`](../results/comparison_three_schemes/three_schemes_summary.xlsx) | Section 3.1, 3.2, Tables 2, 3, 4 | Multi-scheme benchmark results for BioBERT 10-fold, Sonnet, LLaMA 4, ETHER. |
-| [`publication/results/error_analysis/error_breakdown_summary.xlsx`](../results/error_analysis/error_breakdown_summary.xlsx) | Section 3.3, Figures 5, 6 | Category C IoU distributions, S confusion matrices, hallucination counts. |
+| [`publication/results/error_analysis/error_breakdown_summary.xlsx`](../results/error_analysis/error_breakdown_summary.xlsx) | Section 3.3, Figures 5, 6 | Category C IoU distributions, class confusion matrices, non-overlapping spurious FP counts. |
 | [`publication/scripts/compare_output_formats.py`](../scripts/compare_output_formats.py) | Section 3.4, Table 5 | Output format study metrics (Tagged XML vs Structured JSON). |
 | [`publication/dataset.db`](../dataset.db) | Abstract, Section 5 | Public SQLite database containing 1,829 reports and all annotations. |

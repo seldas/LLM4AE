@@ -393,19 +393,19 @@ def main():
     confusion_l4_f = pd.crosstab(s_wc_l4_f["Gold_Category"], s_wc_l4_f["Pred_Category"], margins=True)
     confusion_l4_v = pd.crosstab(s_wc_l4_v["Gold_Category"], s_wc_l4_v["Pred_Category"], margins=True)
 
-    # 5. Hallucination Breakdown
-    print("[5/5] Analyzing S_hallucination patterns...", flush=True)
-    hal_summary = []
+    # 5. Non-Overlapping Spurious False Positive Breakdown
+    print("[5/5] Analyzing S_non_overlap patterns...", flush=True)
+    spurious_summary = []
     for (m, d), grp in all_s_hal.groupby(["Model", "Dataset"]):
-        total_hal = len(grp)
+        total_spurious = len(grp)
         top_cats = grp["Pred_Category"].value_counts().head(5).to_dict()
         top_texts = grp["Pred_Text"].value_counts().head(10).to_dict()
-        hal_summary.append({
-            "Model": m, "Dataset": d, "Total_Hallucinations": total_hal,
+        spurious_summary.append({
+            "Model": m, "Dataset": d, "Total_Spurious_Non_Overlap": total_spurious,
             "Top_Categories": str(top_cats),
-            "Top_Hallucinated_Terms": str(top_texts),
+            "Top_Spurious_Terms": str(top_texts),
         })
-    df_hal_summary = pd.DataFrame(hal_summary)
+    df_spurious_summary = pd.DataFrame(spurious_summary)
 
     # Save to Excel
     out_dir = results_base / "error_analysis"
@@ -419,7 +419,7 @@ def main():
         confusion_sonnet.to_excel(writer, sheet_name="Confusion_Sonnet_FAERS")
         confusion_l4_f.to_excel(writer, sheet_name="Confusion_LLaMA4_FAERS")
         confusion_l4_v.to_excel(writer, sheet_name="Confusion_LLaMA4_VAERS")
-        df_hal_summary.to_excel(writer, sheet_name="Hallucination_Summary", index=False)
+        df_spurious_summary.to_excel(writer, sheet_name="Spurious_Non_Overlap_Summary", index=False)
 
     print(f"\nSaved Error Breakdown summary to: {out_excel}", flush=True)
     print("\n--- ETHER OVERALL SUMMARY ---", flush=True)
