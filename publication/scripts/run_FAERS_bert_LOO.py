@@ -1218,6 +1218,14 @@ def parse_args():
     parser.add_argument("--max-steps", type=int, default=8000, help="Max spaCy training steps.")
     parser.add_argument("--min-label-count", type=int, default=5, help="Min label count in TRAIN.")
     parser.add_argument("--eval-batch-size", type=int, default=64, help="Inference batch size for evaluation.")
+    parser.add_argument(
+        "--task-index", type=int, default=None,
+        help="Run a single specific task index (0-based) for SLURM Array Jobs ($SLURM_ARRAY_TASK_ID)."
+    )
+    parser.add_argument(
+        "--aggregate-only", action="store_true",
+        help="Only aggregate existing finished task outputs in results-dir without running training."
+    )
     parser.add_argument("--db-path", type=Path, default=DEFAULT_DB_PATH)
     parser.add_argument("--data-dir", type=Path, default=DEFAULT_DATA_DIR)
     parser.add_argument("--results-dir", type=Path, default=DEFAULT_RESULTS_DIR)
@@ -1274,20 +1282,86 @@ def main():
             task_id += 1
 
     total_runs = len(all_tasks)
-    num_gpus = len(args.gpu_ids)
-    total_workers = num_gpus * args.workers_per_gpu
 
-    console_print(f"\nTotal Tasks to Execute: {total_runs} runs")
-    console_print(f"Allocated GPUs: {args.gpu_ids} ({num_gpus} GPUs)")
-    console_print(f"Workers per GPU: {args.workers_per_gpu} -> {total_workers} Concurrent Parallel Processes!")
-    console_print(f"Batch Size: {args.batch_size} | Max Batch Items: {args.max_batch_items} | Eval Batch Size: {args.eval_batch_size}")
-    console_print(f"Max Steps per Run: {args.max_steps}")
+    # Branch A: Aggregate Only Mode
+    if args.aggregate_only:
+        console_print(f"\n[MODE: Aggregate-Only] Scanning {work_dir} for completed task results...")
+        all_raw_dfs = []
+        all_overall_rows = []
+        all_cat_dfs = []
+        metrics_files = sorted(work_dir.glob("task_*_metrics.json"))
+        for mf in metrics_files:
+            with mf.open("r", encoding="utf-8") as f:
+                overall_row = json.load(f)
+            prefix = mf.name.replace("_metrics.json", "")
+            cat_file = work_dir / f"{prefix}_cat.csv"
+            raw_file = work_dir / f"{prefix}_raw.csv"
+            all_overall_rows.append(overall_row)
+            if cat_file.exists():
+                all_cat_dfs.append(pd.read_csv(cat_file))
+            if raw_file.exists():
+                all_raw_dfs.append(pd.read_csv(raw_file))
 
-    start_time = time.time()
+        console_print(f"Loaded {len(all_overall_rows)}/{total_runs} completed task metrics.")
+        if not all_overall_rows:
+            console_print("ERROR: No completed task metric files found.")
+            return
 
-    all_raw_dfs = []
-    all_overall_rows = []
-    all_cat_dfs = []
+    # Branch B: Single Task Index Mode (for SLURM Array Jobs)
+    elif args.task_index is not None:
+        if not (0 <= args.task_index < total_runs):
+            raise ValueError(f"--task-index {args.task_index} out of range (0..{total_runs-1})")
+        task = all_tasks[args.task_index]
+        gpu_id = args.gpu_ids[0]
+        console_print(
+            f"\n[MODE: SLURM Array Task {args.task_index}/{total_runs-1}] "
+            f"Fold [{task['fold_name']}] Seed {task['seed']} on GPU {gpu_id}"
+        )
+        raw_df, overall_row, cat_df = run_single_run(
+            fold_idx=task["fold_idx"],
+            fold_name=task["fold_name"],
+            seed=task["seed"],
+            train_recs=task["train_recs"],
+            dev_recs=task["dev_recs"],
+            test_recs=task["test_recs"],
+            gpu_id=gpu_id,
+            max_steps=args.max_steps,
+            work_dir=work_dir,
+            ref_scorer=args.ref_scorer,
+            train_python=args.train_python,
+            batch_size=args.batch_size,
+            max_batch_items=args.max_batch_items,
+            min_label_count=args.min_label_count,
+            eval_batch_size=args.eval_batch_size,
+        )
+        task_prefix = f"task_{args.task_index:03d}_{task['fold_name']}_seed_{task['seed']}"
+        with (work_dir / f"{task_prefix}_metrics.json").open("w", encoding="utf-8") as f:
+            json.dump(overall_row, f, indent=2)
+        cat_df.to_csv(work_dir / f"{task_prefix}_cat.csv", index=False)
+        raw_df.to_csv(work_dir / f"{task_prefix}_raw.csv", index=False)
+
+        console_print(
+            f"\nTask {args.task_index} COMPLETED: "
+            f"Strict F1 = {overall_row['strict_F1']:.4f} | ADE F1 = {overall_row['ade_F1']:.4f}"
+        )
+        return
+
+    # Branch C: Standard Multi-GPU / Single-Machine Parallel Mode
+    else:
+        num_gpus = len(args.gpu_ids)
+        total_workers = num_gpus * args.workers_per_gpu
+
+        console_print(f"\nTotal Tasks to Execute: {total_runs} runs")
+        console_print(f"Allocated GPUs: {args.gpu_ids} ({num_gpus} GPUs)")
+        console_print(f"Workers per GPU: {args.workers_per_gpu} -> {total_workers} Concurrent Parallel Processes!")
+        console_print(f"Batch Size: {args.batch_size} | Max Batch Items: {args.max_batch_items} | Eval Batch Size: {args.eval_batch_size}")
+        console_print(f"Max Steps per Run: {args.max_steps}")
+
+        start_time = time.time()
+
+        all_raw_dfs = []
+        all_overall_rows = []
+        all_cat_dfs = []
 
     # 4. Multi-GPU Parallel Execution Pool
     if total_workers > 1 and total_runs > 1:
