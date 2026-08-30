@@ -128,13 +128,13 @@
 
 #### 3.1 Master Benchmark Performance (FAERS & VAERS)
 - Present **Table 2 (FAERS Master Benchmark)** and **Table 3 (VAERS Master Benchmark)** under the Two-Tier Framework:
-  - BioBERT FAERS 10-Fold CV: Tier 1 Strict F1 = **$0.6395 \pm 0.0127$**, Tier 2 ADE F1 = **$0.7824 \pm 0.0103$**.
-  - BioBERT FAERS Leave-One-Pair-Out (LOO 4-Fold x 5-Seed): Tier 1 Strict F1 = **$0.5930 \pm 0.0542$** (95% CI: `[0.5758, 0.5921]`), Tier 2 ADE F1 = **$0.7463 \pm 0.0298$** (95% CI: `[0.7543, 0.7649]`).
-  - Claude 4.6 Sonnet FAERS: Tier 1 Strict F1 = **0.4667**, Tier 2 ADE F1 = **0.6443**.
-  - LLaMA 4 FAERS: Tier 1 Strict F1 = **0.4043**, Tier 2 ADE F1 = **0.6249**.
-  - ETHER FAERS: Tier 1 Strict F1 = 0.1147, Tier 2 ADE F1 = 0.2693.
-  - BioBERT VAERS 10-Fold CV: Tier 1 Strict F1 = **$0.6880 \pm 0.0114$**, Tier 2 ADE F1 = **$0.8062 \pm 0.0094$**.
-  - LLaMA 4 VAERS (Filtered): Tier 1 Strict F1 = **0.2711**, Tier 2 ADE F1 = **0.4474**.
+  - **BioBERT FAERS (10-Fold CV):** Tier 1 Strict F1 = **$0.6099 \pm 0.0133$**, Tier 2 ADE-Eval F1 = **$0.7638 \pm 0.0095$**.
+  - **BioBERT FAERS (Leave-One-Pair-Out LOO 4-Fold x 5-Seed OOD):** Tier 1 Strict F1 = **$0.5930 \pm 0.0542$** (95% CI: `[0.5758, 0.5921]`), Tier 2 ADE-Eval F1 = **$0.7463 \pm 0.0298$** (95% CI: `[0.7543, 0.7649]`).
+  - **Claude 4.6 Sonnet FAERS (1-shot):** Tier 1 Strict F1 = **0.4392**, Tier 2 ADE-Eval F1 = **0.6359**.
+  - **LLaMA 4 FAERS (1-shot):** Tier 1 Strict F1 = **0.3755**, Tier 2 ADE-Eval F1 = **0.6170**.
+  - **ETHER FAERS (Rule-based):** Tier 1 Strict F1 = **0.1147**, Tier 2 ADE-Eval F1 = **0.2693**.
+  - **BioBERT VAERS (10-Fold CV):** Tier 1 Strict F1 = **$0.6441 \pm 0.0136$**, Tier 2 ADE-Eval F1 = **$0.7789 \pm 0.0099$**.
+  - **LLaMA 4 VAERS (1-shot, Filtered):** Tier 1 Strict F1 = **0.2364**, Tier 2 ADE-Eval F1 = **0.4766**.
 
 #### 3.2 Category-Level Breakdown & Long-Tail Generalization
 - Present **Table 4 (FAERS 11-Category Evaluation Table)**:

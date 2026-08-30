@@ -2,33 +2,27 @@
 """
 evaluate_three_schemes.py
 
-Computes and compares NER performance across three evaluation schemes on FAERS and VAERS,
+Computes and compares NER performance across the Two-Tier Evaluation Framework on FAERS and VAERS,
 with strict target-category filtering (ignoring predictions from categories not in the gold standard):
 
 Target Categories:
   - FAERS: AE, DRUG, DX, HX, LAB, DOSE, AGE, SEX, STATUS, TEMPORAL, INDICATION, RO, COD
   - VAERS: AE, VAX, TX, LAB, STATUS, HX (Categories like TEMPORAL, DOSE, AGE, SEX, DX not in VAERS Gold are ignored)
 
-Schemes:
-  Scheme 1: Relaxed / Hallucination-only FP (Weighted Entity Detection)
-            - C and S_wrong_class (overlapping with target gold entities) counted as M (TP).
-            - Only pure hallucination (S with no gold span overlap within target categories) counts as FP (0.25 weight).
-            - TP = M + C + S_wrong_class
-            - Precision = TP / (TP + 0.25 * S_hallucination)
-            - Recall = Gold_Detected / Total_Gold_Spans
-            - F1 = 2 * P * R / (P + R)
+Two-Tier Evaluation Framework:
+  Tier 1 (Primary / Standard Benchmark): Strict Exact-Match NER (Scheme 3)
+    - Precision = M / (M + C_total + S_non_overlap)
+    - Recall    = M / (M + C_total + N)
+    - F1        = 2 * P * R / (P + R)
 
-  Scheme 2: Weighted Baseline (ADE-style)
-            - Matched credit = M + 0.5 * C
-            - Precision = (M + 0.5*C) / (M + C + 0.25 * (S_wrong_class + S_hallucination))
-            - Recall = (M + 0.5*C) / (M + C + N)
-            - F1 = 2 * P * R / (P + R)
+  Tier 2 (Secondary / Clinical Utility): Refined ADE-Eval Clinical Weighted Metric (Scheme 2)
+    - C_total = C_boundary (span mismatch) + C_class (category confusion / misclassification)
+    - S_non_overlap = ungrounded spurious predictions (zero gold overlap)
+    - Precision = (M + 0.5 * C_total) / (M + C_total + 0.25 * S_non_overlap)
+    - Recall    = (M + 0.5 * C_total) / (M + C_total + N)
+    - F1        = 2 * P * R / (P + R)
 
-  Scheme 3: Strict Unweighted (Standard Exact Match NER)
-            - TP = M, FP = C + S_total, FN = C + N
-            - Precision = M / (M + C + S_total)
-            - Recall = M / (M + C + N)
-            - F1 = 2 * P * R / (P + R)
+  (Note: Former Scheme 1 relaxed entity detection has been discontinued).
 """
 
 from __future__ import annotations
@@ -81,19 +75,18 @@ def overlap(a0: int, a1: int, b0: int, b1: int) -> bool:
 
 def evaluate_raw_df(df: pd.DataFrame, target_cats: Set[str], group_col: str = "document") -> Tuple[dict, pd.DataFrame]:
     """
-    Evaluates raw predictions across all three schemes, strictly filtering to target_cats.
+    Evaluates raw predictions across the Two-Tier framework, strictly filtering to target_cats.
     """
     total_M = 0
-    total_C = 0
+    total_C_bound = 0
     total_N = 0
-    total_S_wc = 0
-    total_S_hal = 0
-    total_gold_detected = 0
+    total_C_class = 0
+    total_S_non_overlap = 0
     total_gold = 0
 
     cat_stats = defaultdict(lambda: {
-        "M": 0, "C": 0, "N": 0, "S_wc": 0, "S_hal": 0,
-        "gold_detected": 0, "gold_total": 0,
+        "M": 0, "C_boundary": 0, "C_class": 0, "N": 0, "S_non_overlap": 0,
+        "gold_total": 0,
     })
 
     groups = defaultdict(list)
@@ -133,15 +126,9 @@ def evaluate_raw_df(df: pd.DataFrame, target_cats: Set[str], group_col: str = "d
                 if pd.notna(p0) and pd.notna(p1):
                     pred_spans.append((int(p0), int(p1), plab, p_cat))
 
-        # Check gold detections
         for g0, g1, glab, g_cat in gold_spans:
             total_gold += 1
-            is_detected = any(overlap(g0, g1, p0, p1) for p0, p1, _, _ in pred_spans)
-            if is_detected:
-                total_gold_detected += 1
             cat_stats[g_cat]["gold_total"] += 1
-            if is_detected:
-                cat_stats[g_cat]["gold_detected"] += 1
 
         # Check predictions and match types
         for r in rows:
@@ -156,87 +143,80 @@ def evaluate_raw_df(df: pd.DataFrame, target_cats: Set[str], group_col: str = "d
                 total_M += 1
                 cat_stats[g_cat]["M"] += 1
             elif mtype == "C" and g_cat in target_cats:
-                total_C += 1
-                cat_stats[g_cat]["C"] += 1
+                total_C_bound += 1
+                cat_stats[g_cat]["C_boundary"] += 1
             elif mtype == "N" and g_cat in target_cats:
                 total_N += 1
                 cat_stats[g_cat]["N"] += 1
-            elif mtype == "S" and p_cat in target_cats:
+            elif mtype in ("S", "S_wrong_class", "S_non_overlap") and p_cat in target_cats:
                 p0, p1 = int(r[pstart_idx]), int(r[pend_idx])
                 has_gold_overlap = any(overlap(p0, p1, g0, g1) for g0, g1, _, _ in gold_spans)
-                if has_gold_overlap:
-                    total_S_wc += 1
-                    cat_stats[p_cat]["S_wc"] += 1
+                if has_gold_overlap or mtype == "S_wrong_class":
+                    total_C_class += 1
+                    cat_stats[p_cat]["C_class"] += 1
                 else:
-                    total_S_hal += 1
-                    cat_stats[p_cat]["S_hal"] += 1
+                    total_S_non_overlap += 1
+                    cat_stats[p_cat]["S_non_overlap"] += 1
+
+    total_C_total = total_C_bound + total_C_class
 
     # --- Compute Overall Metrics ---
-    # Scheme 1
-    tp1 = total_M + total_C + total_S_wc
-    p1_den = tp1 + 0.25 * total_S_hal
-    p1 = tp1 / p1_den if p1_den > 0 else 0.0
-    r1 = total_gold_detected / total_gold if total_gold > 0 else 0.0
-    f1_1 = 2 * p1 * r1 / (p1 + r1) if (p1 + r1) > 0 else 0.0
-
-    # Scheme 2
-    mc2 = total_M + 0.5 * total_C
-    p2_den = mc2 + 0.5 * total_C + 0.25 * (total_S_wc + total_S_hal)
-    r2_den = total_M + total_C + total_N
-    p2 = mc2 / p2_den if p2_den > 0 else 0.0
-    r2 = mc2 / r2_den if r2_den > 0 else 0.0
-    f1_2 = 2 * p2 * r2 / (p2 + r2) if (p2 + r2) > 0 else 0.0
-
-    # Scheme 3
-    p3_den = total_M + total_C + (total_S_wc + total_S_hal)
-    r3_den = total_M + total_C + total_N
+    # 1. Primary Tier: Strict Exact Match NER (Scheme 3)
+    p3_den = total_M + total_C_total + total_S_non_overlap
+    r3_den = total_M + total_C_total + total_N
     p3 = total_M / p3_den if p3_den > 0 else 0.0
     r3 = total_M / r3_den if r3_den > 0 else 0.0
     f1_3 = 2 * p3 * r3 / (p3 + r3) if (p3 + r3) > 0 else 0.0
 
+    # 2. Secondary Tier: Refined ADE-Eval Weighted Metric (Scheme 2)
+    #    C_total (boundary + category confusion) gets 0.5 partial credit
+    mc2 = total_M + 0.5 * total_C_total
+    p2_den = total_M + total_C_total + 0.25 * total_S_non_overlap
+    r2_den = total_M + total_C_total + total_N
+    p2 = mc2 / p2_den if p2_den > 0 else 0.0
+    r2 = mc2 / r2_den if r2_den > 0 else 0.0
+    f1_2 = 2 * p2 * r2 / (p2 + r2) if (p2 + r2) > 0 else 0.0
+
     overall = {
-        "M": total_M, "C": total_C, "N": total_N,
-        "S_wrong_class": total_S_wc, "S_hallucination": total_S_hal,
-        "Total_Gold": total_gold, "Gold_Detected": total_gold_detected,
-        "S1_Precision": round(p1, 4), "S1_Recall": round(r1, 4), "S1_F1": round(f1_1, 4),
-        "S2_Precision": round(p2, 4), "S2_Recall": round(r2, 4), "S2_F1": round(f1_2, 4),
-        "S3_Precision": round(p3, 4), "S3_Recall": round(r3, 4), "S3_F1": round(f1_3, 4),
+        "M": total_M,
+        "C_boundary": total_C_bound,
+        "C_class": total_C_class,
+        "C_total": total_C_total,
+        "S_non_overlap": total_S_non_overlap,
+        "N": total_N,
+        "Total_Gold": total_gold,
+        "Strict_Precision": round(p3, 4), "Strict_Recall": round(r3, 4), "Strict_F1": round(f1_3, 4),
+        "ADE_Precision": round(p2, 4), "ADE_Recall": round(r2, 4), "ADE_F1": round(f1_2, 4),
     }
 
     # --- Compute Per-Category Metrics ---
     cat_rows = []
     for cat in sorted(cat_stats.keys()):
         st = cat_stats[cat]
-        # Scheme 1
-        tp1_c = st["M"] + st["C"] + st["S_wc"]
-        p1_c_den = tp1_c + 0.25 * st["S_hal"]
-        p1_c = tp1_c / p1_c_den if p1_c_den > 0 else 0.0
-        r1_c = st["gold_detected"] / st["gold_total"] if st["gold_total"] > 0 else 0.0
-        f1_1_c = 2 * p1_c * r1_c / (p1_c + r1_c) if (p1_c + r1_c) > 0 else 0.0
+        c_tot = st["C_boundary"] + st["C_class"]
 
-        # Scheme 2
-        mc2_c = st["M"] + 0.5 * st["C"]
-        p2_c_den = mc2_c + 0.5 * st["C"] + 0.25 * (st["S_wc"] + st["S_hal"])
-        r2_c_den = st["M"] + st["C"] + st["N"]
-        p2_c = mc2_c / p2_c_den if p2_c_den > 0 else 0.0
-        r2_c = mc2_c / r2_c_den if r2_c_den > 0 else 0.0
-        f1_2_c = 2 * p2_c * r2_c / (p2_c + r2_c) if (p2_c + r2_c) > 0 else 0.0
-
-        # Scheme 3
-        p3_c_den = st["M"] + st["C"] + (st["S_wc"] + st["S_hal"])
-        r3_c_den = st["M"] + st["C"] + st["N"]
+        # Strict
+        p3_c_den = st["M"] + c_tot + st["S_non_overlap"]
+        r3_c_den = st["M"] + c_tot + st["N"]
         p3_c = st["M"] / p3_c_den if p3_c_den > 0 else 0.0
         r3_c = st["M"] / r3_c_den if r3_c_den > 0 else 0.0
         f1_3_c = 2 * p3_c * r3_c / (p3_c + r3_c) if (p3_c + r3_c) > 0 else 0.0
 
+        # ADE-Eval
+        mc2_c = st["M"] + 0.5 * c_tot
+        p2_c_den = st["M"] + c_tot + 0.25 * st["S_non_overlap"]
+        r2_c_den = st["M"] + c_tot + st["N"]
+        p2_c = mc2_c / p2_c_den if p2_c_den > 0 else 0.0
+        r2_c = mc2_c / r2_c_den if r2_c_den > 0 else 0.0
+        f1_2_c = 2 * p2_c * r2_c / (p2_c + r2_c) if (p2_c + r2_c) > 0 else 0.0
+
         cat_rows.append({
             "Category": cat,
-            "M": st["M"], "C": st["C"], "N": st["N"],
-            "S_wrong_class": st["S_wc"], "S_hallucination": st["S_hal"],
-            "Gold_Total": st["gold_total"], "Gold_Detected": st["gold_detected"],
-            "S1_Precision": round(p1_c, 4), "S1_Recall": round(r1_c, 4), "S1_F1": round(f1_1_c, 4),
-            "S2_Precision": round(p2_c, 4), "S2_Recall": round(r2_c, 4), "S2_F1": round(f1_2_c, 4),
-            "S3_Precision": round(p3_c, 4), "S3_Recall": round(r3_c, 4), "S3_F1": round(f1_3_c, 4),
+            "M": st["M"], "C_boundary": st["C_boundary"], "C_class": st["C_class"],
+            "C_total": c_tot, "S_non_overlap": st["S_non_overlap"], "N": st["N"],
+            "Gold_Total": st["gold_total"],
+            "Strict_Precision": round(p3_c, 4), "Strict_Recall": round(r3_c, 4), "Strict_F1": round(f1_3_c, 4),
+            "ADE_Precision": round(p2_c, 4), "ADE_Recall": round(r2_c, 4), "ADE_F1": round(f1_2_c, 4),
         })
 
     return overall, pd.DataFrame(cat_rows)
@@ -260,9 +240,8 @@ def evaluate_bert_cv(results_dir: str, target_cats: Set[str]) -> Tuple[dict, pd.
     df_ov = pd.DataFrame(fold_overalls)
     summary_ov = {}
     for metric in [
-        "S1_Precision", "S1_Recall", "S1_F1",
-        "S2_Precision", "S2_Recall", "S2_F1",
-        "S3_Precision", "S3_Recall", "S3_F1",
+        "Strict_Precision", "Strict_Recall", "Strict_F1",
+        "ADE_Precision", "ADE_Recall", "ADE_F1",
     ]:
         summary_ov[f"{metric}_mean"] = round(df_ov[metric].mean(), 4)
         summary_ov[f"{metric}_std"] = round(df_ov[metric].std(), 4)
@@ -272,9 +251,8 @@ def evaluate_bert_cv(results_dir: str, target_cats: Set[str]) -> Tuple[dict, pd.
     for cat, group in df_all_cats.groupby("Category"):
         row = {"Category": cat}
         for metric in [
-            "S1_Precision", "S1_Recall", "S1_F1",
-            "S2_Precision", "S2_Recall", "S2_F1",
-            "S3_Precision", "S3_Recall", "S3_F1",
+            "Strict_Precision", "Strict_Recall", "Strict_F1",
+            "ADE_Precision", "ADE_Recall", "ADE_F1",
         ]:
             row[f"{metric}_mean"] = round(group[metric].mean(), 4)
             row[f"{metric}_std"] = round(group[metric].std(), 4)
@@ -288,7 +266,7 @@ def main():
     results_base = repo_root / "publication" / "results"
 
     print("=================================================================", flush=True)
-    print("Evaluating 3 Scoring Schemes with Dataset-Specific Category Filtering", flush=True)
+    print("Evaluating Two-Tier Scoring Framework (Strict & Refined ADE-Eval)", flush=True)
     print("=================================================================", flush=True)
 
     # 1. FAERS BioBERT
@@ -318,71 +296,56 @@ def main():
     faers_summary = [
         {
             "Dataset": "FAERS D1",
-            "Model": "BioBERT (10-fold)",
-            "S1 (Relaxed) P": f"{bert_faers_ov['S1_Precision_mean']:.4f} +- {bert_faers_ov['S1_Precision_std']:.4f}",
-            "S1 (Relaxed) R": f"{bert_faers_ov['S1_Recall_mean']:.4f} +- {bert_faers_ov['S1_Recall_std']:.4f}",
-            "S1 (Relaxed) F1": f"{bert_faers_ov['S1_F1_mean']:.4f} +- {bert_faers_ov['S1_F1_std']:.4f}",
-            "S2 (Weighted) P": f"{bert_faers_ov['S2_Precision_mean']:.4f} +- {bert_faers_ov['S2_Precision_std']:.4f}",
-            "S2 (Weighted) R": f"{bert_faers_ov['S2_Recall_mean']:.4f} +- {bert_faers_ov['S2_Recall_std']:.4f}",
-            "S2 (Weighted) F1": f"{bert_faers_ov['S2_F1_mean']:.4f} +- {bert_faers_ov['S2_F1_std']:.4f}",
-            "S3 (Strict) P": f"{bert_faers_ov['S3_Precision_mean']:.4f} +- {bert_faers_ov['S3_Precision_std']:.4f}",
-            "S3 (Strict) R": f"{bert_faers_ov['S3_Recall_mean']:.4f} +- {bert_faers_ov['S3_Recall_std']:.4f}",
-            "S3 (Strict) F1": f"{bert_faers_ov['S3_F1_mean']:.4f} +- {bert_faers_ov['S3_F1_std']:.4f}",
+            "Model": "BioBERT (10-fold CV)",
+            "Strict P": f"{bert_faers_ov['Strict_Precision_mean']:.4f} +- {bert_faers_ov['Strict_Precision_std']:.4f}",
+            "Strict R": f"{bert_faers_ov['Strict_Recall_mean']:.4f} +- {bert_faers_ov['Strict_Recall_std']:.4f}",
+            "Strict F1": f"{bert_faers_ov['Strict_F1_mean']:.4f} +- {bert_faers_ov['Strict_F1_std']:.4f}",
+            "ADE-Eval P": f"{bert_faers_ov['ADE_Precision_mean']:.4f} +- {bert_faers_ov['ADE_Precision_std']:.4f}",
+            "ADE-Eval R": f"{bert_faers_ov['ADE_Recall_mean']:.4f} +- {bert_faers_ov['ADE_Recall_std']:.4f}",
+            "ADE-Eval F1": f"{bert_faers_ov['ADE_F1_mean']:.4f} +- {bert_faers_ov['ADE_F1_std']:.4f}",
         },
         {
             "Dataset": "FAERS D1",
-            "Model": "Claude 4.6 Sonnet",
-            "S1 (Relaxed) P": f"{sonnet_faers_ov['S1_Precision']:.4f}",
-            "S1 (Relaxed) R": f"{sonnet_faers_ov['S1_Recall']:.4f}",
-            "S1 (Relaxed) F1": f"{sonnet_faers_ov['S1_F1']:.4f}",
-            "S2 (Weighted) P": f"{sonnet_faers_ov['S2_Precision']:.4f}",
-            "S2 (Weighted) R": f"{sonnet_faers_ov['S2_Recall']:.4f}",
-            "S2 (Weighted) F1": f"{sonnet_faers_ov['S2_F1']:.4f}",
-            "S3 (Strict) P": f"{sonnet_faers_ov['S3_Precision']:.4f}",
-            "S3 (Strict) R": f"{sonnet_faers_ov['S3_Recall']:.4f}",
-            "S3 (Strict) F1": f"{sonnet_faers_ov['S3_F1']:.4f}",
+            "Model": "Claude 4.6 Sonnet (1-shot)",
+            "Strict P": f"{sonnet_faers_ov['Strict_Precision']:.4f}",
+            "Strict R": f"{sonnet_faers_ov['Strict_Recall']:.4f}",
+            "Strict F1": f"{sonnet_faers_ov['Strict_F1']:.4f}",
+            "ADE-Eval P": f"{sonnet_faers_ov['ADE_Precision']:.4f}",
+            "ADE-Eval R": f"{sonnet_faers_ov['ADE_Recall']:.4f}",
+            "ADE-Eval F1": f"{sonnet_faers_ov['ADE_F1']:.4f}",
         },
         {
             "Dataset": "FAERS D1",
-            "Model": "LLaMA 4",
-            "S1 (Relaxed) P": f"{llama4_faers_ov['S1_Precision']:.4f}",
-            "S1 (Relaxed) R": f"{llama4_faers_ov['S1_Recall']:.4f}",
-            "S1 (Relaxed) F1": f"{llama4_faers_ov['S1_F1']:.4f}",
-            "S2 (Weighted) P": f"{llama4_faers_ov['S2_Precision']:.4f}",
-            "S2 (Weighted) R": f"{llama4_faers_ov['S2_Recall']:.4f}",
-            "S2 (Weighted) F1": f"{llama4_faers_ov['S2_F1']:.4f}",
-            "S3 (Strict) P": f"{llama4_faers_ov['S3_Precision']:.4f}",
-            "S3 (Strict) R": f"{llama4_faers_ov['S3_Recall']:.4f}",
-            "S3 (Strict) F1": f"{llama4_faers_ov['S3_F1']:.4f}",
+            "Model": "LLaMA 4 (1-shot)",
+            "Strict P": f"{llama4_faers_ov['Strict_Precision']:.4f}",
+            "Strict R": f"{llama4_faers_ov['Strict_Recall']:.4f}",
+            "Strict F1": f"{llama4_faers_ov['Strict_F1']:.4f}",
+            "ADE-Eval P": f"{llama4_faers_ov['ADE_Precision']:.4f}",
+            "ADE-Eval R": f"{llama4_faers_ov['ADE_Recall']:.4f}",
+            "ADE-Eval F1": f"{llama4_faers_ov['ADE_F1']:.4f}",
         },
     ]
 
     vaers_summary = [
         {
             "Dataset": "VAERS",
-            "Model": "BioBERT (10-fold)",
-            "S1 (Relaxed) P": f"{bert_vaers_ov['S1_Precision_mean']:.4f} +- {bert_vaers_ov['S1_Precision_std']:.4f}",
-            "S1 (Relaxed) R": f"{bert_vaers_ov['S1_Recall_mean']:.4f} +- {bert_vaers_ov['S1_Recall_std']:.4f}",
-            "S1 (Relaxed) F1": f"{bert_vaers_ov['S1_F1_mean']:.4f} +- {bert_vaers_ov['S1_F1_std']:.4f}",
-            "S2 (Weighted) P": f"{bert_vaers_ov['S2_Precision_mean']:.4f} +- {bert_vaers_ov['S2_Precision_std']:.4f}",
-            "S2 (Weighted) R": f"{bert_vaers_ov['S2_Recall_mean']:.4f} +- {bert_vaers_ov['S2_Recall_std']:.4f}",
-            "S2 (Weighted) F1": f"{bert_vaers_ov['S2_F1_mean']:.4f} +- {bert_vaers_ov['S2_F1_std']:.4f}",
-            "S3 (Strict) P": f"{bert_vaers_ov['S3_Precision_mean']:.4f} +- {bert_vaers_ov['S3_Precision_std']:.4f}",
-            "S3 (Strict) R": f"{bert_vaers_ov['S3_Recall_mean']:.4f} +- {bert_vaers_ov['S3_Recall_std']:.4f}",
-            "S3 (Strict) F1": f"{bert_vaers_ov['S3_F1_mean']:.4f} +- {bert_vaers_ov['S3_F1_std']:.4f}",
+            "Model": "BioBERT (10-fold CV)",
+            "Strict P": f"{bert_vaers_ov['Strict_Precision_mean']:.4f} +- {bert_vaers_ov['Strict_Precision_std']:.4f}",
+            "Strict R": f"{bert_vaers_ov['Strict_Recall_mean']:.4f} +- {bert_vaers_ov['Strict_Recall_std']:.4f}",
+            "Strict F1": f"{bert_vaers_ov['Strict_F1_mean']:.4f} +- {bert_vaers_ov['Strict_F1_std']:.4f}",
+            "ADE-Eval P": f"{bert_vaers_ov['ADE_Precision_mean']:.4f} +- {bert_vaers_ov['ADE_Precision_std']:.4f}",
+            "ADE-Eval R": f"{bert_vaers_ov['ADE_Recall_mean']:.4f} +- {bert_vaers_ov['ADE_Recall_std']:.4f}",
+            "ADE-Eval F1": f"{bert_vaers_ov['ADE_F1_mean']:.4f} +- {bert_vaers_ov['ADE_F1_std']:.4f}",
         },
         {
             "Dataset": "VAERS",
             "Model": "LLaMA 4 (Filtered)",
-            "S1 (Relaxed) P": f"{llama4_vaers_ov['S1_Precision']:.4f}",
-            "S1 (Relaxed) R": f"{llama4_vaers_ov['S1_Recall']:.4f}",
-            "S1 (Relaxed) F1": f"{llama4_vaers_ov['S1_F1']:.4f}",
-            "S2 (Weighted) P": f"{llama4_vaers_ov['S2_Precision']:.4f}",
-            "S2 (Weighted) R": f"{llama4_vaers_ov['S2_Recall']:.4f}",
-            "S2 (Weighted) F1": f"{llama4_vaers_ov['S2_F1']:.4f}",
-            "S3 (Strict) P": f"{llama4_vaers_ov['S3_Precision']:.4f}",
-            "S3 (Strict) R": f"{llama4_vaers_ov['S3_Recall']:.4f}",
-            "S3 (Strict) F1": f"{llama4_vaers_ov['S3_F1']:.4f}",
+            "Strict P": f"{llama4_vaers_ov['Strict_Precision']:.4f}",
+            "Strict R": f"{llama4_vaers_ov['Strict_Recall']:.4f}",
+            "Strict F1": f"{llama4_vaers_ov['Strict_F1']:.4f}",
+            "ADE-Eval P": f"{llama4_vaers_ov['ADE_Precision']:.4f}",
+            "ADE-Eval R": f"{llama4_vaers_ov['ADE_Recall']:.4f}",
+            "ADE-Eval F1": f"{llama4_vaers_ov['ADE_F1']:.4f}",
         },
     ]
 
