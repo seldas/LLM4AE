@@ -121,16 +121,22 @@ This document provides complete, rigorous, and point-by-point response materials
 
 ---
 
-#### Comment 2.6 (Evaluation Metrics: Concrete Examples of M, C, S, N)
+#### Comment 2.6 (Evaluation Metrics: Two-Tier Framework & Concrete Definitions of M, C, S, N)
 > *Comment 2.6: "Sect. 2.4 Evaluation Metrics: To help understanding these methods, please, provide examples of the different types of outcomes: Match, Conflation, Spurious and Null."*
 
 - **Author Response:**
-  We have added an illustrative table and paragraph in Section 2.4 providing concrete clinical examples for all four matching outcomes:
-  - **Match ($M$):** Gold = `[hypoglycemia]` (chars 12–24, `AE`), Pred = `[hypoglycemia]` (chars 12–24, `AE`).
-  - **Conflation ($C$, Partial Match):** Gold = `[hypoglycemia]` (chars 12–24, `AE`), Pred = `[severe hypoglycemia]` (chars 5–24, `AE`).
-  - **Spurious / False Positive ($S_{\text{wrong\_class}}$ or $S_{\text{hallucination}}$):** Pred = `[oral route]` (`AE`, non-pathological descriptor) or Pred = `[elevated ALT]` (`AE` when Gold labeled it as `LAB`).
-  - **Null / False Negative ($N$):** Gold = `[somnolence]` (`AE`), with zero model prediction overlapping this span.
-- **Target Section:** Section 2.4 (*Evaluation Framework & Outcome Definitions*).
+  We thank the reviewer for requesting clearer metric definitions. In response to reviewer feedback regarding metric transparency and rigor, we have **discontinued the previous relaxed detection metric (former Scheme 1)** and consolidated our evaluation around a clear **Two-Tier Evaluation Framework**:
+  1. **Primary Tier (Strict Exact-Match NER / Scheme 3):** Standard CoNLL/SemEval benchmark requiring exact span character boundaries and identical category labels.
+  2. **Secondary Tier (ADE-Eval Clinical Weighted Metric / Scheme 2):** Tailored for pharmacovigilance back-office screening, where partial clinical credit (weight 0.5) is awarded to clinically localized entities.
+  
+  Within this framework, we formally define the outcome categories:
+  - **Exact Match ($M$):** Gold = `[hypoglycemia]` (`AE`), Model Pred = `[hypoglycemia]` (`AE`).
+  - **Category $C$ (Imperfect / Partial Localization, weight 0.5):**
+    - **$C_{\text{boundary}}$ (Boundary Inexactness):** Gold = `[hypoglycemia]` (`AE`), Pred = `[severe hypoglycemia]` (`AE`).
+    - **$C_{\text{class}}$ (Category Misclassification / Class Confusion):** Gold = `[rash]` (`AE`), Pred = `[rash]` (`DX` or `MHX`). The clinical entity is correctly identified in text but assigned to an adjacent clinical category; this receives 0.5 partial credit rather than being penalized as a completely ungrounded false positive.
+  - **Category $S$ ($S_{\text{non\_overlap}}$, Spurious False Positive):** Model predicts an entity with **zero character overlap** to any gold clinical entity (penalized with 0.25 denominator weight in ADE-Eval).
+  - **Category $N$ (Null / False Negative):** Gold clinical entity completely missed by the model.
+- **Target Section:** Section 2.4 (*Two-Tier Evaluation Framework & Outcome Definitions*).
 
 ---
 
@@ -276,16 +282,18 @@ This document provides complete, rigorous, and point-by-point response materials
 
 ---
 
-#### Comment 3.10 & 3.13 (Anthropomorphic Language & "Hallucination" Definition)
+#### Comment 3.10 & 3.13 (Anthropomorphic Language & Outcome Categorization)
 > *Comment 3.10 & 3.13: "It's not necessary to say that the model hallucinates in the S case... describe them as what they truly are, which is false positives (S-false positives and C-false positives)... instead of introducing an undefined concept of hallucinations."*
 
 - **Author Response:**
-  We completely agree with this rigorous feedback. We have systematically revised the text:
-  1. Replaced anthropomorphic references with formal statistical terminology: **Spurious False Positives ($S$)** and **Conflation Boundary False Positives ($C$)**.
-  2. Subdivided $S$ into: (a) **$S_{\text{wrong\_class}}$** (predictions that overlap with real gold entities but carry mismatched category labels); and (b) **$S_{\text{hallucination}}$ / Ungrounded False Positives** (predictions with zero character overlap to any gold entity).
-  3. Formalized this decoupling into **Scheme 1** (penalizing only ungrounded false positives) and **Scheme 3** (penalizing all false positives).
-- **Target Section:** Section 2.4 (*Evaluation Framework*), Section 3.1, Section 4.2.
-- **Supporting Source Files:** [`publication/scripts/evaluate_three_schemes.py`](../scripts/evaluate_three_schemes.py).
+  We completely agree with this rigorous feedback. We have systematically overhauled our metric formulation and terminology:
+  1. **Discontinued Former Scheme 1:** We removed the relaxed detection scheme to avoid any leniency perception.
+  2. **Eliminated "Hallucination" Jargon:** Replaced anthropomorphic references with standard biomedical NER error classifications.
+  3. **Refined Category $C$ vs. Category $S$:**
+     - Category $C$ ($C_{\text{total}} = C_{\text{boundary}} + C_{\text{class}}$) now includes boundary inexactness ($C_{\text{boundary}}$) and category misclassification ($C_{\text{class}}$, e.g. identifying a true symptom mention but classifying it as `DX` instead of `AE`). This receives 0.5 partial credit in the ADE-Eval framework.
+     - Category $S$ ($S_{\text{non\_overlap}}$) is strictly restricted to ungrounded spurious predictions with zero gold overlap.
+- **Target Section:** Section 2.4 (*Two-Tier Evaluation Framework*), Section 3.1, Section 4.2.
+- **Supporting Source Files:** [`publication/scripts/run_FAERS_bert_LOO.py`](../scripts/run_FAERS_bert_LOO.py), [`publication/manuscripts/manuscript_revision_plan.md`](manuscript_revision_plan.md).
 
 ---
 

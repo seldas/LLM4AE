@@ -109,13 +109,17 @@
 - **Frontier LLM Setup:** Detail execution for **Claude 4.6 Sonnet** (via Anthropic API) and **LLaMA 4 (`llama-4-maverick`)** under few-shot in-context tag-prompting (1 canonical exemplar).
 - **Output Format Paradigm:** Introduce the comparative setup between Inline Tagged XML (`P2_TAG`) and Structured JSON (`P1_JSON`).
 
-#### 2.4 Multi-Scheme Evaluation Framework (*Reviewer #2, Comments 2.6, 2.7, 2.8; Reviewer #3, Comments 3.10, 3.13, 3.17*)
-- Formally define the three evaluation protocols:
-  1. **Scheme 1 (Relaxed Entity Detection / Hallucination-Penalized):** $\text{TP} = M + C + S_{\text{wrong\_class}}$, $\text{Precision} = \frac{\text{TP}}{\text{TP} + 0.25 S_{\text{hallucination}}}$, $\text{Recall} = \frac{\text{Gold}_{\text{Detected}}}{\text{Total Gold}}$.
-  2. **Scheme 2 (Weighted Clinical Baseline / ADE Protocol):** $\text{Precision} = \frac{M + 0.5C}{M + C + 0.25 S_{\text{total}}}$, $\text{Recall} = \frac{M + 0.5C}{M + C + N}$.
-  3. **Scheme 3 (Strict Exact Match NER):** $\text{Precision} = \frac{M}{M + C + S_{\text{total}}}$, $\text{Recall} = \frac{M}{M + C + N}$.
+#### 2.4 Two-Tier Evaluation Framework & Metric Definitions (*Reviewer #2, Comments 2.6, 2.7, 2.8; Reviewer #3, Comments 3.10, 3.13, 3.17*)
+- **Discontinuation of Former Scheme 1:** Formally state that the previous relaxed entity detection metric (Scheme 1) has been discontinued to avoid metric leniency and inflation concerns raised by Reviewer #3.
+- **Two-Tier Framework Definition:**
+  1. **Primary Tier — Strict Exact-Match Standard NER (Scheme 3):** Standard CoNLL/SemEval exact boundary and label match.
+     $$\text{Precision} = \frac{M}{M + C_{\text{total}} + S_{\text{non\_overlap}}}, \quad \text{Recall} = \frac{M}{M + C_{\text{total}} + N}, \quad F_1 = \frac{2 \cdot P \cdot R}{P + R}$$
+  2. **Secondary Tier — Refined ADE-Eval Clinical Weighted Metric (Scheme 2):**
+     - **Category $C$ ($C_{\text{total}} = C_{\text{boundary}} + C_{\text{class}}$):** Unifies boundary inexactness ($C_{\text{boundary}}$) and category misclassification ($C_{\text{class}}$, e.g. `AE` vs. `DX`, `DX` vs. `MHX`, `DRUG` vs. `TREATMENT`). Receives **0.5 partial credit** in numerator and denominator, recognizing that the clinical entity was correctly localized in the narrative.
+     - **Category $S$ ($S_{\text{non\_overlap}}$):** Strictly reserved for non-overlapping spurious predictions (false positives with zero gold overlap), penalized at 0.25 in the precision denominator.
+     $$\text{Precision} = \frac{M + 0.5 C_{\text{total}}}{M + C_{\text{total}} + 0.25 S_{\text{non\_overlap}}}, \quad \text{Recall} = \frac{M + 0.5 C_{\text{total}}}{M + C_{\text{total}} + N}, \quad F_1 = \frac{2 \cdot P \cdot R}{P + R}$$
 - Clarify Micro-averaged aggregation across all documents (*Reviewer #2, Comment 2.7*).
-- Provide clinical examples for $M$, $C$, $S_{\text{wrong\_class}}$, $S_{\text{hallucination}}$, and $N$ (*Reviewer #2, Comment 2.6; Reviewer #3, Comments 3.10, 3.13*).
+- Provide clinical examples for $M$, $C_{\text{boundary}}$, $C_{\text{class}}$, $S_{\text{non\_overlap}}$, and $N$ (*Reviewer #2, Comment 2.6; Reviewer #3, Comments 3.10, 3.13*).
 - State the **Target Category Schema Filtering Rule**: non-gold categories (e.g., `TEMPORAL`, `DOSE`, `AGE`, `SEX` in VAERS) are filtered out prior to scoring rather than penalized as false positives.
 
 ---
@@ -123,13 +127,14 @@
 ### Section 3: Results
 
 #### 3.1 Master Benchmark Performance (FAERS & VAERS)
-- Present **Table 2 (FAERS Master Benchmark)** and **Table 3 (VAERS Master Benchmark)**:
-  - BioBERT FAERS 10-Fold CV: Scheme 1 F1 = **$0.9058 \pm 0.0116$**, Scheme 2 F1 = **$0.7824 \pm 0.0103$**, Scheme 3 F1 = **$0.6395 \pm 0.0127$**.
-  - Claude 4.6 Sonnet FAERS: Scheme 1 F1 = **0.8404**, Scheme 2 F1 = **0.6443**, Scheme 3 F1 = **0.4667**.
-  - LLaMA 4 FAERS: Scheme 1 F1 = **0.8561**, Scheme 2 F1 = **0.6249**, Scheme 3 F1 = **0.4043**.
-  - ETHER FAERS: Scheme 1 F1 = 0.8227, Scheme 2 F1 = 0.2693, Scheme 3 F1 = 0.1147.
-  - BioBERT VAERS 10-Fold CV: Scheme 1 F1 = **$0.9482 \pm 0.0076$**, Scheme 2 F1 = **$0.8062 \pm 0.0094$**, Scheme 3 F1 = **$0.6880 \pm 0.0114$**.
-  - LLaMA 4 VAERS (Filtered): Scheme 1 F1 = **0.9112**, Scheme 2 F1 = **0.4474**, Scheme 3 F1 = **0.2711**.
+- Present **Table 2 (FAERS Master Benchmark)** and **Table 3 (VAERS Master Benchmark)** under the Two-Tier Framework:
+  - BioBERT FAERS 10-Fold CV: Tier 1 Strict F1 = **$0.6395 \pm 0.0127$**, Tier 2 ADE F1 = **$0.7824 \pm 0.0103$**.
+  - BioBERT FAERS Leave-One-Pair-Out (LOO 4-Fold x 5-Seed): Tier 1 Strict F1 = **$0.5930 \pm 0.0542$** (95% CI: `[0.5758, 0.5921]`), Tier 2 ADE F1 = **$0.7463 \pm 0.0298$** (95% CI: `[0.7543, 0.7649]`).
+  - Claude 4.6 Sonnet FAERS: Tier 1 Strict F1 = **0.4667**, Tier 2 ADE F1 = **0.6443**.
+  - LLaMA 4 FAERS: Tier 1 Strict F1 = **0.4043**, Tier 2 ADE F1 = **0.6249**.
+  - ETHER FAERS: Tier 1 Strict F1 = 0.1147, Tier 2 ADE F1 = 0.2693.
+  - BioBERT VAERS 10-Fold CV: Tier 1 Strict F1 = **$0.6880 \pm 0.0114$**, Tier 2 ADE F1 = **$0.8062 \pm 0.0094$**.
+  - LLaMA 4 VAERS (Filtered): Tier 1 Strict F1 = **0.2711**, Tier 2 ADE F1 = **0.4474**.
 
 #### 3.2 Category-Level Breakdown & Long-Tail Generalization
 - Present **Table 4 (FAERS 11-Category Evaluation Table)**:

@@ -764,52 +764,60 @@ def align_and_classify_spans(
 
 
 def calculate_three_schemes(df: pd.DataFrame) -> Dict[str, Dict[str, float]]:
-    """Compute performance across Scheme 3 (Strict), Scheme 2 (ADE-Eval), and Scheme 1 (Detection)."""
+    """
+    Compute performance across the Two-Tier Evaluation Framework:
+      - Scheme 3 (Primary Standard NER): Strict exact-match micro-P/R/F1.
+      - Scheme 2 (Secondary Clinical Utility): ADE-Eval back-office weighted micro-P/R/F1,
+        where Category C unifies boundary inexactness (C_boundary) and category
+        misclassification (C_class / S_wrong_class) with 0.5 partial credit,
+        and Category S is strictly reserved for non-overlapping spurious predictions (S_non_overlap).
+      (Note: Former Scheme 1 has been discontinued).
+    """
     if df.empty:
         empty = {"precision": 0.0, "recall": 0.0, "f1": 0.0}
-        return {"strict_scheme3": empty, "ade_weighted_scheme2": empty, "detection_scheme1": empty}
+        return {"strict_scheme3": empty, "ade_weighted_scheme2": empty}
 
     counts = df["match_type"].value_counts().to_dict()
     M = int(counts.get("M", 0))
-    C = int(counts.get("C", 0))
-    S_wc = int(counts.get("S_wrong_class", 0))
-    S_no = int(counts.get("S_non_overlap", 0))
+    C_boundary = int(counts.get("C", 0))
+    C_class = int(counts.get("S_wrong_class", 0))
+    C_total = C_boundary + C_class
+    S_non_overlap = int(counts.get("S_non_overlap", 0))
     N = int(counts.get("N", 0))
-    S_total = S_wc + S_no
 
-    # 1. Scheme 3: Strict Exact-Match Standard NER
-    p3_den = M + C + S_total
-    r3_den = M + C + N
+    # 1. Scheme 3: Strict Exact-Match Standard NER (Primary Benchmark)
+    p3_den = M + C_total + S_non_overlap
+    r3_den = M + C_total + N
     p3 = M / p3_den if p3_den > 0 else 0.0
     r3 = M / r3_den if r3_den > 0 else 0.0
     f3 = 2 * p3 * r3 / (p3 + r3) if (p3 + r3) > 0 else 0.0
 
-    # 2. Scheme 2: ADE-Eval Back-Office Weighted Metric
-    m2 = M + 0.5 * C
-    p2_den = m2 + 0.5 * C + 0.25 * S_total
-    r2_den = m2 + 0.5 * C + N
+    # 2. Scheme 2: ADE-Eval Clinical Weighted Metric (Secondary Clinical Utility)
+    #    C_total (boundary + category mis-class) gets 0.5 credit
+    #    S_non_overlap (phantom / spurious FP) penalized with 0.25 denominator weight
+    m2 = M + 0.5 * C_total
+    p2_den = M + C_total + 0.25 * S_non_overlap
+    r2_den = M + C_total + N
     p2 = m2 / p2_den if p2_den > 0 else 0.0
     r2 = m2 / r2_den if r2_den > 0 else 0.0
     f2 = 2 * p2 * r2 / (p2 + r2) if (p2 + r2) > 0 else 0.0
 
-    # 3. Scheme 1: Relaxed Entity Detection (Label-Agnostic)
-    tp1 = M + C + S_wc
-    p1_den = tp1 + 0.25 * S_no
-    r1_den = tp1 + N
-    p1 = tp1 / p1_den if p1_den > 0 else 0.0
-    r1 = tp1 / r1_den if r1_den > 0 else 0.0
-    f1_1 = 2 * p1 * r1 / (p1 + r1) if (p1 + r1) > 0 else 0.0
-
     return {
         "strict_scheme3": {
-            "M": M, "C": C, "S_wrong_class": S_wc, "S_non_overlap": S_no, "N": N,
-            "precision": round(p3, 4), "recall": round(r3, 4), "f1": round(f3, 4),
+            "M": M,
+            "C_boundary": C_boundary,
+            "C_class": C_class,
+            "C_total": C_total,
+            "S_non_overlap": S_non_overlap,
+            "N": N,
+            "precision": round(p3, 4),
+            "recall": round(r3, 4),
+            "f1": round(f3, 4),
         },
         "ade_weighted_scheme2": {
-            "precision": round(p2, 4), "recall": round(r2, 4), "f1": round(f2, 4),
-        },
-        "detection_scheme1": {
-            "precision": round(p1, 4), "recall": round(r1, 4), "f1": round(f1_1, 4),
+            "precision": round(p2, 4),
+            "recall": round(r2, 4),
+            "f1": round(f2, 4),
         },
     }
 
@@ -994,7 +1002,6 @@ def run_single_run(
     schemes = calculate_three_schemes(raw_df)
     strict = schemes["strict_scheme3"]
     ade = schemes["ade_weighted_scheme2"]
-    det = schemes["detection_scheme1"]
 
     overall_row = {
         "fold": fold_idx,
@@ -1002,8 +1009,9 @@ def run_single_run(
         "seed": seed,
         "test_case_series": fold_name,
         "M": strict["M"],
-        "C": strict["C"],
-        "S_wrong_class": strict["S_wrong_class"],
+        "C_boundary": strict["C_boundary"],
+        "C_class": strict["C_class"],
+        "C_total": strict["C_total"],
         "S_non_overlap": strict["S_non_overlap"],
         "N": strict["N"],
         "strict_P": strict["precision"],
@@ -1012,7 +1020,6 @@ def run_single_run(
         "ade_P": ade["precision"],
         "ade_R": ade["recall"],
         "ade_F1": ade["f1"],
-        "detection_F1": det["f1"],
     }
 
     # Per-category evaluation
@@ -1030,7 +1037,6 @@ def run_single_run(
             "category": cat,
             "strict_F1": cat_schemes["strict_scheme3"]["f1"],
             "ade_F1": cat_schemes["ade_weighted_scheme2"]["f1"],
-            "detection_F1": cat_schemes["detection_scheme1"]["f1"],
         })
 
     return raw_df, overall_row, pd.DataFrame(cat_rows)
@@ -1496,8 +1502,6 @@ def main():
         strict_F1_std=("strict_F1", "std"),
         ade_F1_mean=("ade_F1", "mean"),
         ade_F1_std=("ade_F1", "std"),
-        detection_F1_mean=("detection_F1", "mean"),
-        detection_F1_std=("detection_F1", "std"),
     ).round(4)
 
     cat_summary = cat_combined_df.groupby("category", as_index=False).agg(
@@ -1517,12 +1521,11 @@ def main():
         pd.DataFrame([bootstrap_ci]).to_excel(writer, sheet_name="Bootstrap_95CI", index=False)
 
     console_print("\n" + "=" * 80)
-    console_print(" FINAL EXPERIMENT SUMMARY")
+    console_print(" FINAL EXPERIMENT SUMMARY (Two-Tier Evaluation Framework)")
     console_print("=" * 80)
     console_print(f"Summary Saved To: {out_xlsx}")
-    console_print(f"\nOverall Strict F1 (Standard NER):      {overall_df['strict_F1'].mean():.4f} +/- {overall_df['strict_F1'].std():.4f}")
-    console_print(f"Overall ADE-Eval F1 (Clinical Weighted): {overall_df['ade_F1'].mean():.4f} +/- {overall_df['ade_F1'].std():.4f}")
-    console_print(f"Overall Detection F1 (Label Agnostic):   {overall_df['detection_F1'].mean():.4f} +/- {overall_df['detection_F1'].std():.4f}")
+    console_print(f"\nPrimary Tier   - Strict F1 (Standard CoNLL NER): {overall_df['strict_F1'].mean():.4f} +/- {overall_df['strict_F1'].std():.4f}")
+    console_print(f"Secondary Tier - ADE-Eval F1 (Clinical Weighted): {overall_df['ade_F1'].mean():.4f} +/- {overall_df['ade_F1'].std():.4f}")
 
     if bootstrap_ci:
         console_print(f"Strict F1 95% CI:   {bootstrap_ci.get('strict_f1_95ci')}")
