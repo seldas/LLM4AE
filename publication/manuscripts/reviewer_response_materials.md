@@ -33,9 +33,18 @@ This document provides complete, rigorous, and point-by-point response materials
 > *Weakness: "The corpus was annotated by only one person; therefore, the quality of the annotation could be compromised in some contexts (the authors acknowledge this aspect in the limitations section)."*
 
 - **Author Response:**
-  We acknowledge that single-annotator curation is an inherent limitation. To directly validate the reliability and consistency of our gold standard, we have incorporated an inter-annotation consistency analysis comparing the expert SME1 annotations against both legacy rule-based system (ETHER) and model consensus across 829 FAERS reports. Specifically, SME1 annotations exhibit strong lexical and span consistency with multi-model consensus ($F_1 > 0.85$ on core entity categories `AE` and `DRUG`). Furthermore, we utilized a standardized annotation guideline developed in collaboration with pharmacovigilance experts, and all ambiguous clinical entities were reviewed using structured escalation rules. We have expanded our discussion on this in the Limitations section.
+  We fully agree with the reviewer that independent dual-annotation with standard inter-annotator agreement (IAA) represents the methodological ideal. In our study, annotation was conducted by a qualified clinical research fellow holding an RN/BSN license with 4 years of acute care experience, calibrated under the supervision of senior pharmacovigilance faculty. Due to severe institutional resource constraints regarding specialist clinical personnel, independent double-annotation of the 1,829 reports was not feasible.
+  
+  To maximize annotation validity and transparency without relying on circular validation:
+  1. **Comprehensive Operational Taxonomy (Supplement S1):** We formalized explicit inclusion, exclusion, boundary, and disambiguation rules for overlapping clinical categories (e.g., `AE` vs. `DX`, `DX` vs. `MHX`, `LAB` vs. `AE`).
+  2. **Multi-Pass Internal Verification:** A multi-pass auditing workflow was enforced, demonstrating high internal consistency particularly on closed-vocabulary structural entities (`AGE`, `SEX`, `DOSE`).
+  3. **Re-Framing Study Scope:** We have transparently contextualized the corpus not as an unassailable "definitive gold standard", but as an "expert-curated clinical reference benchmark".
+  4. **Open-Source Release for Community Adjudication:** We have publicly released the complete SQLite database (`publication/dataset.db`) and the open-source review platform (`LLM4AE`) so that external research groups can audit, adjudicate, and extend the annotations.
+  5. **Methodological Rigor on All Benchmark Dimensions:** We expanded our evaluation to include Leave-One-Drug-AE-Pair-Out (LOO) cross-validation, 5-seed optimization replication, and paired bootstrap 95% confidence intervals.
+  
+  We have expanded this discussion in Section 2.2 and Section 4.4 (*Limitations*).
 - **Target Section:** Section 2.2 (*Human Annotation Protocol*), Section 4.4 (*Limitations*).
-- **Supporting Source Files:** [`publication/scripts/compute_annotation_quality.py`](../scripts/compute_annotation_quality.py), [`publication/results/annotation_quality_raw.json`](../results/annotation_quality_raw.json).
+- **Supporting Source Files:** [`publication/manuscripts/manuscript_revision_plan.md`](manuscript_revision_plan.md), [`publication/dataset.db`](../dataset.db).
 
 ---
 
@@ -97,9 +106,9 @@ This document provides complete, rigorous, and point-by-point response materials
 > *Comment 2.4: "Sect. Materials and Methods > 2.2. Human Annotation Protocol: The texts were annotated by only one person. However, at least two annotators should be involved in the process, and the quality of the annotation could be compromised. Could the authors provide inter-annotator agreement or quality verification?"*
 
 - **Author Response:**
-  We clarify that annotations were performed by a clinical research fellow following a multi-round annotation guideline established in consultation with senior pharmacovigilance specialists. To empirically quantify annotation consistency without a second full-corpus manual pass, we computed cross-system consensus statistics across expert gold (SME1), LLM pre-annotations, and rule-based system (ETHER), showing high agreement on major categories (`AE` overlap $F_1 = 0.86$, `DRUG` overlap $F_1 = 0.88$). We have clarified the annotator's clinical background and stated single-annotator curation as a formal limitation.
+  We acknowledge that independent double-annotation by two or more experts represents the gold standard in corpus curation. Due to clinical specialist resource constraints, our 1,829 reports were curated by a single qualified clinical fellow (RN/BSN, 4 years acute clinical experience) with senior faculty calibration. To ensure quality without a second full manual pass, we implemented: (1) formal disambiguation guidelines in Supplementary S1; (2) multi-pass verification of complex boundary cases; and (3) public release of the interactive tool and data for open community adjudication. We have transparently framed this constraint in Section 2.2 and Section 4.4.
 - **Target Section:** Section 2.2 (*Human Annotation Protocol*), Section 4.4 (*Limitations*).
-- **Supporting Source Files:** [`publication/scripts/compute_annotation_quality.py`](../scripts/compute_annotation_quality.py).
+- **Supporting Source Files:** [`publication/manuscripts/manuscript_revision_plan.md`](manuscript_revision_plan.md).
 
 ---
 

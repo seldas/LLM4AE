@@ -96,6 +96,13 @@
 - **Guidelines:** Cite foundational VAERS and FAERS annotation protocols (Botsis et al., 2011; Wu et al., 2020) (*Reviewer #3, Comment 3.4*).
 - **LLM4AE Platform:** Clarify multi-LLM backend support (Anthropic, Meta, OpenAI, Ollama) and describe the interactive review workflow (*Reviewer #3, Comment 3.6*).
 - **Unsuccessfully Tagged Items:** Define as syntax formatting errors (e.g., unclosed tags, non-alphanumeric tag corruptions) occurring in $<0.4\%$ of outputs, resolved by regex validation (*Reviewer #3, Comments 3.7, 3.8*).
+- **Special Strategy for Single-Annotator Constraint (*Reviewer #2, Comments 2.W1, 2.4*):**
+  - *Context & Constraint:* Independent full-corpus dual annotation (SME2) was precluded due to severe institutional resource constraints regarding specialist clinical personnel. Rather than attempting circular validation (e.g., comparing human annotations against the evaluated models), we explicitly acknowledge this constraint and establish a 4-pillar quality assurance framework:
+    1. **Expert Qualification & Calibration:** Single-annotator curation by a licensed clinical specialist with 4 years of acute care experience and faculty calibration.
+    2. **Formal Operational Taxonomy (Supplement S1):** Detailed boundary, inclusion, exclusion, and disambiguation rules for complex overlapping clinical concepts (e.g., `AE` vs. `DX`, `DX` vs. `MHX`, `LAB` vs. `AE`).
+    3. **Deterministic Multi-Pass Verification:** Multi-pass internal auditing with verified high consistency on closed-vocabulary entities (`AGE`, `SEX`, `DOSE`).
+    4. **Community Adjudication via Open Source:** Full public release of `publication/dataset.db` and the interactive platform to enable external community adjudication and benchmark evolution.
+    5. **Empirical Methodological Compensation:** Supplemented with extensive out-of-distribution validation (Leave-One-Pair-Out LOO 4-fold CV), 5-seed optimization replication, and paired bootstrap 95% CIs.
 
 #### 2.3 Model Implementations & Baselines (*Reviewer #2, Comment 2.10; Reviewer #3, Comments 3.1, 3.11, 3.12*)
 - **BioBERT Setup:** Detail the 10-fold cross-validation configuration (80% train, 10% validation, 10% test split per fold) using `dmis-lab/biobert-base-cased-v1.1`.
@@ -147,7 +154,10 @@
 - **4.1 Cross-Corpus Synthesis:** Relocate synthesis paragraph from Section 3.4 to Section 4.1 (*Reviewer #2, Comment 2.13*).
 - **4.2 The Semantic vs. Boundary Decoupling:** Discuss why LLMs achieve $\ge 85\% - 91\%$ raw entity detection while trailing supervised models on exact token boundaries.
 - **4.3 Hybrid Pharmacovigilance Pipeline:** Propose the two-stage architecture: Stage 1 Frontier LLM Semantic Recall Filter $\to$ Stage 2 Fine-Tuned Small Encoder Boundary & Taxonomy Regularizer.
-- **4.4 Limitations:** Acknowledge single-annotator curation (*Reviewer #2, Weakness 1*), prompt sensitivity (*Reviewer #3, Comment 3.23*), and discuss token probability thresholding as future work (*Reviewer #3, Comment 3.22*).
+- **4.4 Limitations:**
+  - *Single-Annotator Constraint & Transparent Framing:* Formally acknowledge single-expert annotation (SME1) as a study limitation; reframe the dataset from a "definitive gold standard" to an "expert-curated clinical reference benchmark"; highlight the multi-pass calibration, detailed operational guidelines (Supplementary S1), and open-source platform release as enablers for community adjudication (*Reviewer #2, Weakness 1, Comment 2.4*).
+  - *Case Series Scope:* Discuss the 4 drug-AE series in FAERS and contextualize the Leave-One-Pair-Out out-of-distribution findings.
+  - *Prompt & Architecture Boundaries:* Note prompt sensitivity across zero/few-shot regimes (*Reviewer #3, Comment 3.23*) and discuss span confidence threshold tuning (*Reviewer #3, Comment 3.22*).
 
 ---
 
