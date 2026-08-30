@@ -6,22 +6,23 @@
   "prompt_sha256": "bdf5ade3febc4038b2debee44b9caa95646d47e661e5f64e5b3bb61c58cc309a",
   "llm_url": "http://ncslphpcgpu02:8814/v1",
   "llm_model": "llama-4-maverick",
-  "documents_requested": 3,
-  "documents_completed": 3,
-  "documents_failed": 0,
-  "mean_entity_mapping_coverage": 1.0,
+  "documents_requested": 829,
+  "documents_completed": 812,
+  "documents_failed": 17,
+  "mean_entity_mapping_coverage": 0.996612,
   "gold_annotation_stats": {
-    "sme1_seen": 83,
-    "kept": 66,
-    "excluded": 17
+    "sme1_seen": 34904,
+    "kept": 27230,
+    "excluded": 7659,
+    "invalid_offset": 15
   },
   "overall_metrics": {
-    "M": 28,
-    "C": 4,
-    "S": 38,
-    "N": 34,
-    "precision": 0.7229,
-    "recall": 0.4545,
-    "f1": 0.5581
+    "M": 11991,
+    "C": 4511,
+    "S": 15178,
+    "N": 10728,
+    "precision": 0.7019,
+    "recall": 0.5232,
+    "f1": 0.5995
   }
 }
