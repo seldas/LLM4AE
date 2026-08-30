@@ -32,8 +32,11 @@ interface Props {
   overrideId?: string;
 }
 
-const PRIMARY_ENTITY_LABELS = new Set(['AE','SDRUG','CDRUG','ODRUG','TREATMENT','SDRUG','CDrug','SDrug','Treatment']);
-const TEMPORAL_LABELS = new Set(['TEMPORAL','DATE','TIME','DURATION','RELATIVE','LATENCY']);
+const PRIMARY_ENTITY_LABELS = new Set([
+  'AE', 'SDRUG', 'CDRUG', 'ODRUG', 'TREATMENT', 'DOSE', 'IND', 'MAE', 'DX', 'LAB', 'STATUS', 'RO', 'COD', 'MHX', 'FHX', 'AGE', 'SEX',
+  'SYM', 'SDX', 'PDX', 'VAX', 'TX', 'TEMPO'
+]);
+const TEMPORAL_LABELS = new Set(['TEMPORAL', 'TEMPO', 'DATE', 'TIME', 'DURATION', 'RELATIVE', 'LATENCY']);
 
 // Icons
 const IconSave = () => <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"/></svg>;
@@ -41,12 +44,13 @@ const IconExport = () => <svg className="w-3.5 h-3.5" fill="none" stroke="curren
 const IconExit = () => <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>;
 
 export default function Annotate_Panel({ overrideProject, overrideId}: Props) {
-  const [doc, dispatch] = useReducer(docReducer, initialDocState)
+  const [doc, dispatch] = useReducer(docReducer, initialDocState);
   const [selectedText, setSelectedText] = useState('');
+  const [isAnnotatingLlm, setIsAnnotatingLlm] = useState(false);
 
   const labelNormalizer: Record<string, string> = {
-    'R/O': 'DIAGNOSTIC',
-    'BSYM': 'MEDICAL HISTORY',
+    'R/O': 'RO',
+    'BSYM': 'MHX',
     'TEMPO': 'TEMPORAL',
     'DATE': 'TEMPORAL',
     'TIME': 'TEMPORAL',
@@ -54,12 +58,29 @@ export default function Annotate_Panel({ overrideProject, overrideId}: Props) {
     'RELATIVE': 'TEMPORAL',
     'LATENCY': 'TEMPORAL',
     'TEMPORAL SEQUENCE': 'TEMPORAL',
-    'COD': 'CAUSE OF DEATH',
-    'SYMPTOM': 'AE',
-    'SIGN': 'AE',
+    'COD': 'COD',
+    'SYMPTOM': 'SYM',
+    'SIGN': 'SYM',
     'AGE': 'AGE',
     'SEX': 'SEX',
     'GENDER': 'SEX',
+    'SDRUG': 'SDRUG',
+    'CDRUG': 'CDRUG',
+    'ODRUG': 'ODRUG',
+    'DRUG': 'ODRUG',
+    'INDICATION': 'IND',
+    'IND': 'IND',
+    'TREATMENT': 'TREATMENT',
+    'TX': 'TX',
+    'SDX': 'SDX',
+    'PDX': 'PDX',
+    'VAX': 'VAX',
+    'MAE': 'MAE',
+    'DX': 'DX',
+    'LAB': 'LAB',
+    'STATUS': 'STATUS',
+    'MHX': 'MHX',
+    'FHX': 'FHX',
   }; 
   
   // Layer Management
@@ -646,6 +667,42 @@ export default function Annotate_Panel({ overrideProject, overrideId}: Props) {
     loadGuidelines();
   }, []);
 
+  const handleTriggerLlm = async () => {
+    if (isAnnotatingLlm) return;
+    setIsAnnotatingLlm(true);
+    try {
+      const res = await fetch('/api/llm-annotate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: overrideId,
+          file: doc.name,
+          folder: overrideProject || 'askMyFAERS',
+          mode: 'tag',
+          schema: 'faers'
+        })
+      });
+      if (res.ok) {
+        setTimeout(async () => {
+          if (overrideProject && overrideId) {
+            const data = await getCaseById(overrideId, overrideProject);
+            if (data) {
+              dispatch({ type: DocActionTypes.LOAD, payload: { ...data, fileName: overrideId } });
+            }
+          }
+          setIsAnnotatingLlm(false);
+        }, 3000);
+      } else {
+        const d = await res.json();
+        alert(`AI Annotation failed: ${d.error || 'Unknown error'}`);
+        setIsAnnotatingLlm(false);
+      }
+    } catch (err: any) {
+      alert(`AI Annotation error: ${err?.message || err}`);
+      setIsAnnotatingLlm(false);
+    }
+  };
+
   return (
     <div className="app-container h-screen overflow-hidden flex flex-col bg-slate-50 text-slate-900 antialiased">
       
@@ -673,9 +730,22 @@ export default function Annotate_Panel({ overrideProject, overrideId}: Props) {
                   <IconExport /> Export
                 </button>
             {!isReadOnly && (
-              <button onClick={() => handleSave(false)} className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded text-[11px] font-bold uppercase tracking-wider shadow-sm transition-colors">
-                <IconSave /> Save
-              </button>
+              <>
+                <button 
+                  onClick={handleTriggerLlm}
+                  disabled={isAnnotatingLlm}
+                  className="flex items-center gap-2 px-3 py-1.5 bg-purple-600 hover:bg-purple-700 disabled:bg-purple-300 text-white rounded text-[11px] font-bold uppercase tracking-wider shadow-sm transition-colors"
+                  title="Run AI In-Text Annotation (P2_TAG)"
+                >
+                  <svg className={`w-3.5 h-3.5 ${isAnnotatingLlm ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
+                  </svg>
+                  {isAnnotatingLlm ? 'AI Working...' : 'AI Annotate'}
+                </button>
+                <button onClick={() => handleSave(false)} className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded text-[11px] font-bold uppercase tracking-wider shadow-sm transition-colors">
+                  <IconSave /> Save
+                </button>
+              </>
             )}
           </div>
         </div>

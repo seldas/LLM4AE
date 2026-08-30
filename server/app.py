@@ -11,7 +11,7 @@ from project_management import project_blueprint
 from text_processing import *  # noqa: F403
 from llm_annotation import run_llm_annotation, call_llm  # noqa: F401
 from database_manager import get_db_connection, get_project_by_name, get_case, upsert_case, get_annotations, get_user_by_note, authenticate_user
-from llm_prompts import annotation_guideline
+from llm_prompts import ANNOTATION_GUIDE, ANNOTATION_GUIDE_VAERS, annotation_guideline
 from ai_client import call_ai as ai_call
 
 # -----------------------------------------------------------------------------
@@ -39,14 +39,20 @@ def get_admin_stats():
         case_count = conn.execute('SELECT COUNT(*) FROM cases').fetchone()[0]
         user_count = conn.execute('SELECT COUNT(*) FROM users').fetchone()[0]
         
-        # BERT Processed Cases
+        # BERT & LLM Processed Cases
         bert_cases = 0
+        llm_cases = 0
         all_cases = conn.execute('SELECT meta FROM cases').fetchall()
         for c in all_cases:
             if c['meta']:
-                meta = json.loads(c['meta'])
-                if meta.get("bert_processed") == "Done":
-                    bert_cases += 1
+                try:
+                    meta = json.loads(c['meta'])
+                    if meta.get("bert_processed") == "Done":
+                        bert_cases += 1
+                    if meta.get("llm_processed") == "Done":
+                        llm_cases += 1
+                except Exception:
+                    pass
         
         # Annotations per type and source
         label_stats = conn.execute('''
@@ -97,6 +103,7 @@ def get_admin_stats():
             "project_count": project_count,
             "case_count": case_count,
             "bert_processed_count": bert_cases,
+            "llm_processed_count": llm_cases,
             "user_count": user_count,
             "label_distribution": label_distribution,
             "user_distribution": user_distribution
@@ -105,6 +112,38 @@ def get_admin_stats():
         return jsonify({"error": str(e)}), 500
     finally:
         conn.close()
+
+@app.route("/api/admin/llm-annotate", methods=["POST"])
+@cross_origin()
+def trigger_batch_llm_annotation():
+    req = request.get_json(silent=True) or {}
+    mode = req.get("mode", "tag")
+    schema = req.get("schema", "faers")
+    provider = req.get("provider")
+    note = req.get("note", "Llama4")
+
+    def run_batch_llm():
+        try:
+            logging.info("Starting background batch LLM annotation")
+            conn = get_db_connection()
+            cases_to_process = conn.execute("SELECT id, meta FROM cases").fetchall()
+            conn.close()
+
+            for c in cases_to_process:
+                meta = json.loads(c['meta']) if c['meta'] else {}
+                if meta.get("llm_processed") == "Done":
+                    continue
+                try:
+                    run_llm_annotation(doc_id=c['id'], mode=mode, schema=schema, provider=provider, note=note)
+                except Exception as ex:
+                    logging.error(f"Error processing case {c['id']}: {ex}")
+            
+            logging.info("Background batch LLM annotation finished")
+        except Exception as e:
+            logging.error(f"Batch LLM error: {e}")
+
+    threading.Thread(target=run_batch_llm, daemon=True).start()
+    return jsonify({"message": "Batch LLM annotation started in background"}), 200
 
 @app.route("/api/admin/bert-annotate", methods=["POST"])
 @cross_origin()
@@ -337,28 +376,31 @@ def adjudicate():
 # -----------------------------------------------------------------------------
 # API: Trigger LLM annotation (background)
 # -----------------------------------------------------------------------------
-def parse_annotation_guidelines():
+def parse_annotation_guidelines(schema: str = "faers"):
     guidelines = []
-    lines = [line.strip() for line in annotation_guideline.splitlines()]
+    guide_text = ANNOTATION_GUIDE_VAERS if str(schema).lower() == "vaers" else ANNOTATION_GUIDE
+    lines = [line.strip() for line in guide_text.splitlines()]
     for line in lines:
         if not line.startswith('|'):
             continue
         columns = [col.strip() for col in line.strip('|').split('|')]
         if len(columns) < 4 or columns[0].lower().startswith('clinical concept'):
             continue
-        label = columns[0]
+        label = columns[0].replace('**', '').strip()
         description = columns[1]
         rule = columns[2]
+        trigger = columns[3] if len(columns) > 3 else ""
         if all(ch in '- ' for ch in label):
             continue
-        guidelines.append({'label': label, 'description': description, 'rule': rule})
+        guidelines.append({'label': label, 'description': description, 'rule': rule, 'trigger': trigger})
     return guidelines
 
 @app.route("/api/annotation-guidelines", methods=["GET"])
 @cross_origin()
 def get_annotation_guidelines():
     try:
-        return jsonify(parse_annotation_guidelines()), 200
+        schema = request.args.get("schema", "faers")
+        return jsonify(parse_annotation_guidelines(schema=schema)), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -367,30 +409,31 @@ def get_annotation_guidelines():
 def trigger_llm_annotation():
     try:
         req = request.get_json(silent=True) or {}
+        case_id = req.get("id")
         file_name = (req.get("file") or "").strip()
         folder = (req.get("folder") or "").strip()
+        mode = req.get("mode", "tag")
+        schema = req.get("schema", "faers")
+        provider = req.get("provider")
+        note = req.get("note", "Llama4")
 
-        if not file_name or not folder:
-            return jsonify({"error": "Missing file or folder name"}), 400
+        if case_id:
+            doc = get_case(case_id=case_id)
+        elif file_name and folder:
+            project = get_project_by_name(folder)
+            if not project:
+                return jsonify({"error": f"Project not found: {folder}"}), 404
+            doc = get_case(project_id=project['id'], filename=file_name)
+        else:
+            return jsonify({"error": "Missing case identifier (id or file/folder)"}), 400
 
-        project = get_project_by_name(folder)
-        if not project:
-            return jsonify({"error": f"Project not found: {folder}"}), 404
-
-        doc = get_case(project_id=project['id'], filename=file_name)
         if not doc:
-            return jsonify({"error": f"Document not found: {file_name}"}), 404
+            return jsonify({"error": "Document not found"}), 404
+
+        target_doc_id = doc['id']
 
         def background_task(doc_id):
             conn = get_db_connection()
-            cursor = conn.execute('SELECT id FROM users WHERE role_id = (SELECT id FROM roles WHERE name = "AI")')
-            ai_user_ids = [row['id'] for row in cursor.fetchall()]
-            
-            if ai_user_ids:
-                placeholders = ', '.join(['?'] * len(ai_user_ids))
-                conn.execute(f'DELETE FROM annotations WHERE case_id = ? AND user_id IN ({placeholders})', 
-                             [doc_id] + ai_user_ids)
-
             doc_data = conn.execute('SELECT meta FROM cases WHERE id = ?', (doc_id,)).fetchone()
             meta = json.loads(doc_data['meta']) if doc_data['meta'] else {}
             meta["llm_processed"] = "working"
@@ -398,10 +441,16 @@ def trigger_llm_annotation():
             conn.commit()
             conn.close()
 
-            run_llm_annotation(doc_id=doc_id) 
+            run_llm_annotation(
+                doc_id=doc_id,
+                mode=mode,
+                schema=schema,
+                provider=provider,
+                note=note
+            )
 
-        threading.Thread(target=background_task, args=(doc['id'],), daemon=True).start()
-        return jsonify({"message": f"LLM annotation started", "file_locked": file_name}), 200
+        threading.Thread(target=background_task, args=(target_doc_id,), daemon=True).start()
+        return jsonify({"message": "LLM annotation started", "id": target_doc_id}), 200
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500

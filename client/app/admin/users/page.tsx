@@ -22,6 +22,7 @@ interface Stats {
   project_count: number;
   case_count: number;
   bert_processed_count: number;
+  llm_processed_count?: number;
   user_count: number;
   label_distribution: Record<string, { Human: number; LLM: number; BERT: number; Total: number; }>;
   user_distribution: Record<string, number>;
@@ -121,6 +122,7 @@ export default function AdminDashboardPage() {
   const [error, setError] = useState('');
   const [adminUser, setAdminUser] = useState<any>(null);
   const [isProcessingBert, setIsProcessingBert] = useState(false);
+  const [isProcessingLlm, setIsProcessingLlm] = useState(false);
   const [categoryExpanded, setCategoryExpanded] = useState<Record<string, boolean>>(() =>
     LABEL_CATEGORY_ORDER.reduce((acc, name) => ({ ...acc, [name]: false }), {})
   );
@@ -193,12 +195,30 @@ export default function AdminDashboardPage() {
     setIsProcessingBert(true);
     try {
       const res = await fetch('/api/admin/bert-annotate', { method: 'POST' });
-      if (res.ok) alert('Started.');
-      else alert('Failed.');
+      if (res.ok) alert('BERT annotation started in background.');
+      else alert('Failed to start BERT annotation.');
     } catch (err) {
-      alert('Error.');
+      alert('Error triggering BERT annotation.');
     } finally {
       setIsProcessingBert(false);
+    }
+  };
+
+  const handleTriggerLlm = async () => {
+    if (!confirm('Trigger background LLM annotation (P2_TAG mode) for unannotated cases?')) return;
+    setIsProcessingLlm(true);
+    try {
+      const res = await fetch('/api/admin/llm-annotate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode: 'tag', schema: 'faers', note: 'Llama4' })
+      });
+      if (res.ok) alert('LLM annotation started in background.');
+      else alert('Failed to start LLM annotation.');
+    } catch (err) {
+      alert('Error triggering LLM annotation.');
+    } finally {
+      setIsProcessingLlm(false);
     }
   };
 
@@ -317,6 +337,16 @@ export default function AdminDashboardPage() {
         
         <div className="flex gap-2 items-center">
           <button 
+            onClick={handleTriggerLlm}
+            disabled={isProcessingLlm}
+            className="px-3 py-1.5 bg-purple-600 text-white rounded-lg font-black text-[8px] uppercase tracking-widest hover:bg-purple-700 disabled:bg-purple-300 transition-all shadow-sm flex items-center gap-1.5"
+          >
+            <svg className={`w-2.5 h-2.5 ${isProcessingLlm ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
+            </svg>
+            {isProcessingLlm ? 'Running...' : 'LLM Annotate'}
+          </button>
+          <button 
             onClick={handleTriggerBert}
             disabled={isProcessingBert}
             className="px-3 py-1.5 bg-slate-900 text-white rounded-lg font-black text-[8px] uppercase tracking-widest hover:bg-slate-800 disabled:bg-slate-300 transition-all shadow-sm"
@@ -351,16 +381,17 @@ export default function AdminDashboardPage() {
         <div className="col-span-12 lg:col-span-9 space-y-6">
           
           {/* Top Row Cards */}
-          <div className="grid grid-cols-4 gap-4">
+          <div className="grid grid-cols-5 gap-4">
             {[
               { label: 'Projects', val: stats?.project_count, color: 'text-slate-900' },
               { label: 'Total Cases', val: stats?.case_count, color: 'text-slate-900' },
+              { label: 'LLM Processed', val: stats?.llm_processed_count, color: 'text-purple-600' },
               { label: 'BERT Processed', val: stats?.bert_processed_count, color: 'text-emerald-600' },
               { label: 'System Users', val: stats?.user_count, color: 'text-blue-600' }
             ].map(card => (
-              <div key={card.label} className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200/60">
-                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">{card.label}</p>
-                <p className={`text-2xl font-black ${card.color}`}>{card.val || 0}</p>
+              <div key={card.label} className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200/60">
+                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1 truncate">{card.label}</p>
+                <p className={`text-xl font-black ${card.color}`}>{card.val || 0}</p>
               </div>
             ))}
           </div>
