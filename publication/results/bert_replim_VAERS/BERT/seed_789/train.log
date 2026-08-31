@@ -1,0 +1,92 @@
+✔ Created output directory:
+
+/compute001/lwu/projects/LLM4AE/LLM4AE-dev/results/bert_replim_VAERS/BERT/seed_789/model
+
+ℹ Saving to output directory:
+
+/compute001/lwu/projects/LLM4AE/LLM4AE-dev/results/bert_replim_VAERS/BERT/seed_789/model
+
+ℹ Using GPU: 5
+
+
+
+=========================== Initializing pipeline ===========================
+
+✔ Initialized pipeline
+
+
+
+============================= Training pipeline =============================
+
+ℹ Pipeline: ['transformer', 'ner']
+
+ℹ Initial learn rate: 0.0
+
+E    #       LOSS TRANS...  LOSS NER  ENTS_F  ENTS_P  ENTS_R  SCORE 
+
+---  ------  -------------  --------  ------  ------  ------  ------
+
+/compute001/lwu/projects/LLM4AE/LLM4AE-dev/.venv/lib/python3.12/site-packages/thinc/util.py:401: VisibleDeprecationWarning: This function is deprecated and will be removed in a future release. Use the cupy.from_dlpack() array constructor instead.
+
+  dlpack_tensor = xp_tensor.toDlpack()  # type: ignore
+
+  0       0         314.98    610.06   20.21   12.49   52.95    0.20
+
+  0     200       53391.73  52061.22   60.62   70.42   53.21    0.61
+
+  2     400       21921.97  18508.33   77.98   82.71   73.76    0.78
+
+  3     600        8593.40  12702.13   81.99   86.08   78.28    0.82
+
+  4     800        7392.74  10854.34   80.25   85.57   75.55    0.80
+
+  5    1000        7856.84  10102.37   80.67   84.97   76.79    0.81
+
+  6    1200        6920.96   8757.22   82.71   85.03   80.51    0.83
+
+  7    1400        5091.82   7402.72   79.28   80.82   77.81    0.79
+
+  8    1600        7168.98   7697.10   82.40   85.52   79.50    0.82
+
+  9    1800        4776.50   6297.70   81.75   84.22   79.41    0.82
+
+ 10    2000        4886.03   6150.01   83.26   84.73   81.83    0.83
+
+ 11    2200        4689.87   5586.14   82.20   85.68   78.99    0.82
+
+ 12    2400       12352.41   5249.62   81.66   84.55   78.97    0.82
+
+ 13    2600        4667.16   4835.16   81.13   86.75   76.20    0.81
+
+ 14    2800        5867.42   4553.34   83.36   85.97   80.90    0.83
+
+ 15    3000        3880.98   4009.65   82.56   84.99   80.27    0.83
+
+ 16    3200        4697.28   4036.86   82.29   85.93   78.95    0.82
+
+ 17    3400        3821.11   3386.45   83.40   86.30   80.70    0.83
+
+ 18    3600        2462.77   2960.58   83.54   85.44   81.71    0.84
+
+ 19    3800        3286.69   3455.70   83.55   85.59   81.61    0.84
+
+ 20    4000        2552.42   2720.74   82.73   85.97   79.72    0.83
+
+ 21    4200        3074.71   2657.51   82.73   85.40   80.23    0.83
+
+ 22    4400        6235.40   2246.46   83.18   85.59   80.90    0.83
+
+ 23    4600        2491.85   2168.01   82.90   85.48   80.47    0.83
+
+ 24    4800        2029.79   2053.80   82.39   85.65   79.37    0.82
+
+ 25    5000        1804.39   1776.39   82.90   85.95   80.07    0.83
+
+ 26    5200        3072.06   1737.54   82.73   85.30   80.31    0.83
+
+ 27    5400        1425.49   1523.68   82.16   85.27   79.27    0.82
+
+✔ Saved pipeline to output directory
+
+/compute001/lwu/projects/LLM4AE/LLM4AE-dev/results/bert_replim_VAERS/BERT/seed_789/model/model-last
+

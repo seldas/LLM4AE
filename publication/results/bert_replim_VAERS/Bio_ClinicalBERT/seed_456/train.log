@@ -1,0 +1,62 @@
+✔ Created output directory:
+
+/compute001/lwu/projects/LLM4AE/LLM4AE-dev/results/bert_replim_VAERS/Bio_ClinicalBERT/seed_456/model
+
+ℹ Saving to output directory:
+
+/compute001/lwu/projects/LLM4AE/LLM4AE-dev/results/bert_replim_VAERS/Bio_ClinicalBERT/seed_456/model
+
+ℹ Using GPU: 1
+
+
+
+=========================== Initializing pipeline ===========================
+
+✔ Initialized pipeline
+
+
+
+============================= Training pipeline =============================
+
+ℹ Pipeline: ['transformer', 'ner']
+
+ℹ Initial learn rate: 0.0
+
+E    #       LOSS TRANS...  LOSS NER  ENTS_F  ENTS_P  ENTS_R  SCORE 
+
+---  ------  -------------  --------  ------  ------  ------  ------
+
+/compute001/lwu/projects/LLM4AE/LLM4AE-dev/.venv/lib/python3.12/site-packages/thinc/util.py:401: VisibleDeprecationWarning: This function is deprecated and will be removed in a future release. Use the cupy.from_dlpack() array constructor instead.
+
+  dlpack_tensor = xp_tensor.toDlpack()  # type: ignore
+
+  0       0         400.77    453.16   21.30   13.68   48.09    0.21
+
+  0     200       58346.72  54667.27   59.13   70.67   50.84    0.59
+
+  1     400       36241.35  22249.95   80.33   83.30   77.55    0.80
+
+  2     600        9659.26  12834.76   80.46   86.11   75.50    0.80
+
+  3     800        7444.71  10091.99   83.87   85.59   82.21    0.84
+
+  4    1000        8911.04   9944.81   83.24   85.64   80.97    0.83
+
+  5    1200        7248.85   8361.61   81.67   86.09   77.67    0.82
+
+  6    1400        6210.15   7770.23   81.79   84.17   79.54    0.82
+
+  7    1600        5787.11   7061.10   82.59   85.41   79.94    0.83
+
+  8    1800        4622.60   6120.19   82.90   86.83   79.30    0.83
+
+  9    2000        5832.71   6275.42   83.09   85.57   80.75    0.83
+
+ 10    2200        4634.38   5396.57   83.17   85.97   80.54    0.83
+
+ 11    2400        5158.57   5590.65   82.37   84.70   80.16    0.82
+
+✔ Saved pipeline to output directory
+
+/compute001/lwu/projects/LLM4AE/LLM4AE-dev/results/bert_replim_VAERS/Bio_ClinicalBERT/seed_456/model/model-last
+
