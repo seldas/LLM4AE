@@ -1,31 +1,34 @@
-# Table 4: Per-Category Performance Breakdown on FAERS (N = 829 Reports)
+# Table 4: Per-Category Performance Breakdown on FAERS Across All 17 Clinical Concept Categories (N = 829 Reports)
 
-Fine-grained concept extraction performance across all clinical categories on the FAERS benchmark corpus under the Two-Tier Evaluation Framework. Values report Strict Exact-Match NER F1 and Adapted ADE-Eval Clinical Weighted F1.
+Fine-grained concept extraction performance across all 17 clinical concept categories on the FAERS benchmark corpus under the Two-Tier Evaluation Framework.
 
-| Clinical Category | Gold Support (N) | BioBERT (4-Fold LOO)$^\dagger$ || Claude 4.6 Sonnet (1-shot) || LLaMA 4 (1-shot, Tagged) || LLaMA 4 (1-shot, JSON) ||
-| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| | | **Strict F1** | **ADE-Eval F1** | **Strict F1** | **ADE-Eval F1** | **Strict F1** | **ADE-Eval F1** | **Strict F1** | **ADE-Eval F1** |
-| **AE** | 9,186 | $0.5115 \pm 0.0476$ | $0.6966 \pm 0.0415$ | 0.4609 | 0.6259 | 0.4320 | 0.6508 | 0.4306 | 0.6048 |
-| **AGE** | 787 | $0.9173 \pm 0.0597$ | $0.9492 \pm 0.0344$ | 0.8873 | 0.9305 | 0.8303 | 0.9203 | 0.8281 | 0.9165 |
-| **COD** | 3 | N/A | N/A | 0.0171 | 0.4605 | 0.0106 | 0.4687 | 0.0000 | 0.4370 |
-| **DOSE** | 1,619 | $0.4666 \pm 0.0645$ | $0.6972 \pm 0.0370$ | 0.4436 | 0.6944 | 0.3776 | 0.6492 | 0.2126 | 0.5836 |
-| **DRUG** | 6,673 | $0.5280 \pm 0.0730$ | $0.7156 \pm 0.0445$ | 0.4528 | 0.6379 | 0.3816 | 0.6222 | 0.4163 | 0.6141 |
-| **DX** | 1,543 | $0.4253 \pm 0.0556$ | $0.6599 \pm 0.0486$ | 0.2621 | 0.5159 | 0.2170 | 0.5073 | 0.1910 | 0.4964 |
-| **HX** | 2,408 | $0.6099 \pm 0.1357$ | $0.7875 \pm 0.0928$ | 0.5526 | 0.7165 | 0.4568 | 0.6672 | 0.4664 | 0.6481 |
-| **INDICATION** | 162 | $0.0368 \pm 0.0470$ | $0.0864 \pm 0.1080$ | 0.1178 | 0.4617 | 0.1074 | 0.4493 | 0.0866 | 0.4355 |
-| **LAB** | 3,476 | $0.4519 \pm 0.0945$ | $0.6743 \pm 0.0649$ | 0.3623 | 0.6143 | 0.2225 | 0.5549 | 0.2006 | 0.5134 |
-| **RO** | 9 | N/A | N/A | 0.0144 | 0.4512 | 0.0074 | 0.4466 | 0.0370 | 0.4731 |
-| **SEX** | 767 | $0.9213 \pm 0.0189$ | $0.9571 \pm 0.0225$ | 0.8922 | 0.9449 | 0.8269 | 0.9078 | 0.7928 | 0.8957 |
-| **STATUS** | 1,796 | $0.6112 \pm 0.1034$ | $0.7575 \pm 0.0864$ | 0.2896 | 0.4663 | 0.1908 | 0.3072 | 0.2636 | 0.4753 |
+| Clinical Category | Gold Mentions (N) | BioBERT (Strict F1) | LLaMA 4 (Strict F1) | Claude Sonnet (Strict F1) | BioBERT (Adapted F1) | LLaMA 4 (Adapted F1) | Claude Sonnet (Adapted F1) |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| sDrug | 4,665 | 0.6025 | 0.3181 | 0.4006 | 0.7376 | 0.5463 | 0.5619 |
+| cDrug | 2,995 | 0.7433 | 0.3443 | 0.5689 | 0.8451 | 0.6013 | 0.7130 |
+| oDrug | 0 | 0.0000 | 0.0000 | 0.0000 | 0.0000 | 0.4804 | 0.4848 |
+| Dose | 1,668 | 0.6100 | 0.2752 | 0.4300 | 0.7427 | 0.5783 | 0.6826 |
+| Indication | 202 | 0.1335 | 0.0690 | 0.1042 | 0.5021 | 0.4913 | 0.5194 |
+| Treatment | 1,490 | 0.6260 | 0.1832 | 0.3189 | 0.7775 | 0.4647 | 0.5355 |
+| AE | 12,010 | 0.5931 | 0.3582 | 0.4401 | 0.7066 | 0.5635 | 0.5678 |
+| mAE | 113 | 0.0480 | 0.0405 | 0.0594 | 0.0507 | 0.4604 | 0.4574 |
+| Dx | 64 | 0.0670 | 0.0016 | 0.0000 | 0.4536 | 0.4016 | 0.3704 |
+| Lab | 3,482 | 0.5964 | 0.1575 | 0.3742 | 0.7637 | 0.4912 | 0.6105 |
+| Status | 1,910 | 0.7169 | 0.1304 | 0.2741 | 0.8386 | 0.2676 | 0.4547 |
+| R/O | 9 | 0.0000 | 0.0073 | 0.0094 | 0.0000 | 0.4444 | 0.4539 |
+| CoD | 3 | 0.0000 | 0.0052 | 0.0165 | 0.0000 | 0.4610 | 0.4686 |
+| MHx | 2,370 | 0.4621 | 0.3474 | 0.4896 | 0.7138 | 0.6121 | 0.6888 |
+| FHx | 105 | 0.0727 | 0.0606 | 0.1395 | 0.0818 | 0.1736 | 0.2130 |
+| Age | 787 | 0.9009 | 0.7335 | 0.8752 | 0.9525 | 0.8590 | 0.9238 |
+| Sex | 777 | 0.9037 | 0.7551 | 0.8829 | 0.9570 | 0.8575 | 0.9376 |
+| **OVERALL** | 32,650 | **0.6032** | **0.2982** | **0.4189** | **0.7477** | **0.5515** | **0.6060** |
 
 ---
 
-### Footnotes & Clinical Interpretations:
-- **Primary Tier (Strict Exact-Match NER):** Requires identical character span boundaries and category assignment. Partial overlaps receive 0 credit.
-- **Secondary Tier (Adapted ADE-Eval Weighted Metric):** Grants 0.5 partial credit to boundary shifts and adjacent category confusions, applying a 0.25 denominator penalty to ungrounded non-overlapping false positives.
-- $^\dagger$ **BioBERT (4-Fold LOO, 5-Seed Pooled):** Reports mean $\pm$ standard deviation across the 4 held-out case series and 5 random initialization seeds (`42, 123, 456, 789, 1011`).
-- **Key Observations:**
-  1. **Demographic Entities (`AGE`, `SEX`):** Extremely high precision and boundary agreement across all models (F1 $> 0.82 - 0.95$).
-  2. **Core Clinical Concepts (`AE`, `DRUG`):** BioBERT maintains highest exact-boundary capture (Strict F1: 0.5115 for AE, 0.5280 for DRUG), while LLMs achieve strong semantic detection under ADE-Eval (ADE F1: 0.6259 for Sonnet, 0.6508 for LLaMA 4).
-  3. **The `INDICATION` Generalization Contrast:** BioBERT exhibits severe out-of-distribution transfer degradation when encountering unseen indication contexts in held-out case series (Strict F1: 0.0368, ADE F1: 0.0864). In contrast, zero/few-shot LLMs leverage broad pre-trained medical knowledge to preserve robust indication recognition (ADE F1: 0.4617 for Sonnet, 0.4493 for LLaMA 4 Tagged).
-  4. **Output Format Contrast (Tagged vs. JSON):** Structured JSON increases exact-match precision for discrete entities like `AE` (+3.8% Strict F1) by eliminating loose descriptive boundaries, but slightly impairs multi-word modifier categories.
+### Category Definitions & Footnotes:
+- **Drug-Related:** `sDrug` (Suspect Drug), `cDrug` (Concomitant Drug), `oDrug` (Other Drug), `Dose` (Dosage), `Indication` (Drug Indication), `Treatment` (Drug used for treatment).
+- **Adverse Event / Clinical Finding:** `AE` (Adverse Event), `mAE` (AE Manifestations/Sequelae), `Dx` (Diagnostic Test Results), `Lab` (Laboratory Findings), `Status` (Patient Status), `R/O` (Rule-Out Diagnosis), `CoD` (Cause of Death).
+- **Medical / Family History:** `MHx` (Medical History), `FHx` (Family History).
+- **Demographics:** `Age` (Patient Age), `Sex` (Patient Sex).
+- **Primary Tier (Strict Exact-Match NER F1):** Requires identical character span boundaries and category assignment.
+- **Secondary Tier (Adapted ADE-Eval Clinical Weighted F1):** Grants 0.5 partial credit to boundary shifts and adjacent category confusions, applying a 0.25 penalty to ungrounded false positives.
