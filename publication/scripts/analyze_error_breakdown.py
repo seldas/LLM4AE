@@ -347,19 +347,25 @@ def main():
     print("[2/5] Analyzing Category C and S across models...", flush=True)
     df_sonnet_raw = pd.read_excel(results_base / "sonnet_runs_FAERS" / "sonnet_raw.xlsx")
     df_l4_faers_raw = pd.read_excel(results_base / "llama4_runs_FAERS" / "llama4_raw.xlsx")
+    df_l4_faers_json_raw = pd.read_excel(results_base / "llama4_runs_FAERS_json" / "llama4_json_raw.xlsx")
     df_l4_vaers_raw = pd.read_excel(results_base / "llama4_runs_VAERS" / "llama4_raw.xlsx")
+    
+    # We leave FAERS BioBERT as fold_00_raw.xlsx (10-fold CV) because the LOO raw files are missing from the repo.
     df_bert_faers_f0 = pd.read_excel(results_base / "bert_runs_FAERS" / "fold_00_raw.xlsx")
-    df_bert_vaers_f0 = pd.read_excel(results_base / "bert_runs_VAERS" / "fold_00_raw.xlsx")
+    
+    # Update VAERS to use Seed 42 Default Experiment
+    df_bert_vaers_f0 = pd.read_excel(results_base / "bert_runs_VAERS" / "fold_00_seed_42_raw.xlsx")
 
     c_sonnet, s_wc_sonnet, s_hal_sonnet = analyze_model_raw(df_sonnet_raw, "Claude 4.6 Sonnet", "FAERS", FAERS_TARGET_CATEGORIES, "document")
-    c_l4_f, s_wc_l4_f, s_hal_l4_f = analyze_model_raw(df_l4_faers_raw, "LLaMA 4", "FAERS", FAERS_TARGET_CATEGORIES, "document")
-    c_l4_v, s_wc_l4_v, s_hal_l4_v = analyze_model_raw(df_l4_vaers_raw, "LLaMA 4", "VAERS", VAERS_TARGET_CATEGORIES, "document")
+    c_l4_f, s_wc_l4_f, s_hal_l4_f = analyze_model_raw(df_l4_faers_raw, "LLaMA 4 (Tagged)", "FAERS", FAERS_TARGET_CATEGORIES, "document")
+    c_l4_f_j, s_wc_l4_f_j, s_hal_l4_f_j = analyze_model_raw(df_l4_faers_json_raw, "LLaMA 4 (JSON)", "FAERS", FAERS_TARGET_CATEGORIES, "document")
+    c_l4_v, s_wc_l4_v, s_hal_l4_v = analyze_model_raw(df_l4_vaers_raw, "LLaMA 4 (Tagged)", "VAERS", VAERS_TARGET_CATEGORIES, "document")
     c_b_f, s_wc_b_f, s_hal_b_f = analyze_model_raw(df_bert_faers_f0, "BioBERT (Fold 0)", "FAERS", FAERS_TARGET_CATEGORIES, "sent_id")
-    c_b_v, s_wc_b_v, s_hal_b_v = analyze_model_raw(df_bert_vaers_f0, "BioBERT (Fold 0)", "VAERS", VAERS_TARGET_CATEGORIES, "sent_id")
+    c_b_v, s_wc_b_v, s_hal_b_v = analyze_model_raw(df_bert_vaers_f0, "BioBERT (Seed 42, Fold 0)", "VAERS", VAERS_TARGET_CATEGORIES, "sent_id")
 
-    all_c = pd.concat([c_sonnet, c_l4_f, c_l4_v, c_b_f, c_b_v], ignore_index=True)
-    all_s_wc = pd.concat([s_wc_sonnet, s_wc_l4_f, s_wc_l4_v, s_wc_b_f, s_wc_b_v], ignore_index=True)
-    all_s_hal = pd.concat([s_hal_sonnet, s_hal_l4_f, s_hal_l4_v, s_hal_b_f, s_hal_b_v], ignore_index=True)
+    all_c = pd.concat([c_sonnet, c_l4_f, c_l4_f_j, c_l4_v, c_b_f, c_b_v], ignore_index=True)
+    all_s_wc = pd.concat([s_wc_sonnet, s_wc_l4_f, s_wc_l4_f_j, s_wc_l4_v, s_wc_b_f, s_wc_b_v], ignore_index=True)
+    all_s_hal = pd.concat([s_hal_sonnet, s_hal_l4_f, s_hal_l4_f_j, s_hal_l4_v, s_hal_b_f, s_hal_b_v], ignore_index=True)
 
     # 3. Category C Discrepancy Summary
     print("[3/5] Summarizing Category C boundary overlap distributions...", flush=True)
@@ -391,6 +397,7 @@ def main():
     print("[4/5] Computing S_wrong_class confusion matrices...", flush=True)
     confusion_sonnet = pd.crosstab(s_wc_sonnet["Gold_Category"], s_wc_sonnet["Pred_Category"], margins=True)
     confusion_l4_f = pd.crosstab(s_wc_l4_f["Gold_Category"], s_wc_l4_f["Pred_Category"], margins=True)
+    confusion_l4_f_j = pd.crosstab(s_wc_l4_f_j["Gold_Category"], s_wc_l4_f_j["Pred_Category"], margins=True)
     confusion_l4_v = pd.crosstab(s_wc_l4_v["Gold_Category"], s_wc_l4_v["Pred_Category"], margins=True)
 
     # 5. Non-Overlapping Spurious False Positive Breakdown
@@ -418,6 +425,7 @@ def main():
         df_c_summary.to_excel(writer, sheet_name="Category_C_Granularity", index=False)
         confusion_sonnet.to_excel(writer, sheet_name="Confusion_Sonnet_FAERS")
         confusion_l4_f.to_excel(writer, sheet_name="Confusion_LLaMA4_FAERS")
+        confusion_l4_f_j.to_excel(writer, sheet_name="Confusion_LLaMA4_JSON_FAERS")
         confusion_l4_v.to_excel(writer, sheet_name="Confusion_LLaMA4_VAERS")
         df_spurious_summary.to_excel(writer, sheet_name="Spurious_Non_Overlap_Summary", index=False)
 
@@ -428,8 +436,10 @@ def main():
     print(df_c_summary.to_string(index=False), flush=True)
     print("\n--- TOP CONFUSION PAIRS (Claude 4.6 Sonnet FAERS) ---", flush=True)
     print(s_wc_sonnet.groupby(["Gold_Category", "Pred_Category"]).size().sort_values(ascending=False).head(10), flush=True)
-    print("\n--- TOP CONFUSION PAIRS (LLaMA 4 FAERS) ---", flush=True)
+    print("\n--- TOP CONFUSION PAIRS (LLaMA 4 FAERS Tagged) ---", flush=True)
     print(s_wc_l4_f.groupby(["Gold_Category", "Pred_Category"]).size().sort_values(ascending=False).head(10), flush=True)
+    print("\n--- TOP CONFUSION PAIRS (LLaMA 4 FAERS JSON) ---", flush=True)
+    print(s_wc_l4_f_j.groupby(["Gold_Category", "Pred_Category"]).size().sort_values(ascending=False).head(10), flush=True)
     print("\n--- TOP CONFUSION PAIRS (LLaMA 4 VAERS) ---", flush=True)
     print(s_wc_l4_v.groupby(["Gold_Category", "Pred_Category"]).size().sort_values(ascending=False).head(10), flush=True)
 

@@ -3,26 +3,30 @@
 evaluate_three_schemes.py
 
 Computes and compares NER performance across the Two-Tier Evaluation Framework on FAERS and VAERS,
-with strict target-category filtering (ignoring predictions from categories not in the gold standard):
-
-Target Categories:
-  - FAERS: AE, DRUG, DX, HX, LAB, DOSE, AGE, SEX, STATUS, TEMPORAL, INDICATION, RO, COD
-  - VAERS: AE, VAX, TX, LAB, STATUS, HX (Categories like TEMPORAL, DOSE, AGE, SEX, DX not in VAERS Gold are ignored)
+incorporating methodological updates:
+  1. FAERS BioBERT: Evaluated under 4-Fold Leave-One-Drug-AE-Pair-Out (LOO) cross-validation
+     across the 4 distinct case series (Azacitidine-QT, Tramadol-Hypoglycemia,
+     Baricitinib-Hypersensitivity, Erenumab-Stroke) replacing the former 10-fold CV.
+  2. Default Experiments: Uses Random Seed 42 as the primary reported baseline across all models.
+  3. Multi-Seed Ablation Analysis: Evaluates 5 independent random initialization seeds
+     (42, 123, 456, 789, 1011) for both FAERS (20 runs total) and VAERS (50 runs total)
+     to quantify stochastic optimization stability vs. data partition variance.
+  4. Target-Category Filtering:
+     - FAERS: AE, DRUG, DX, HX, LAB, DOSE, AGE, SEX, STATUS, TEMPORAL, INDICATION, RO, COD
+     - VAERS: AE, VAX, TX, LAB, STATUS, HX (unsupported categories filtered out)
 
 Two-Tier Evaluation Framework:
-  Tier 1 (Primary / Standard Benchmark): Strict Exact-Match NER (Scheme 3)
-    - Precision = M / (M + C_total + S_non_overlap)
-    - Recall    = M / (M + C_total + N)
-    - F1        = 2 * P * R / (P + R)
+  - Primary Tier (Standard Benchmark): Strict Exact-Match NER (Scheme 3)
+      Precision = M / (M + C_total + S_non_overlap)
+      Recall    = M / (M + C_total + N)
+      F1        = 2 * P * R / (P + R)
 
-  Tier 2 (Secondary / Clinical Utility): Refined ADE-Eval Clinical Weighted Metric (Scheme 2)
-    - C_total = C_boundary (span mismatch) + C_class (category confusion / misclassification)
-    - S_non_overlap = ungrounded spurious predictions (zero gold overlap)
-    - Precision = (M + 0.5 * C_total) / (M + C_total + 0.25 * S_non_overlap)
-    - Recall    = (M + 0.5 * C_total) / (M + C_total + N)
-    - F1        = 2 * P * R / (P + R)
-
-  (Note: Former Scheme 1 relaxed entity detection has been discontinued).
+  - Secondary Tier (Clinical Utility): Refined ADE-Eval Clinical Weighted Metric (Scheme 2)
+      C_total = C_boundary (span mismatch) + C_class (category confusion / misclassification)
+      S_non_overlap = ungrounded spurious predictions (zero gold overlap)
+      Precision = (M + 0.5 * C_total) / (M + C_total + 0.25 * S_non_overlap)
+      Recall    = (M + 0.5 * C_total) / (M + C_total + N)
+      F1        = 2 * P * R / (P + R)
 """
 
 from __future__ import annotations
@@ -33,12 +37,14 @@ import os
 import sys
 from collections import defaultdict
 from pathlib import Path
-from typing import Dict, List, Set, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 
 import numpy as np
 import pandas as pd
 
-# Category mappings
+# -----------------------------------------------------------------------------
+# Category Taxonomy and Mappings
+# -----------------------------------------------------------------------------
 EVAL_LABEL_POOL = {
     # FAERS
     "ae": "AE", "mae": "AE",
@@ -67,6 +73,16 @@ FAERS_TARGET_CATEGORIES = {
 VAERS_TARGET_CATEGORIES = {
     "AE", "VAX", "TX", "LAB", "STATUS", "HX"
 }
+
+SEEDS = [42, 123, 456, 789, 1011]
+DEFAULT_SEED = 42
+
+FAERS_CASE_SERIES = [
+    "Azacitidine-QT",
+    "Tramadol-Hypoglycemia",
+    "Baricitinib-Hypersensitivity",
+    "Erenumab-Stroke",
+]
 
 
 def overlap(a0: int, a1: int, b0: int, b1: int) -> bool:
@@ -160,7 +176,6 @@ def evaluate_raw_df(df: pd.DataFrame, target_cats: Set[str], group_col: str = "d
 
     total_C_total = total_C_bound + total_C_class
 
-    # --- Compute Overall Metrics ---
     # 1. Primary Tier: Strict Exact Match NER (Scheme 3)
     p3_den = total_M + total_C_total + total_S_non_overlap
     r3_den = total_M + total_C_total + total_N
@@ -169,7 +184,6 @@ def evaluate_raw_df(df: pd.DataFrame, target_cats: Set[str], group_col: str = "d
     f1_3 = 2 * p3 * r3 / (p3 + r3) if (p3 + r3) > 0 else 0.0
 
     # 2. Secondary Tier: Refined ADE-Eval Weighted Metric (Scheme 2)
-    #    C_total (boundary + category confusion) gets 0.5 partial credit
     mc2 = total_M + 0.5 * total_C_total
     p2_den = total_M + total_C_total + 0.25 * total_S_non_overlap
     r2_den = total_M + total_C_total + total_N
@@ -189,20 +203,18 @@ def evaluate_raw_df(df: pd.DataFrame, target_cats: Set[str], group_col: str = "d
         "ADE_Precision": round(p2, 4), "ADE_Recall": round(r2, 4), "ADE_F1": round(f1_2, 4),
     }
 
-    # --- Compute Per-Category Metrics ---
+    # Per-Category Metrics
     cat_rows = []
     for cat in sorted(cat_stats.keys()):
         st = cat_stats[cat]
         c_tot = st["C_boundary"] + st["C_class"]
 
-        # Strict
         p3_c_den = st["M"] + c_tot + st["S_non_overlap"]
         r3_c_den = st["M"] + c_tot + st["N"]
         p3_c = st["M"] / p3_c_den if p3_c_den > 0 else 0.0
         r3_c = st["M"] / r3_c_den if r3_c_den > 0 else 0.0
         f1_3_c = 2 * p3_c * r3_c / (p3_c + r3_c) if (p3_c + r3_c) > 0 else 0.0
 
-        # ADE-Eval
         mc2_c = st["M"] + 0.5 * c_tot
         p2_c_den = st["M"] + c_tot + 0.25 * st["S_non_overlap"]
         r2_c_den = st["M"] + c_tot + st["N"]
@@ -222,87 +234,244 @@ def evaluate_raw_df(df: pd.DataFrame, target_cats: Set[str], group_col: str = "d
     return overall, pd.DataFrame(cat_rows)
 
 
-def evaluate_bert_cv(results_dir: str, target_cats: Set[str]) -> Tuple[dict, pd.DataFrame]:
-    fold_overalls = []
-    fold_cats = []
+def load_vaers_bert_runs(results_dir: Path) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """
+    Loads all VAERS BioBERT runs (10 folds x 5 seeds).
+    Returns (all_runs_df, seed_summary_df, fold_summary_df).
+    """
+    all_runs = []
+    all_cats = []
 
-    for fold in range(10):
-        p = os.path.join(results_dir, f"fold_{fold:02d}_raw.xlsx")
-        if not os.path.exists(p):
-            continue
-        df = pd.read_excel(p)
-        ov, cat_df = evaluate_raw_df(df, target_cats=target_cats, group_col="sent_id")
-        ov["fold"] = fold
-        cat_df["fold"] = fold
-        fold_overalls.append(ov)
-        fold_cats.append(cat_df)
+    for seed in SEEDS:
+        for fold in range(10):
+            p = results_dir / f"fold_{fold:02d}_seed_{seed}_raw.xlsx"
+            if not p.exists() and seed == 42:
+                p = results_dir / f"fold_{fold:02d}_raw.xlsx"
+            if not p.exists():
+                continue
+            df = pd.read_excel(p)
+            ov, cat_df = evaluate_raw_df(df, target_cats=VAERS_TARGET_CATEGORIES, group_col="sent_id")
+            ov["fold"] = fold
+            ov["seed"] = seed
+            cat_df["fold"] = fold
+            cat_df["seed"] = seed
+            all_runs.append(ov)
+            all_cats.append(cat_df)
 
-    df_ov = pd.DataFrame(fold_overalls)
-    summary_ov = {}
-    for metric in [
-        "Strict_Precision", "Strict_Recall", "Strict_F1",
-        "ADE_Precision", "ADE_Recall", "ADE_F1",
-    ]:
-        summary_ov[f"{metric}_mean"] = round(df_ov[metric].mean(), 4)
-        summary_ov[f"{metric}_std"] = round(df_ov[metric].std(), 4)
+    df_all_runs = pd.DataFrame(all_runs)
+    df_all_cats = pd.concat(all_cats, ignore_index=True) if all_cats else pd.DataFrame()
 
-    df_all_cats = pd.concat(fold_cats, ignore_index=True)
-    cat_summary = []
-    for cat, group in df_all_cats.groupby("Category"):
-        row = {"Category": cat}
-        for metric in [
-            "Strict_Precision", "Strict_Recall", "Strict_F1",
-            "ADE_Precision", "ADE_Recall", "ADE_F1",
-        ]:
-            row[f"{metric}_mean"] = round(group[metric].mean(), 4)
-            row[f"{metric}_std"] = round(group[metric].std(), 4)
-        cat_summary.append(row)
+    seed_agg = []
+    for s, grp in df_all_runs.groupby("seed"):
+        seed_agg.append({
+            "seed": s,
+            "num_folds": len(grp),
+            "Strict_Precision_mean": round(grp["Strict_Precision"].mean(), 4),
+            "Strict_Precision_std": round(grp["Strict_Precision"].std(), 4),
+            "Strict_Recall_mean": round(grp["Strict_Recall"].mean(), 4),
+            "Strict_Recall_std": round(grp["Strict_Recall"].std(), 4),
+            "Strict_F1_mean": round(grp["Strict_F1"].mean(), 4),
+            "Strict_F1_std": round(grp["Strict_F1"].std(), 4),
+            "ADE_Precision_mean": round(grp["ADE_Precision"].mean(), 4),
+            "ADE_Precision_std": round(grp["ADE_Precision"].std(), 4),
+            "ADE_Recall_mean": round(grp["ADE_Recall"].mean(), 4),
+            "ADE_Recall_std": round(grp["ADE_Recall"].std(), 4),
+            "ADE_F1_mean": round(grp["ADE_F1"].mean(), 4),
+            "ADE_F1_std": round(grp["ADE_F1"].std(), 4),
+        })
+    df_seed_summary = pd.DataFrame(seed_agg)
 
-    return summary_ov, pd.DataFrame(cat_summary)
+    return df_all_runs, df_seed_summary, df_all_cats
+
+
+def load_faers_loo_runs(loo_summary_path: Path) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """
+    Loads FAERS BioBERT 4-Fold LOO runs from loo_evaluation_summary.xlsx.
+    Returns (all_runs_df, seed_summary_df, per_cat_df).
+    """
+    if not loo_summary_path.exists():
+        raise FileNotFoundError(f"FAERS LOO summary file not found: {loo_summary_path}")
+
+    df_runs = pd.read_excel(loo_summary_path, sheet_name="All_Runs_Per_Seed")
+    df_fold_summary = pd.read_excel(loo_summary_path, sheet_name="Fold_Summary_Across_Seeds")
+    df_cat = pd.read_excel(loo_summary_path, sheet_name="Per_Category_Summary")
+
+    rename_map = {
+        "strict_P": "Strict_Precision",
+        "strict_R": "Strict_Recall",
+        "strict_F1": "Strict_F1",
+        "ade_P": "ADE_Precision",
+        "ade_R": "ADE_Recall",
+        "ade_F1": "ADE_F1",
+    }
+    df_runs = df_runs.rename(columns=rename_map)
+
+    seed_agg = []
+    for s, grp in df_runs.groupby("seed"):
+        seed_agg.append({
+            "seed": s,
+            "num_folds": len(grp),
+            "Strict_Precision_mean": round(grp["Strict_Precision"].mean(), 4),
+            "Strict_Precision_std": round(grp["Strict_Precision"].std(), 4),
+            "Strict_Recall_mean": round(grp["Strict_Recall"].mean(), 4),
+            "Strict_Recall_std": round(grp["Strict_Recall"].std(), 4),
+            "Strict_F1_mean": round(grp["Strict_F1"].mean(), 4),
+            "Strict_F1_std": round(grp["Strict_F1"].std(), 4),
+            "ADE_Precision_mean": round(grp["ADE_Precision"].mean(), 4),
+            "ADE_Precision_std": round(grp["ADE_Precision"].std(), 4),
+            "ADE_Recall_mean": round(grp["ADE_Recall"].mean(), 4),
+            "ADE_Recall_std": round(grp["ADE_Recall"].std(), 4),
+            "ADE_F1_mean": round(grp["ADE_F1"].mean(), 4),
+            "ADE_F1_std": round(grp["ADE_F1"].std(), 4),
+        })
+    df_seed_summary = pd.DataFrame(seed_agg)
+
+    return df_runs, df_seed_summary, df_cat
 
 
 def main():
     repo_root = Path(__file__).resolve().parent.parent.parent
     results_base = repo_root / "publication" / "results"
 
-    print("=================================================================", flush=True)
-    print("Evaluating Two-Tier Scoring Framework (Strict & Refined ADE-Eval)", flush=True)
-    print("=================================================================", flush=True)
+    print("=" * 80, flush=True)
+    print(" Two-Tier Evaluation Suite: 4-Fold FAERS LOO & Multi-Seed CV Ablation", flush=True)
+    print("=" * 80, flush=True)
 
-    # 1. FAERS BioBERT
-    print("\n[1/5] Processing BioBERT FAERS (10-fold CV)...", flush=True)
-    bert_faers_ov, bert_faers_cat = evaluate_bert_cv(str(results_base / "bert_runs_FAERS"), FAERS_TARGET_CATEGORIES)
+    # 1. FAERS BioBERT (4-Fold LOO Case Series Across 5 Seeds)
+    print("\n[1/5] Loading FAERS BioBERT 4-Fold LOO runs...", flush=True)
+    faers_loo_path = results_base / "bert_runs_FAERS_LOO" / "loo_evaluation_summary.xlsx"
+    faers_bert_runs, faers_bert_seeds, faers_bert_cat = load_faers_loo_runs(faers_loo_path)
 
-    # 2. FAERS Claude 4.6 Sonnet
-    print("[2/5] Processing Claude 4.6 Sonnet FAERS...", flush=True)
+    faers_bert_s42_runs = faers_bert_runs[faers_bert_runs["seed"] == DEFAULT_SEED]
+    faers_bert_s42_ov = {
+        "Strict_Precision_mean": faers_bert_s42_runs["Strict_Precision"].mean(),
+        "Strict_Precision_std": faers_bert_s42_runs["Strict_Precision"].std(),
+        "Strict_Recall_mean": faers_bert_s42_runs["Strict_Recall"].mean(),
+        "Strict_Recall_std": faers_bert_s42_runs["Strict_Recall"].std(),
+        "Strict_F1_mean": faers_bert_s42_runs["Strict_F1"].mean(),
+        "Strict_F1_std": faers_bert_s42_runs["Strict_F1"].std(),
+        "ADE_Precision_mean": faers_bert_s42_runs["ADE_Precision"].mean(),
+        "ADE_Precision_std": faers_bert_s42_runs["ADE_Precision"].std(),
+        "ADE_Recall_mean": faers_bert_s42_runs["ADE_Recall"].mean(),
+        "ADE_Recall_std": faers_bert_s42_runs["ADE_Recall"].std(),
+        "ADE_F1_mean": faers_bert_s42_runs["ADE_F1"].mean(),
+        "ADE_F1_std": faers_bert_s42_runs["ADE_F1"].std(),
+    }
+
+    faers_bert_pooled_ov = {
+        "Strict_Precision_mean": faers_bert_runs["Strict_Precision"].mean(),
+        "Strict_Precision_std": faers_bert_runs["Strict_Precision"].std(),
+        "Strict_Recall_mean": faers_bert_runs["Strict_Recall"].mean(),
+        "Strict_Recall_std": faers_bert_runs["Strict_Recall"].std(),
+        "Strict_F1_mean": faers_bert_runs["Strict_F1"].mean(),
+        "Strict_F1_std": faers_bert_runs["Strict_F1"].std(),
+        "ADE_Precision_mean": faers_bert_runs["ADE_Precision"].mean(),
+        "ADE_Precision_std": faers_bert_runs["ADE_Precision"].std(),
+        "ADE_Recall_mean": faers_bert_runs["ADE_Recall"].mean(),
+        "ADE_Recall_std": faers_bert_runs["ADE_Recall"].std(),
+        "ADE_F1_mean": faers_bert_runs["ADE_F1"].mean(),
+        "ADE_F1_std": faers_bert_runs["ADE_F1"].std(),
+    }
+
+    # 2. FAERS Claude 4.6 Sonnet (1-shot)
+    print("[2/5] Evaluating Claude 4.6 Sonnet on FAERS...", flush=True)
     sonnet_faers_raw = pd.read_excel(results_base / "sonnet_runs_FAERS" / "sonnet_raw.xlsx")
     sonnet_faers_ov, sonnet_faers_cat = evaluate_raw_df(sonnet_faers_raw, FAERS_TARGET_CATEGORIES, group_col="document")
 
-    # 3. FAERS LLaMA 4
-    print("[3/5] Processing LLaMA 4 FAERS...", flush=True)
+    # 3. FAERS LLaMA 4 (1-shot Tagged & JSON)
+    print("[3/5] Evaluating LLaMA 4 on FAERS...", flush=True)
     llama4_faers_raw = pd.read_excel(results_base / "llama4_runs_FAERS" / "llama4_raw.xlsx")
     llama4_faers_ov, llama4_faers_cat = evaluate_raw_df(llama4_faers_raw, FAERS_TARGET_CATEGORIES, group_col="document")
 
-    # 4. VAERS BioBERT
-    print("[4/5] Processing BioBERT VAERS (10-fold CV)...", flush=True)
-    bert_vaers_ov, bert_vaers_cat = evaluate_bert_cv(str(results_base / "bert_runs_VAERS"), VAERS_TARGET_CATEGORIES)
+    llama4_json_path = results_base / "llama4_runs_FAERS_json" / "llama4_json_raw.xlsx"
+    if llama4_json_path.exists():
+        llama4_json_raw = pd.read_excel(llama4_json_path)
+        llama4_json_ov, llama4_json_cat = evaluate_raw_df(llama4_json_raw, FAERS_TARGET_CATEGORIES, group_col="document")
+    else:
+        llama4_json_ov, llama4_json_cat = None, None
 
-    # 5. VAERS LLaMA 4
-    print("[5/5] Processing LLaMA 4 VAERS (Target categories only)...", flush=True)
+    # 4. VAERS BioBERT (10-Fold CV Across 5 Seeds)
+    print("[4/5] Loading VAERS BioBERT 10-Fold CV runs across 5 seeds...", flush=True)
+    vaers_bert_dir = results_base / "bert_runs_VAERS"
+    vaers_bert_runs, vaers_bert_seeds, vaers_bert_cats = load_vaers_bert_runs(vaers_bert_dir)
+
+    vaers_bert_s42_runs = vaers_bert_runs[vaers_bert_runs["seed"] == DEFAULT_SEED]
+    vaers_bert_s42_ov = {
+        "Strict_Precision_mean": vaers_bert_s42_runs["Strict_Precision"].mean(),
+        "Strict_Precision_std": vaers_bert_s42_runs["Strict_Precision"].std(),
+        "Strict_Recall_mean": vaers_bert_s42_runs["Strict_Recall"].mean(),
+        "Strict_Recall_std": vaers_bert_s42_runs["Strict_Recall"].std(),
+        "Strict_F1_mean": vaers_bert_s42_runs["Strict_F1"].mean(),
+        "Strict_F1_std": vaers_bert_s42_runs["Strict_F1"].std(),
+        "ADE_Precision_mean": vaers_bert_s42_runs["ADE_Precision"].mean(),
+        "ADE_Precision_std": vaers_bert_s42_runs["ADE_Precision"].std(),
+        "ADE_Recall_mean": vaers_bert_s42_runs["ADE_Recall"].mean(),
+        "ADE_Recall_std": vaers_bert_s42_runs["ADE_Recall"].std(),
+        "ADE_F1_mean": vaers_bert_s42_runs["ADE_F1"].mean(),
+        "ADE_F1_std": vaers_bert_s42_runs["ADE_F1"].std(),
+    }
+
+    vaers_bert_pooled_ov = {
+        "Strict_Precision_mean": vaers_bert_runs["Strict_Precision"].mean(),
+        "Strict_Precision_std": vaers_bert_runs["Strict_Precision"].std(),
+        "Strict_Recall_mean": vaers_bert_runs["Strict_Recall"].mean(),
+        "Strict_Recall_std": vaers_bert_runs["Strict_Recall"].std(),
+        "Strict_F1_mean": vaers_bert_runs["Strict_F1"].mean(),
+        "Strict_F1_std": vaers_bert_runs["Strict_F1"].std(),
+        "ADE_Precision_mean": vaers_bert_runs["ADE_Precision"].mean(),
+        "ADE_Precision_std": vaers_bert_runs["ADE_Precision"].std(),
+        "ADE_Recall_mean": vaers_bert_runs["ADE_Recall"].mean(),
+        "ADE_Recall_std": vaers_bert_runs["ADE_Recall"].std(),
+        "ADE_F1_mean": vaers_bert_runs["ADE_F1"].mean(),
+        "ADE_F1_std": vaers_bert_runs["ADE_F1"].std(),
+    }
+
+    vaers_bert_s42_cats = vaers_bert_cats[vaers_bert_cats["seed"] == DEFAULT_SEED]
+    vaers_cat_summary = []
+    for cat, grp in vaers_bert_s42_cats.groupby("Category"):
+        vaers_cat_summary.append({
+            "Category": cat,
+            "Strict_Precision_mean": round(grp["Strict_Precision"].mean(), 4),
+            "Strict_Precision_std": round(grp["Strict_Precision"].std(), 4),
+            "Strict_Recall_mean": round(grp["Strict_Recall"].mean(), 4),
+            "Strict_Recall_std": round(grp["Strict_Recall"].std(), 4),
+            "Strict_F1_mean": round(grp["Strict_F1"].mean(), 4),
+            "Strict_F1_std": round(grp["Strict_F1"].std(), 4),
+            "ADE_Precision_mean": round(grp["ADE_Precision"].mean(), 4),
+            "ADE_Precision_std": round(grp["ADE_Precision"].std(), 4),
+            "ADE_Recall_mean": round(grp["ADE_Recall"].mean(), 4),
+            "ADE_Recall_std": round(grp["ADE_Recall"].std(), 4),
+            "ADE_F1_mean": round(grp["ADE_F1"].mean(), 4),
+            "ADE_F1_std": round(grp["ADE_F1"].std(), 4),
+        })
+    df_vaers_bert_cat_s42 = pd.DataFrame(vaers_cat_summary)
+
+    # 5. VAERS LLaMA 4 (1-shot Target Filtered)
+    print("[5/5] Evaluating LLaMA 4 on VAERS (Target Filtered)...", flush=True)
     llama4_vaers_raw = pd.read_excel(results_base / "llama4_runs_VAERS" / "llama4_raw.xlsx")
     llama4_vaers_ov, llama4_vaers_cat = evaluate_raw_df(llama4_vaers_raw, VAERS_TARGET_CATEGORIES, group_col="document")
 
-    # Build Summary Table
-    faers_summary = [
+    # Build Master Summary Tables
+    faers_master_table = [
         {
             "Dataset": "FAERS D1",
-            "Model": "BioBERT (10-fold CV)",
-            "Strict P": f"{bert_faers_ov['Strict_Precision_mean']:.4f} +- {bert_faers_ov['Strict_Precision_std']:.4f}",
-            "Strict R": f"{bert_faers_ov['Strict_Recall_mean']:.4f} +- {bert_faers_ov['Strict_Recall_std']:.4f}",
-            "Strict F1": f"{bert_faers_ov['Strict_F1_mean']:.4f} +- {bert_faers_ov['Strict_F1_std']:.4f}",
-            "ADE-Eval P": f"{bert_faers_ov['ADE_Precision_mean']:.4f} +- {bert_faers_ov['ADE_Precision_std']:.4f}",
-            "ADE-Eval R": f"{bert_faers_ov['ADE_Recall_mean']:.4f} +- {bert_faers_ov['ADE_Recall_std']:.4f}",
-            "ADE-Eval F1": f"{bert_faers_ov['ADE_F1_mean']:.4f} +- {bert_faers_ov['ADE_F1_std']:.4f}",
+            "Model": f"BioBERT (4-Fold LOO, Seed {DEFAULT_SEED} Default)",
+            "Strict P": f"{faers_bert_s42_ov['Strict_Precision_mean']:.4f} +- {faers_bert_s42_ov['Strict_Precision_std']:.4f}",
+            "Strict R": f"{faers_bert_s42_ov['Strict_Recall_mean']:.4f} +- {faers_bert_s42_ov['Strict_Recall_std']:.4f}",
+            "Strict F1": f"{faers_bert_s42_ov['Strict_F1_mean']:.4f} +- {faers_bert_s42_ov['Strict_F1_std']:.4f}",
+            "ADE-Eval P": f"{faers_bert_s42_ov['ADE_Precision_mean']:.4f} +- {faers_bert_s42_ov['ADE_Precision_std']:.4f}",
+            "ADE-Eval R": f"{faers_bert_s42_ov['ADE_Recall_mean']:.4f} +- {faers_bert_s42_ov['ADE_Recall_std']:.4f}",
+            "ADE-Eval F1": f"{faers_bert_s42_ov['ADE_F1_mean']:.4f} +- {faers_bert_s42_ov['ADE_F1_std']:.4f}",
+        },
+        {
+            "Dataset": "FAERS D1",
+            "Model": "BioBERT (4-Fold LOO, 5-Seed Pooled)",
+            "Strict P": f"{faers_bert_pooled_ov['Strict_Precision_mean']:.4f} +- {faers_bert_pooled_ov['Strict_Precision_std']:.4f}",
+            "Strict R": f"{faers_bert_pooled_ov['Strict_Recall_mean']:.4f} +- {faers_bert_pooled_ov['Strict_Recall_std']:.4f}",
+            "Strict F1": f"{faers_bert_pooled_ov['Strict_F1_mean']:.4f} +- {faers_bert_pooled_ov['Strict_F1_std']:.4f}",
+            "ADE-Eval P": f"{faers_bert_pooled_ov['ADE_Precision_mean']:.4f} +- {faers_bert_pooled_ov['ADE_Precision_std']:.4f}",
+            "ADE-Eval R": f"{faers_bert_pooled_ov['ADE_Recall_mean']:.4f} +- {faers_bert_pooled_ov['ADE_Recall_std']:.4f}",
+            "ADE-Eval F1": f"{faers_bert_pooled_ov['ADE_F1_mean']:.4f} +- {faers_bert_pooled_ov['ADE_F1_std']:.4f}",
         },
         {
             "Dataset": "FAERS D1",
@@ -316,7 +485,7 @@ def main():
         },
         {
             "Dataset": "FAERS D1",
-            "Model": "LLaMA 4 (1-shot)",
+            "Model": "LLaMA 4 (1-shot, Tagged)",
             "Strict P": f"{llama4_faers_ov['Strict_Precision']:.4f}",
             "Strict R": f"{llama4_faers_ov['Strict_Recall']:.4f}",
             "Strict F1": f"{llama4_faers_ov['Strict_F1']:.4f}",
@@ -326,20 +495,30 @@ def main():
         },
     ]
 
-    vaers_summary = [
+    vaers_master_table = [
         {
             "Dataset": "VAERS",
-            "Model": "BioBERT (10-fold CV)",
-            "Strict P": f"{bert_vaers_ov['Strict_Precision_mean']:.4f} +- {bert_vaers_ov['Strict_Precision_std']:.4f}",
-            "Strict R": f"{bert_vaers_ov['Strict_Recall_mean']:.4f} +- {bert_vaers_ov['Strict_Recall_std']:.4f}",
-            "Strict F1": f"{bert_vaers_ov['Strict_F1_mean']:.4f} +- {bert_vaers_ov['Strict_F1_std']:.4f}",
-            "ADE-Eval P": f"{bert_vaers_ov['ADE_Precision_mean']:.4f} +- {bert_vaers_ov['ADE_Precision_std']:.4f}",
-            "ADE-Eval R": f"{bert_vaers_ov['ADE_Recall_mean']:.4f} +- {bert_vaers_ov['ADE_Recall_std']:.4f}",
-            "ADE-Eval F1": f"{bert_vaers_ov['ADE_F1_mean']:.4f} +- {bert_vaers_ov['ADE_F1_std']:.4f}",
+            "Model": f"BioBERT (10-Fold CV, Seed {DEFAULT_SEED} Default)",
+            "Strict P": f"{vaers_bert_s42_ov['Strict_Precision_mean']:.4f} +- {vaers_bert_s42_ov['Strict_Precision_std']:.4f}",
+            "Strict R": f"{vaers_bert_s42_ov['Strict_Recall_mean']:.4f} +- {vaers_bert_s42_ov['Strict_Recall_std']:.4f}",
+            "Strict F1": f"{vaers_bert_s42_ov['Strict_F1_mean']:.4f} +- {vaers_bert_s42_ov['Strict_F1_std']:.4f}",
+            "ADE-Eval P": f"{vaers_bert_s42_ov['ADE_Precision_mean']:.4f} +- {vaers_bert_s42_ov['ADE_Precision_std']:.4f}",
+            "ADE-Eval R": f"{vaers_bert_s42_ov['ADE_Recall_mean']:.4f} +- {vaers_bert_s42_ov['ADE_Recall_std']:.4f}",
+            "ADE-Eval F1": f"{vaers_bert_s42_ov['ADE_F1_mean']:.4f} +- {vaers_bert_s42_ov['ADE_F1_std']:.4f}",
         },
         {
             "Dataset": "VAERS",
-            "Model": "LLaMA 4 (Filtered)",
+            "Model": "BioBERT (10-Fold CV, 5-Seed Pooled)",
+            "Strict P": f"{vaers_bert_pooled_ov['Strict_Precision_mean']:.4f} +- {vaers_bert_pooled_ov['Strict_Precision_std']:.4f}",
+            "Strict R": f"{vaers_bert_pooled_ov['Strict_Recall_mean']:.4f} +- {vaers_bert_pooled_ov['Strict_Recall_std']:.4f}",
+            "Strict F1": f"{vaers_bert_pooled_ov['Strict_F1_mean']:.4f} +- {vaers_bert_pooled_ov['Strict_F1_std']:.4f}",
+            "ADE-Eval P": f"{vaers_bert_pooled_ov['ADE_Precision_mean']:.4f} +- {vaers_bert_pooled_ov['ADE_Precision_std']:.4f}",
+            "ADE-Eval R": f"{vaers_bert_pooled_ov['ADE_Recall_mean']:.4f} +- {vaers_bert_pooled_ov['ADE_Recall_std']:.4f}",
+            "ADE-Eval F1": f"{vaers_bert_pooled_ov['ADE_F1_mean']:.4f} +- {vaers_bert_pooled_ov['ADE_F1_std']:.4f}",
+        },
+        {
+            "Dataset": "VAERS",
+            "Model": "LLaMA 4 (1-shot, Target Filtered)",
             "Strict P": f"{llama4_vaers_ov['Strict_Precision']:.4f}",
             "Strict R": f"{llama4_vaers_ov['Strict_Recall']:.4f}",
             "Strict F1": f"{llama4_vaers_ov['Strict_F1']:.4f}",
@@ -349,27 +528,54 @@ def main():
         },
     ]
 
-    df_faers_summary = pd.DataFrame(faers_summary)
-    df_vaers_summary = pd.DataFrame(vaers_summary)
+    df_faers_master = pd.DataFrame(faers_master_table)
+    df_vaers_master = pd.DataFrame(vaers_master_table)
 
+    # Save to Excel Workbook
     out_dir = results_base / "comparison_three_schemes"
     out_dir.mkdir(parents=True, exist_ok=True)
     out_excel = out_dir / "three_schemes_summary.xlsx"
 
     with pd.ExcelWriter(out_excel, engine="openpyxl") as writer:
-        df_faers_summary.to_excel(writer, sheet_name="FAERS_Overall", index=False)
-        df_vaers_summary.to_excel(writer, sheet_name="VAERS_Overall", index=False)
-        bert_faers_cat.to_excel(writer, sheet_name="BioBERT_FAERS_Categories", index=False)
+        df_faers_master.to_excel(writer, sheet_name="FAERS_Master_Benchmark", index=False)
+        df_vaers_master.to_excel(writer, sheet_name="VAERS_Master_Benchmark", index=False)
+        faers_bert_s42_runs.to_excel(writer, sheet_name="FAERS_BioBERT_4Fold_Seed42", index=False)
+        vaers_bert_s42_runs.to_excel(writer, sheet_name="VAERS_BioBERT_10Fold_Seed42", index=False)
+        faers_bert_seeds.to_excel(writer, sheet_name="Seed_Ablation_FAERS", index=False)
+        vaers_bert_seeds.to_excel(writer, sheet_name="Seed_Ablation_VAERS", index=False)
+        faers_bert_cat.to_excel(writer, sheet_name="BioBERT_FAERS_Categories", index=False)
+        df_vaers_bert_cat_s42.to_excel(writer, sheet_name="BioBERT_VAERS_Categories", index=False)
         sonnet_faers_cat.to_excel(writer, sheet_name="Sonnet_FAERS_Categories", index=False)
         llama4_faers_cat.to_excel(writer, sheet_name="LLaMA4_FAERS_Categories", index=False)
-        bert_vaers_cat.to_excel(writer, sheet_name="BioBERT_VAERS_Categories", index=False)
         llama4_vaers_cat.to_excel(writer, sheet_name="LLaMA4_VAERS_Categories", index=False)
+        if llama4_json_cat is not None:
+            llama4_json_cat.to_excel(writer, sheet_name="LLaMA4_FAERS_JSON_Categories", index=False)
 
-    print(f"\nSaved complete multi-sheet Excel summary to: {out_excel}", flush=True)
-    print("\n--- FAERS SUMMARY ---", flush=True)
-    print(df_faers_summary.to_string(index=False), flush=True)
-    print("\n--- VAERS SUMMARY ---", flush=True)
-    print(df_vaers_summary.to_string(index=False), flush=True)
+    print(f"\n[OK] Saved comprehensive multi-sheet Excel summary to:\n     {out_excel}", flush=True)
+
+    print("\n" + "=" * 80, flush=True)
+    print(" FAERS MASTER BENCHMARK (Table 2)", flush=True)
+    print("=" * 80, flush=True)
+    print(df_faers_master.to_string(index=False), flush=True)
+
+    print("\n" + "=" * 80, flush=True)
+    print(" VAERS MASTER BENCHMARK (Table 3)", flush=True)
+    print("=" * 80, flush=True)
+    print(df_vaers_master.to_string(index=False), flush=True)
+
+    print("\n" + "=" * 80, flush=True)
+    print(f" FAERS BioBERT 4-Fold LOO Case-Series Detail (Seed {DEFAULT_SEED} Default)", flush=True)
+    print("=" * 80, flush=True)
+    for _, r in faers_bert_s42_runs.iterrows():
+        print(f"  * {r['fold_name']:<30}: Strict F1 = {r['Strict_F1']:.4f} | ADE F1 = {r['ADE_F1']:.4f}")
+
+    print("\n" + "=" * 80, flush=True)
+    print(" SEED ABLATION ANALYSIS (5 Random Seeds: 42, 123, 456, 789, 1011)", flush=True)
+    print("=" * 80, flush=True)
+    print("FAERS (4 Folds per Seed):")
+    print(faers_bert_seeds[["seed", "num_folds", "Strict_F1_mean", "Strict_F1_std", "ADE_F1_mean", "ADE_F1_std"]].to_string(index=False))
+    print("\nVAERS (10 Folds per Seed):")
+    print(vaers_bert_seeds[["seed", "num_folds", "Strict_F1_mean", "Strict_F1_std", "ADE_F1_mean", "ADE_F1_std"]].to_string(index=False))
 
 
 if __name__ == "__main__":

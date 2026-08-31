@@ -156,11 +156,15 @@
   - `INDICATION` Sparsity Contrast: BioBERT collapses in OOD transfer (Strict F1 = **0.0368**), while Claude 4.6 Sonnet (F1 = **0.3838**) and LLaMA 4 (F1 = **0.3690**) maintain robust semantic capture.
 
 #### 3.4 In-Depth Error Anatomy (*Reviewer #3, Comments 3.10, 3.14, 3.21*)
-- **Category C Granularity:** Mean IoU (BioBERT 0.57, LLMs 0.47). Show that 85%–90% of C mismatches are superphrase context extensions (*Figure 5a*).
-- **Class Confusion Matrix ($C_{\text{class}}$):** Top confusing pairs (LAB $\to$ AE/DX [583 cases], DRUG $\to$ DX [577 cases], AE $\to$ HX [279 cases], AE $\to$ STATUS [1,050 cases in VAERS]).
+- **Methodology (Technical Overview):** To conduct the in-depth error analysis, we computationally parse the raw span-level model predictions against the SME1 gold standard annotations, classifying boundary discrepancies (`Category C`) and class confusions (`S_wrong_class`) via character offset overlap logic. For Category C mismatches, we compute Intersection-over-Union (IoU) distributions and systematically categorize the root cause of the shift (e.g., punctuation, clinical modifier inclusion, or superphrase context extensions). For `S_wrong_class` misclassifications, we map the most closely overlapping gold category to the erroneous prediction to construct pairwise confusion matrices, revealing systematic model schema biases.
+- **Category C Granularity:** Mean IoU (BioBERT FAERS: 0.57, BioBERT VAERS Seed 42: 0.52, LLMs: ~0.42–0.47). We demonstrate that the vast majority of LLM boundary mismatches (85%–92%) and BioBERT VAERS mismatches (91.7%) are driven by subphrase/superphrase context extensions rather than complex boundary shifts (*Figure 5a*).
+- **Class Confusion Matrix ($C_{\text{class}}$):** 
+  - **LLaMA 4 FAERS (Tagged XML):** Top confusing pairs include structural boundary misalignments (LAB $\to$ LAB [934 cases], DRUG $\to$ DRUG [845 cases]) and category shifts (DRUG $\to$ DX [350 cases], LAB $\to$ AE [267 cases]).
+  - **LLaMA 4 FAERS (JSON):** The JSON paradigm alters the confusion profile, causing high misclassification of LAB entities into DOSE (775 cases) or AE (485 cases).
+  - **LLaMA 4 VAERS:** Dominated by AE $\to$ AE boundary misalignments (6,809 cases) and high confusion of AE $\to$ STATUS (1,050 cases) and AE $\to$ LAB (919 cases).
 - **Non-Overlapping Spurious Predictions ($S_{\text{non\_overlap}}$):** Grouped into physiological/anatomical terms (52%), negation scope errors (28%), and schema overflow (20%).
 - **Axis Alignment:** Align Figure 5b and 5c horizontal axes to identical range ($0 - 180$) (*Reviewer #3, Comment 3.14*).
-- **VAERS Error Anatomy:** Add **Figure 6** presenting Category C IoU distribution and confusion matrix for VAERS (*Reviewer #3, Comment 3.21*).
+- **VAERS Error Anatomy:** Add **Figure 6** presenting Category C IoU distribution and confusion matrix for VAERS, explicitly integrating the BioBERT Seed 42 baseline metrics (*Reviewer #3, Comment 3.21*).
 
 #### 3.5 Impact of Output Format Paradigm (Tagged XML vs. JSON) (*Reviewer #3, Comment 3.23*)
 - **Table 5: LLaMA 4 FAERS Tagged XML (`P2_TAG`) vs. Structured JSON (`P1_JSON`):**
