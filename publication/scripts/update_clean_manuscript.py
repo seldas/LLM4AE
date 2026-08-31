@@ -2,16 +2,15 @@
 """
 update_clean_manuscript.py
 
-Updates LLM4AE_rev1_clean.docx (or saves to LLM4AE_rev1_clean.docx / LLM4AE_rev1_clean_updated.docx) with:
+Updates LLM4AE_rev1_clean.docx with:
 1. High-resolution Figures 2-6 (direct ZIP media replacement).
-2. Complete, sequential publication tables:
+2. Publication tables (with Table 4 removed from main text as Figure 4 presents the 17-category breakdown):
    - Table 1 (Section 2.1): Descriptive statistics of the annotated corpora (FAERS & VAERS)
    - Table 2 (Section 3.1): FAERS annotations, categorized by Human, ETHER and LLM
    - Table 3 (Section 3.3): Master Performance Benchmark on FAERS (BioBERT 4-Fold LOO vs LLaMA 4 vs Claude Sonnet vs ETHER)
-   - Table 4 (Section 3.3): Per-Category Performance Breakdown on FAERS Across All 17 Clinical Concept Categories
-   - Table 5 (Section 3.5): Master Performance Benchmark on VAERS (BioBERT 10-Fold CV vs LLaMA 4)
-   - Table 6 (Section 3.6): Leave-One-Drug-Event-Pair-Out Performance across 4 Case Series on FAERS
-   - Table 7 (Section 3.6): LLM Output Format Paradigm Comparison (Inline Tagged XML vs JSON Schema)
+   - Table 4 (Section 3.5, renumbered): Master Performance Benchmark on VAERS (BioBERT 10-Fold CV vs LLaMA 4)
+   - Table 5 (Section 3.6, renumbered): Leave-One-Drug-Event-Pair-Out Performance across 4 Case Series on FAERS
+   - Table 6 (Section 3.6, renumbered): LLM Output Format Paradigm Comparison (Inline Tagged XML vs JSON Schema)
 3. Synchronized text in Results sections (3.1 - 3.6) and updated Figure captions.
 """
 
@@ -27,6 +26,26 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.enum.table import WD_TABLE_ALIGNMENT, WD_ALIGN_VERTICAL
 from docx.oxml import parse_xml
 from docx.oxml.ns import nsdecls
+
+
+def replace_media_images_in_memory(docx_path: Path, img_map: dict[str, Path]):
+    """Replaces images inside the docx zip archive using an in-memory buffer."""
+    with open(docx_path, 'rb') as f:
+        in_buf = io.BytesIO(f.read())
+    
+    out_buf = io.BytesIO()
+    with zipfile.ZipFile(in_buf, 'r') as zin, zipfile.ZipFile(out_buf, 'w', zipfile.ZIP_DEFLATED) as zout:
+        for item in zin.infolist():
+            if item.filename in img_map and img_map[item.filename].exists():
+                print(f"  Replacing {item.filename} with {img_map[item.filename].name} ({img_map[item.filename].stat().st_size} bytes)...")
+                with open(img_map[item.filename], "rb") as fimg:
+                    zout.writestr(item.filename, fimg.read())
+            else:
+                zout.writestr(item, zin.read(item.filename))
+    
+    with open(docx_path, 'wb') as f:
+        f.write(out_buf.getvalue())
+    print("Media replacement complete.")
 
 
 def create_styled_table(doc, data: list[list[str]], col_widths: list[float] | None = None, is_header_multiline: int = 1):
@@ -99,6 +118,11 @@ def replace_table_in_place(old_table, new_table):
     parent.remove(old_table._tbl)
 
 
+def remove_table(table):
+    parent = table._tbl.getparent()
+    parent.remove(table._tbl)
+
+
 def main():
     repo_root = Path(__file__).resolve().parent.parent.parent
     manuscript_dir = repo_root / "publication" / "manuscripts"
@@ -107,6 +131,15 @@ def main():
 
     print(f"Loading document from {src_docx_path}...")
     doc = docx.Document(str(src_docx_path))
+
+    # 1. Update Media Figures in ZIP (Figures 2-6)
+    img_map = {
+        "word/media/image2.png": manuscript_dir / "figure2.png",
+        "word/media/image3.png": manuscript_dir / "figure3.png",
+        "word/media/image4.png": manuscript_dir / "figure4.png",
+        "word/media/image5.png": manuscript_dir / "figure5.png",
+        "word/media/image6.png": manuscript_dir / "figure6.png",
+    }
 
     # --- TABLE 3: MASTER BENCHMARK ON FAERS (Section 3.3) ---
     t3_data = [
@@ -121,41 +154,17 @@ def main():
     ]
     t3_styled = create_styled_table(doc, t3_data, col_widths=[1.3, 2.2, 1.8, 1.3, 1.3])
 
-    # --- TABLE 4: PER-CATEGORY BREAKDOWN ON FAERS ACROSS ALL 17 CATEGORIES (Section 3.3) ---
+    # --- TABLE 4 (formerly Table 5): MASTER BENCHMARK ON VAERS (Section 3.5) ---
     t4_data = [
-        ["Category", "Gold (N)", "BioBERT (Strict)", "LLaMA 4 (Strict)", "Claude Sonnet (Strict)", "BioBERT (Adapted)", "LLaMA 4 (Adapted)", "Claude Sonnet (Adapted)"],
-        ["sDrug", "4,665", "0.6025", "0.3181", "0.4006", "0.7376", "0.5463", "0.5619"],
-        ["cDrug", "2,995", "0.7433", "0.3443", "0.5689", "0.8451", "0.6013", "0.7130"],
-        ["oDrug", "0", "0.0000", "0.0000", "0.0000", "0.0000", "0.4804", "0.4848"],
-        ["Dose", "1,668", "0.6100", "0.2752", "0.4300", "0.7427", "0.5783", "0.6826"],
-        ["Indication", "202", "0.1335", "0.0690", "0.1042", "0.5021", "0.4913", "0.5194"],
-        ["Treatment", "1,490", "0.6260", "0.1832", "0.3189", "0.7775", "0.4647", "0.5355"],
-        ["AE", "12,010", "0.5931", "0.3582", "0.4401", "0.7066", "0.5635", "0.5678"],
-        ["mAE", "113", "0.0480", "0.0405", "0.0594", "0.0507", "0.4604", "0.4574"],
-        ["Dx", "64", "0.0670", "0.0016", "0.0000", "0.4536", "0.4016", "0.3704"],
-        ["Lab", "3,482", "0.5964", "0.1575", "0.3742", "0.7637", "0.4912", "0.6105"],
-        ["Status", "1,910", "0.7169", "0.1304", "0.2741", "0.8386", "0.2676", "0.4547"],
-        ["R/O", "9", "0.0000", "0.0073", "0.0094", "0.0000", "0.4444", "0.4539"],
-        ["CoD", "3", "0.0000", "0.0052", "0.0165", "0.0000", "0.4610", "0.4686"],
-        ["MHx", "2,370", "0.4621", "0.3474", "0.4896", "0.7138", "0.6121", "0.6888"],
-        ["FHx", "105", "0.0727", "0.0606", "0.1395", "0.0818", "0.1736", "0.2130"],
-        ["Age", "787", "0.9009", "0.7335", "0.8752", "0.9525", "0.8590", "0.9238"],
-        ["Sex", "777", "0.9037", "0.7551", "0.8829", "0.9570", "0.8575", "0.9376"],
-        ["OVERALL", "32,650", "0.6032", "0.2982", "0.4189", "0.7477", "0.5515", "0.6060"]
-    ]
-    t4_styled = create_styled_table(doc, t4_data, col_widths=[1.1, 0.7, 0.9, 0.9, 1.0, 0.9, 0.9, 1.0])
-
-    # --- TABLE 5: MASTER BENCHMARK ON VAERS (Section 3.5) ---
-    t5_data = [
         ["Model Family", "Model & Configuration", "Input Paradigm", "Primary Tier: Strict Exact F1", "Secondary Tier: Adapted ADE F1"],
         ["Fine-Tuned Encoder", "BioBERT (10-Fold CV, Seed 42 Default)", "Sentence Token Classification", "0.6594 ± 0.0196", "0.7848 ± 0.0127"],
         ["Fine-Tuned Encoder", "BioBERT (10-Fold CV, 5-Seed Pooled)", "Sentence Token Classification", "0.6595 ± 0.0177", "0.7882 ± 0.0112"],
         ["Open-Weight LLM", "LLaMA 4 (1-shot, Tagged P2_TAG_VAERS)", "Inline Tagged XML", "0.2364", "0.4766"]
     ]
-    t5_styled = create_styled_table(doc, t5_data, col_widths=[1.3, 2.2, 1.8, 1.3, 1.3])
+    t4_styled = create_styled_table(doc, t4_data, col_widths=[1.3, 2.2, 1.8, 1.3, 1.3])
 
-    # --- TABLE 6: LEAVE-ONE-DRUG-EVENT-PAIR-OUT (Section 3.6) ---
-    t6_data = [
+    # --- TABLE 5 (formerly Table 6): LEAVE-ONE-DRUG-EVENT-PAIR-OUT (Section 3.6) ---
+    t5_data = [
         ["Drug–Event Case Series", "Validation Cohort Size", "Primary Tier: Strict Exact F1", "Secondary Tier: Adapted ADE F1"],
         ["Azacitidine – QT Prolongation", "N = 200 reports", "0.6280 ± 0.0097", "0.7412 ± 0.0085"],
         ["Baricitinib – Hypersensitivity", "N = 200 reports", "0.6563 ± 0.0178", "0.7850 ± 0.0142"],
@@ -163,36 +172,51 @@ def main():
         ["Erenumab – Stroke", "N = 200 reports", "0.5274 ± 0.0105", "0.6510 ± 0.0098"],
         ["Macro-Average (All 4 Folds)", "N = 829 reports total", "0.5930 ± 0.0118", "0.7173 ± 0.0103"]
     ]
-    t6_styled = create_styled_table(doc, t6_data, col_widths=[2.4, 1.5, 1.6, 1.6])
+    t5_styled = create_styled_table(doc, t5_data, col_widths=[2.4, 1.5, 1.6, 1.6])
 
-    # --- TABLE 7: OUTPUT FORMAT PARADIGM COMPARISON (Section 3.6) ---
-    t7_data = [
+    # --- TABLE 6 (formerly Table 7): OUTPUT FORMAT PARADIGM COMPARISON (Section 3.6) ---
+    t6_data = [
         ["Model", "Prompt Strategy & Output Paradigm", "Strict Exact-Match F1", "Adapted ADE-Eval F1", "Boundary Alignment Success"],
         ["LLaMA 4 (1-shot)", "Inline Tagged XML (P2_TAG)", "0.3542", "0.5098", "100.0%"],
         ["LLaMA 4 (1-shot)", "JSON Schema (Structured Span Offsets)", "0.3200", "0.4700", "93.4%"],
         ["Claude 4.6 Sonnet (1-shot)", "Inline Tagged XML (P2_TAG)", "0.4222", "0.5786", "100.0%"]
     ]
-    t7_styled = create_styled_table(doc, t7_data, col_widths=[1.6, 2.3, 1.2, 1.2, 1.2])
+    t6_styled = create_styled_table(doc, t6_data, col_widths=[1.6, 2.3, 1.2, 1.2, 1.2])
 
     replace_table_in_place(doc.tables[2], t3_styled)
-    replace_table_in_place(doc.tables[3], t4_styled)
-    replace_table_in_place(doc.tables[4], t5_styled)
-    replace_table_in_place(doc.tables[5], t6_styled)
-    replace_table_in_place(doc.tables[6], t7_styled)
+    
+    # Check if doc has 7 or more tables:
+    if len(doc.tables) >= 7:
+        replace_table_in_place(doc.tables[4], t4_styled)
+        replace_table_in_place(doc.tables[5], t5_styled)
+        replace_table_in_place(doc.tables[6], t6_styled)
+        # Remove old Table 4 table (index 3)
+        remove_table(doc.tables[3])
 
-    # --- UPDATE CAPTION FOR TABLE 4 ---
+    # Update Captions and references
     for p in doc.paragraphs:
         txt = p.text.strip()
-        if "Table 4." in txt:
-            p.text = "Table 4. Fine-Grained Category-Level Performance Breakdown on the FAERS Dataset Across All 17 Clinical Concept Categories (N = 829 Reports)."
+        if "Table 4." in txt and "Fine-Grained" in txt:
+            p.text = ""  # Remove old Table 4 caption paragraph
+        elif "Table 5." in txt:
+            p.text = "Table 4. Primary and Secondary Tier Clinical Concept Extraction Performance Benchmark on the VAERS Dataset (N = 1,000 Reports)."
+        elif "Table 6." in txt:
+            p.text = "Table 5. Leave-One-Drug-Event-Pair-Out Cross-Validation Performance Across Four FAERS Case Series (N = 829 Reports Total)."
+        elif "Table 7." in txt:
+            p.text = "Table 6. Impact of LLM Output Format Paradigm (Inline Tagged XML vs. Structured JSON Schema Offsets) on Entity Extraction and Offset Alignment."
+        elif "Fig. 4" in txt or "Figure 4" in txt:
+            if "Caption:" in txt or txt.startswith("Figure 4.") or txt.startswith("Fig. 4"):
+                p.text = "Figure 4. Comparative Concept Extraction Performance Across All 17 Clinical Concept Categories on the FAERS Benchmark Corpus (N = 829 Reports) for Fine-Tuned BioBERT (Blue Diamond / Bar), Claude 4.6 Sonnet (Red Circle / Bar), and LLaMA 4 (Pink Square / Bar)."
 
     try:
         doc.save(str(dst_docx_path))
         print(f"Saved directly to {dst_docx_path}")
+        replace_media_images_in_memory(dst_docx_path, img_map)
     except PermissionError:
         alt_path = manuscript_dir / "LLM4AE_rev1_clean_updated.docx"
         doc.save(str(alt_path))
         print(f"Saved to alternative path: {alt_path}")
+        replace_media_images_in_memory(alt_path, img_map)
 
 
 if __name__ == "__main__":
