@@ -10,6 +10,7 @@ Panels:
              across all 17 fine-grained clinical concept categories + TOTAL on FAERS (N = 829).
 - Panel (b): Fair Head-to-Head Comparison: ETHER vs. LLaMA 4 vs. Claude 4.6 Sonnet
              on combined core schemas (AE [AE+mAE], DRUG [sDrug+cDrug+oDrug+Treatment], DX, HX [MHx+FHx], and Shared TOTAL).
+             Evaluated against full ground truth context to ensure strict cross-class consistency.
              Note: RO is excluded per reviewer feedback.
 
 Standard Manuscript Color Palette:
@@ -95,7 +96,7 @@ def main():
     ax0.legend(loc="upper left", bbox_to_anchor=(0.01, 0.98), fontsize=8.5, framealpha=0.95, ncol=2)
 
     # -------------------------------------------------------------
-    # Panel (b): Fair Head-to-Head Comparison: ETHER vs. LLMs (Combined Schema, RO Excluded)
+    # Panel (b): Fair Head-to-Head Comparison: ETHER vs. LLMs (Harmonized Ground Truth Context)
     # -------------------------------------------------------------
     ax1 = fig.add_subplot(gs[1, 0])
 
@@ -107,15 +108,15 @@ def main():
         "TOTAL\n(Shared Schema)"
     ]
 
-    # Fair Combined Metrics
-    ether_f1_ade = [0.3141, 0.5966, 0.4458, 0.2030, 0.4210]
-    ether_f1_strict = [0.0460, 0.3645, 0.0004, 0.0624, 0.1584]
+    # Harmonized Fair Combined Metrics (Preserving Full Document Ground Truth Context for Partial Credit)
+    ether_f1_ade = [0.3717, 0.5953, 0.4657, 0.2039, 0.4436]
+    ether_f1_strict = [0.0409, 0.3551, 0.0004, 0.0624, 0.1467]
 
-    llama_sh_ade = [0.5751, 0.6310, 0.2191, 0.6075, 0.5980]
-    llama_sh_strict = [0.3681, 0.3855, 0.0021, 0.3477, 0.3659]
+    llama_sh_ade = [0.5750, 0.6295, 0.4020, 0.6073, 0.5971]
+    llama_sh_strict = [0.3624, 0.3808, 0.0017, 0.3467, 0.3597]
 
-    sonnet_sh_ade = [0.5805, 0.6768, 0.0997, 0.6825, 0.6295]
-    sonnet_sh_strict = [0.4574, 0.5196, 0.0000, 0.4871, 0.4788]
+    sonnet_sh_ade = [0.5802, 0.6763, 0.3709, 0.6823, 0.6281]
+    sonnet_sh_strict = [0.4497, 0.5184, 0.0000, 0.4867, 0.4726]
 
     x2 = np.arange(len(shared_cats))
     width2 = 0.26
@@ -164,7 +165,7 @@ def main():
     plt.savefig(out_docx_img, dpi=300, bbox_inches="tight")
     plt.close()
 
-    print(f"Figure 3 (Fair Combined Schema, RO Excluded) successfully generated and saved to:\n  - {out_fig_path}\n  - {out_manuscript_fig}\n  - {out_docx_img}")
+    print(f"Figure 3 (Fully Harmonized Dx & Fair Combined Schema) successfully saved to:\n  - {out_fig_path}\n  - {out_manuscript_fig}\n  - {out_docx_img}")
 
 
 if __name__ == "__main__":
