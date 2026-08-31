@@ -336,7 +336,7 @@ def main():
         print(f"Saved directly to {dst_docx_path}")
         replace_media_images_in_memory(dst_docx_path, img_map)
     except PermissionError:
-        alt_path = manuscript_dir / "LLM4AE_rev1_clean_updated.docx"
+        alt_path = manuscript_dir / "LLM4AE_rev1_clean_updated2.docx"
         doc.save(str(alt_path))
         print(f"Saved to alternative path: {alt_path}")
         replace_media_images_in_memory(alt_path, img_map)
