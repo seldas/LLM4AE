@@ -6,9 +6,11 @@ Generates publication-ready Figure 4: Comparative Concept Extraction Performance
 Across All 17 Clinical Concept Categories:
 Fine-Tuned BioBERT vs. Instruction-Tuned LLMs (Claude 4.6 Sonnet & LLaMA 4).
 
-Single unified figure layout (similar to Figure 3a):
-- Grouped Bars: Secondary Tier (Adapted ADE-Eval Clinical Weighted F1)
-- Point/Shape Overlays: Primary Tier (Strict Exact-Match NER F1)
+Features:
+- No internal figure title (clean publication style).
+- Clear 2-row legend:
+  - Row 1: Bars (Secondary Tier: Adapted ADE-Eval Clinical Weighted F1)
+  - Row 2: Dots/Markers (Primary Tier: Strict Exact-Match NER F1)
 
 Standard Manuscript Color Palette:
 - BioBERT: Steel Blue (#1F77B4)
@@ -38,7 +40,7 @@ def main():
     plt.rcParams["axes.edgecolor"] = "#333333"
     plt.rcParams["axes.linewidth"] = 0.9
 
-    fig, ax = plt.subplots(figsize=(16.5, 7.8), dpi=300)
+    fig, ax = plt.subplots(figsize=(16.5, 7.2), dpi=300)
 
     # 17 Categories + OVERALL
     cats_17 = [
@@ -69,17 +71,14 @@ def main():
     c_llama = "#FF6F61"      # Warm Pink close to red for LLaMA 4
 
     # Grouped Bars: Adapted ADE-Eval F1
-    bars_b = ax.bar(x - width, bert_ade, width, label="BioBERT (Adapted ADE-Eval F1)",
-                    color=c_bert, alpha=0.92, edgecolor="#111111", linewidth=0.7, zorder=2)
-    bars_s = ax.bar(x, sonnet_ade, width, label="Claude 4.6 Sonnet (Adapted ADE-Eval F1)",
-                    color=c_sonnet, alpha=0.92, edgecolor="#111111", linewidth=0.7, zorder=2)
-    bars_l = ax.bar(x + width, llama_ade, width, label="LLaMA 4 (Adapted ADE-Eval F1)",
-                    color=c_llama, alpha=0.92, edgecolor="#111111", linewidth=0.7, zorder=2)
+    bars_b = ax.bar(x - width, bert_ade, width, color=c_bert, alpha=0.92, edgecolor="#111111", linewidth=0.7, zorder=2)
+    bars_s = ax.bar(x, sonnet_ade, width, color=c_sonnet, alpha=0.92, edgecolor="#111111", linewidth=0.7, zorder=2)
+    bars_l = ax.bar(x + width, llama_ade, width, color=c_llama, alpha=0.92, edgecolor="#111111", linewidth=0.7, zorder=2)
 
     # Point Overlays: Strict Exact-Match F1
-    ax.plot(x - width, bert_strict, color="#0B3C5D", marker="D", markersize=6, linestyle="", label="BioBERT (Strict Exact F1, ◆)", zorder=5)
-    ax.plot(x, sonnet_strict, color="#641E16", marker="o", markersize=6, linestyle="", label="Claude Sonnet (Strict Exact F1, ●)", zorder=5)
-    ax.plot(x + width, llama_strict, color="#922B21", marker="s", markersize=6, linestyle="", label="LLaMA 4 (Strict Exact F1, ■)", zorder=5)
+    ax.plot(x - width, bert_strict, color="#0B3C5D", marker="D", markersize=6, linestyle="", zorder=5)
+    ax.plot(x, sonnet_strict, color="#641E16", marker="o", markersize=6, linestyle="", zorder=5)
+    ax.plot(x + width, llama_strict, color="#922B21", marker="s", markersize=6, linestyle="", zorder=5)
 
     # Clean Value Labels above bars
     for i in range(len(cats_17)):
@@ -90,25 +89,30 @@ def main():
         if llama_ade[i] > 0.02:
             ax.text(x[i] + width, llama_ade[i] + 0.02, f"{llama_ade[i]:.2f}", ha="center", va="bottom", fontsize=7.2, fontweight="bold", color="#922B21")
 
-    ax.set_title("Comparative Concept Extraction Performance across All 17 Clinical Concept Categories on FAERS (N = 829 Reports)\nFine-Tuned Encoder (BioBERT) vs. Instruction-Tuned LLMs (Claude 4.6 Sonnet & LLaMA 4)",
-                 fontsize=13, fontweight="bold", loc="left", pad=12)
+    # Clean axes formatting without internal title
     ax.set_xticks(x)
-    ax.set_xticklabels(cats_17, fontsize=10, fontweight="bold", rotation=25)
-    ax.set_ylim(0, 1.22)
+    ax.set_xticklabels(cats_17, fontsize=10.5, fontweight="bold", rotation=25)
+    ax.set_ylim(0, 1.18)
     ax.set_ylabel("F1 Score", fontsize=11.5, fontweight="bold")
     ax.set_xlabel("Clinical Concept Category", fontsize=11.5, fontweight="bold", labelpad=8)
     ax.grid(axis="y", linestyle="--", alpha=0.35, zorder=0)
 
-    # Legend with clear grouping
-    custom_handles = [
-        mpatches.Patch(facecolor=c_bert, edgecolor="#111", label="BioBERT (Adapted ADE F1)"),
-        mpatches.Patch(facecolor=c_sonnet, edgecolor="#111", label="Claude 4.6 Sonnet (Adapted ADE F1)"),
-        mpatches.Patch(facecolor=c_llama, edgecolor="#111", label="LLaMA 4 (Adapted ADE F1)"),
-        plt.Line2D([0], [0], color="#0B3C5D", marker="D", linestyle="", markersize=6, label="BioBERT Strict F1"),
-        plt.Line2D([0], [0], color="#641E16", marker="o", linestyle="", markersize=6, label="Claude Sonnet Strict F1"),
-        plt.Line2D([0], [0], color="#922B21", marker="s", linestyle="", markersize=6, label="LLaMA 4 Strict F1"),
-    ]
-    ax.legend(handles=custom_handles, loc="upper left", bbox_to_anchor=(0.01, 0.98), fontsize=9, framealpha=0.95, ncol=3)
+    # Column-wise interleaving ensures:
+    # Row 1 (top): BioBERT (Adapted) | Claude Sonnet (Adapted) | LLaMA 4 (Adapted)
+    # Row 2 (bottom): BioBERT (Strict)  | Claude Sonnet (Strict)  | LLaMA 4 (Strict)
+    h_b_bar = mpatches.Patch(facecolor=c_bert, edgecolor="#111", label="BioBERT (Adapted ADE F1)")
+    h_b_pt  = plt.Line2D([0], [0], color="#0B3C5D", marker="D", linestyle="", markersize=6.5, label="BioBERT (Strict Exact F1)")
+    
+    h_s_bar = mpatches.Patch(facecolor=c_sonnet, edgecolor="#111", label="Claude 4.6 Sonnet (Adapted ADE F1)")
+    h_s_pt  = plt.Line2D([0], [0], color="#641E16", marker="o", linestyle="", markersize=6.5, label="Claude Sonnet (Strict Exact F1)")
+    
+    h_l_bar = mpatches.Patch(facecolor=c_llama, edgecolor="#111", label="LLaMA 4 (Adapted ADE F1)")
+    h_l_pt  = plt.Line2D([0], [0], color="#922B21", marker="s", linestyle="", markersize=6.5, label="LLaMA 4 (Strict Exact F1)")
+    
+    custom_handles = [h_b_bar, h_b_pt, h_s_bar, h_s_pt, h_l_bar, h_l_pt]
+    
+    ax.legend(handles=custom_handles, loc="upper left", bbox_to_anchor=(0.01, 0.98),
+              fontsize=9.5, framealpha=0.96, ncol=3, columnspacing=1.8, handletextpad=0.6)
 
     plt.tight_layout()
 
@@ -121,7 +125,7 @@ def main():
     plt.savefig(out_docx_img, dpi=300, bbox_inches="tight")
     plt.close()
 
-    print(f"Figure 4 (17 Categories BioBERT vs. LLMs) successfully generated and saved to:\n  - {out_fig_path}\n  - {out_manuscript_fig}\n  - {out_docx_img}")
+    print(f"Figure 4 (Title Removed, Organized 2-Row Legend) successfully generated and saved to:\n  - {out_fig_path}\n  - {out_manuscript_fig}\n  - {out_docx_img}")
 
 
 if __name__ == "__main__":
