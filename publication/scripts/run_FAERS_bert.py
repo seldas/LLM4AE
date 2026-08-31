@@ -68,7 +68,7 @@ from tqdm import tqdm
 BASE = Path("/compute001/lwu/projects/LLM4AE/LLM4AE-dev/publication")
 DEFAULT_DATA_DIR = BASE / "Datasets" / "FAERS_D1_clean"
 DEFAULT_RESULTS_DIR = BASE / "results" / "bert_runs"
-DEFAULT_REF_SCORER = BASE / "New_2025/new_results/code/custom_scorer_v5.py"
+DEFAULT_REF_SCORER = BASE / "code/custom_scorer_v5.py"
 DEFAULT_TRAIN_PYTHON = sys.executable
 
 _BERT_MODEL_NAME = "dmis-lab/biobert-base-cased-v1.1"

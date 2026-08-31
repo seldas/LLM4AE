@@ -2,7 +2,7 @@
 """
 run_VAERS_bert.py
 
-True k-fold cross-validation with multiple independent training seeds per fold for BioBERT NER on the VAERS corpus.
+Repeated random-seed train/dev/test evaluation for BioBERT NER on the VAERS corpus.
 
 Structurally identical to run_FAERS_bert.py; only the dataset path, results path,
 label-normalisation table, and eval-category groupings are adapted for VAERS.
@@ -21,8 +21,7 @@ Key reliability features (inherited from run_FAERS_bert.py):
   * Aggregation bug fixed: per-label results carry fold/seed columns.
   * Test inference uses nlp.pipe() and handles empty-alignment edge cases.
 
-Default evaluation: 10-fold CV with 8 folds for training, 1 fold for development, and 1 fold for testing.
-The fold partition is fixed across random seeds; seeds affect model training only.
+Default split: 70/10/20 (repeated random holdout, not disjoint k-fold).
 
 VAERS label taxonomy (SME1 annotations)
 ----------------------------------------
@@ -55,11 +54,9 @@ Eval categories collapse the fine-grained labels:
   SEX        – sex
 
 Examples:
-  # Full manuscript run: 10 folds x 5 seeds = 50 training jobs, up to 8 concurrent GPUs
-  python scripts/run_VAERS_bert.py --folds 10 --seeds 42 123 456 789 1011 --gpu-ids 0 1 2 3 4 5 6 7
-
-  # Single-GPU smoke test
-  python scripts/run_VAERS_bert.py --folds 10 --seeds 42 --gpu-ids 0 --max-steps 1000
+  python scripts/run_VAERS_bert.py --gpu-ids 0
+  python scripts/run_VAERS_bert.py --gpu-ids 0 1 2 3
+  python scripts/run_VAERS_bert.py --folds 10 --split 0.8 0.1 0.1
 
 Requirements:
   spacy, spacy-transformers, transformers, torch, pandas, openpyxl, tqdm
@@ -95,7 +92,7 @@ from tqdm import tqdm
 BASE = Path("/compute001/lwu/projects/LLM4AE/LLM4AE-dev/publication")
 DEFAULT_DATA_DIR = BASE / "Datasets" / "VAERS"
 DEFAULT_RESULTS_DIR = BASE / "results" / "bert_runs_VAERS"
-DEFAULT_REF_SCORER = BASE / "code/custom_scorer_v5.py"
+DEFAULT_REF_SCORER = BASE / "New_2025/new_results/code/custom_scorer_v5.py"
 DEFAULT_TRAIN_PYTHON = sys.executable
 
 _BERT_MODEL_NAME = "dmis-lab/biobert-base-cased-v1.1"
@@ -660,13 +657,14 @@ def run_spacy_train(
     log_path: Path,
     max_steps: int,
     fold_idx: int,
-    seed: int,
     show_progress: bool,
     console_enabled: bool,
     spacy_console: str,
     progress_callback: Optional[Callable[[dict], None]] = None,
 ):
-    """Run spaCy training, write a clean UTF-8 log, and drive tqdm from parsed rows."""
+    """
+    Run spaCy training, write a clean UTF-8 log, and drive tqdm from parsed rows.
+    """
     log_path.parent.mkdir(parents=True, exist_ok=True)
 
     env = os.environ.copy()
@@ -683,7 +681,7 @@ def run_spacy_train(
     if show_progress:
         pbar = tqdm(
             total=max_steps,
-            desc=f"Fold {fold_idx:02d} seed {seed} train",
+            desc=f"Fold {fold_idx:02d} train",
             unit="step",
             dynamic_ncols=True,
             leave=True,
@@ -729,7 +727,6 @@ def run_spacy_train(
                         {
                             "type": "train_progress",
                             "fold": fold_idx,
-                            "seed": seed,
                             "step": step,
                             "max_steps": max_steps,
                             "best_f1": best_f1,
@@ -744,14 +741,13 @@ def run_spacy_train(
     returncode = proc.wait()
 
     if pbar is not None:
-        prefix = f"Fold {fold_idx:02d} seed {seed}"
         if returncode == 0:
             if last_step >= max_steps:
-                pbar.set_description_str(prefix + " train done")
+                pbar.set_description_str(f"Fold {fold_idx:02d} train done")
             else:
-                pbar.set_description_str(prefix + " train stopped")
+                pbar.set_description_str(f"Fold {fold_idx:02d} train stopped")
         else:
-            pbar.set_description_str(prefix + " train FAILED")
+            pbar.set_description_str(f"Fold {fold_idx:02d} train FAILED")
         pbar.close()
 
     if progress_callback is not None:
@@ -759,7 +755,6 @@ def run_spacy_train(
             {
                 "type": "train_end",
                 "fold": fold_idx,
-                "seed": seed,
                 "returncode": returncode,
                 "last_step": last_step,
                 "max_steps": max_steps,
@@ -986,57 +981,33 @@ def compute_metrics(df: pd.DataFrame, *, fold_idx: int, seed: int):
 # -----------------------------------------------------------------------------
 # Fold execution
 # -----------------------------------------------------------------------------
-def make_cv_folds(records, n_folds: int, cv_seed: int):
-    """
-    Create one deterministic, disjoint document-level k-fold partition.
-
-    IMPORTANT: this partition is created once and reused for every training seed.
-    Therefore variation across --seeds reflects stochastic model training rather
-    than a changing train/test split.
-    """
-    if n_folds < 3:
-        raise ValueError("True train/dev/test k-fold CV requires --folds >= 3")
-    if len(records) < n_folds:
-        raise ValueError(
-            f"Cannot create {n_folds} folds from only {len(records)} documents"
-        )
-
+def split_records(records, seed: int, split: Tuple[float, float, float]):
+    rng = random.Random(seed)
     shuffled = list(records)
-    random.Random(cv_seed).shuffle(shuffled)
+    rng.shuffle(shuffled)
+    n = len(shuffled)
+    if n < 3:
+        raise ValueError(f"Need at least 3 documents for train/dev/test; found {n}")
 
-    # Round-robin allocation after one shuffle keeps fold sizes within one document.
-    folds = [[] for _ in range(n_folds)]
-    for i, record in enumerate(shuffled):
-        folds[i % n_folds].append(record)
-    return folds
+    train_frac, dev_frac, test_frac = split
+    n_train = max(1, int(n * train_frac))
+    n_dev = max(1, int(n * dev_frac))
+    n_test = n - n_train - n_dev
 
+    if n_test < 1:
+        deficit = 1 - n_test
+        reducible_train = max(0, n_train - 1)
+        take = min(deficit, reducible_train)
+        n_train -= take
+        deficit -= take
+        if deficit:
+            n_dev -= deficit
+        n_test = 1
 
-def get_cv_split(cv_folds, fold_idx: int, dev_fold_offset: int = 1):
-    """
-    Return train/dev/test records for one outer fold.
-
-    test = fold_idx
-    dev  = (fold_idx + dev_fold_offset) % K
-    train = all remaining folds
-
-    With K=10 and dev_fold_offset=1, this is exactly 80/10/10. Across the
-    complete 10-fold cycle every document is used exactly once for test and once
-    for development.
-    """
-    n_folds = len(cv_folds)
-    test_fold_idx = fold_idx
-    dev_fold_idx = (fold_idx + dev_fold_offset) % n_folds
-    if dev_fold_idx == test_fold_idx:
-        raise ValueError("Development fold cannot equal the test fold")
-
-    train_recs = []
-    for i, fold_records in enumerate(cv_folds):
-        if i not in (test_fold_idx, dev_fold_idx):
-            train_recs.extend(fold_records)
-
-    dev_recs = list(cv_folds[dev_fold_idx])
-    test_recs = list(cv_folds[test_fold_idx])
-    return train_recs, dev_recs, test_recs, dev_fold_idx
+    train = shuffled[:n_train]
+    dev = shuffled[n_train : n_train + n_dev]
+    test = shuffled[n_train + n_dev :]
+    return train, dev, test
 
 
 def _emit_event(callback, event_type: str, **payload):
@@ -1047,14 +1018,14 @@ def _emit_event(callback, event_type: str, **payload):
 def run_fold(
     *,
     fold_idx: int,
-    cv_folds,
+    records,
     seed: int,
     gpu_id: int,
     max_steps: int,
     work_dir: Path,
     ref_scorer: Path,
     train_python: str,
-    dev_fold_offset: int,
+    split: Tuple[float, float, float],
     min_label_count: int,
     include_negative_sentences: bool,
     eval_batch_size: int,
@@ -1075,38 +1046,19 @@ def run_fold(
 
     if console_enabled:
         console_print("")
-        console_print("=" * 78)
+        console_print("=" * 72)
         console_print(f"FOLD {fold_idx:02d} | seed={seed} | GPU={gpu_id}")
-        console_print("=" * 78)
+        console_print("=" * 72)
 
-    # Seed-specific run directory prevents collisions when multiple seeds from
-    # the same fold execute concurrently on different GPUs.
-    run_dir = work_dir / f"fold_{fold_idx:02d}" / f"seed_{seed}"
-    run_dir.mkdir(parents=True, exist_ok=True)
+    fold_dir = work_dir / f"fold_{fold_idx:02d}"
+    fold_dir.mkdir(parents=True, exist_ok=True)
 
-    train_recs, dev_recs, test_recs, dev_fold_idx = get_cv_split(
-        cv_folds, fold_idx, dev_fold_offset
-    )
+    train_recs, dev_recs, test_recs = split_records(records, seed, split)
     if console_enabled:
         console_print(
-            f"  CV split: train={len(train_recs)}, dev={len(dev_recs)} "
-            f"(fold {dev_fold_idx:02d}), test={len(test_recs)} "
-            f"(fold {fold_idx:02d})"
+            f"  Split: train={len(train_recs)}, dev={len(dev_recs)}, test={len(test_recs)} "
+            f"({split[0]:.0%}/{split[1]:.0%}/{split[2]:.0%})"
         )
-
-    # Persist the exact document split for reproducibility.
-    split_manifest = {
-        "fold": fold_idx,
-        "seed": seed,
-        "dev_fold": dev_fold_idx,
-        "test_fold": fold_idx,
-        "train_documents": [r[0] for r in train_recs],
-        "dev_documents": [r[0] for r in dev_recs],
-        "test_documents": [r[0] for r in test_recs],
-    }
-    (run_dir / "split_manifest.json").write_text(
-        json.dumps(split_manifest, indent=2), encoding="utf-8"
-    )
 
     # Derive the model label set from TRAIN only and reuse it everywhere.
     train_label_counts = count_labels(train_recs)
@@ -1130,14 +1082,7 @@ def run_fold(
                 f"  Excluded rare train labels: {dict(sorted(excluded_counts.items()))}"
             )
 
-    _emit_event(
-        progress_callback,
-        "stage",
-        fold=fold_idx,
-        seed=seed,
-        gpu_id=gpu_id,
-        stage="docbin",
-    )
+    _emit_event(progress_callback, "stage", fold=fold_idx, gpu_id=gpu_id, stage="docbin")
 
     train_db, train_stats = records_to_docbin(
         train_recs,
@@ -1161,15 +1106,15 @@ def run_fold(
         console_print(format_docbin_stats("test ", test_stats))
 
     if train_stats.get("sentences_added", 0) == 0:
-        raise RuntimeError(f"Fold {fold_idx}, seed {seed}: training DocBin is empty")
+        raise RuntimeError(f"Fold {fold_idx}: training DocBin is empty")
     if dev_stats.get("sentences_added", 0) == 0:
-        raise RuntimeError(f"Fold {fold_idx}, seed {seed}: dev DocBin is empty")
+        raise RuntimeError(f"Fold {fold_idx}: dev DocBin is empty")
     if test_stats.get("sentences_added", 0) == 0:
-        raise RuntimeError(f"Fold {fold_idx}, seed {seed}: test DocBin is empty")
+        raise RuntimeError(f"Fold {fold_idx}: test DocBin is empty")
 
-    train_path = run_dir / "train.spacy"
-    dev_path = run_dir / "dev.spacy"
-    test_path = run_dir / "test.spacy"
+    train_path = fold_dir / "train.spacy"
+    dev_path = fold_dir / "dev.spacy"
+    test_path = fold_dir / "test.spacy"
     train_db.to_disk(train_path)
     dev_db.to_disk(dev_path)
     test_db.to_disk(test_path)
@@ -1180,11 +1125,11 @@ def run_fold(
         seed=seed,
         max_steps=max_steps,
     )
-    cfg_path = run_dir / "train.cfg"
+    cfg_path = fold_dir / "train.cfg"
     cfg_path.write_text(cfg_text, encoding="utf-8")
 
-    model_dir = run_dir / "model"
-    log_path = run_dir / "train.log"
+    model_dir = fold_dir / "model"
+    log_path = fold_dir / "train.log"
     cmd = [
         train_python,
         "-m",
@@ -1203,21 +1148,13 @@ def run_fold(
         console_print(f"  Training log: {log_path}")
         console_print(f"  Command: {' '.join(cmd)}")
 
-    _emit_event(
-        progress_callback,
-        "stage",
-        fold=fold_idx,
-        seed=seed,
-        gpu_id=gpu_id,
-        stage="train",
-    )
+    _emit_event(progress_callback, "stage", fold=fold_idx, gpu_id=gpu_id, stage="train")
 
     returncode, last_step, last_metrics = run_spacy_train(
         cmd,
         log_path=log_path,
         max_steps=max_steps,
         fold_idx=fold_idx,
-        seed=seed,
         show_progress=show_progress,
         console_enabled=console_enabled,
         spacy_console=spacy_console,
@@ -1227,8 +1164,8 @@ def run_fold(
     if returncode != 0:
         tail = _tail_text_file(log_path, 40)
         message = (
-            f"Fold {fold_idx}, seed {seed}: spaCy training exited with code "
-            f"{returncode}. See {log_path}."
+            f"Fold {fold_idx}: spaCy training exited with code {returncode}. "
+            f"See {log_path}."
         )
         if console_enabled:
             console_print(f"  ERROR: {message}")
@@ -1255,14 +1192,7 @@ def run_fold(
     if not best_model_path.exists():
         raise FileNotFoundError(f"model-best not found: {best_model_path}")
 
-    _emit_event(
-        progress_callback,
-        "stage",
-        fold=fold_idx,
-        seed=seed,
-        gpu_id=gpu_id,
-        stage="eval",
-    )
+    _emit_event(progress_callback, "stage", fold=fold_idx, gpu_id=gpu_id, stage="eval")
 
     _ensure_custom_scorer_loaded(ref_scorer)
 
@@ -1296,7 +1226,7 @@ def run_fold(
         eval_iter = tqdm(
             eval_iter,
             total=len(test_gold_docs),
-            desc=f"Fold {fold_idx:02d} seed {seed} eval",
+            desc=f"Fold {fold_idx:02d} eval",
             unit="sent",
             dynamic_ncols=True,
             leave=False,
@@ -1325,7 +1255,7 @@ def run_fold(
             f"(M={overall['M']}, C={overall['C']}, S={overall['S']}, N={overall['N']})"
         )
 
-    # Release evaluation model before the next job on this worker/GPU.
+    # Release evaluation model before the next fold on this worker/GPU.
     del nlp_eval
     gc.collect()
     try:
@@ -1353,7 +1283,6 @@ def run_fold(
 def save_fold(
     results_dir: Path,
     fold_idx: int,
-    seed: int,
     raw_df: pd.DataFrame,
     overall: dict,
     per_label_df: pd.DataFrame,
@@ -1361,9 +1290,8 @@ def save_fold(
     console_enabled: bool = True,
 ):
     results_dir.mkdir(parents=True, exist_ok=True)
-    stem = f"fold_{fold_idx:02d}_seed_{seed}"
-    raw_xlsx = results_dir / f"{stem}_raw.xlsx"
-    perf_xlsx = results_dir / f"{stem}_metrics.xlsx"
+    raw_xlsx = results_dir / f"fold_{fold_idx:02d}_raw.xlsx"
+    perf_xlsx = results_dir / f"fold_{fold_idx:02d}_metrics.xlsx"
 
     with pd.ExcelWriter(raw_xlsx, engine="openpyxl") as writer:
         raw_df.to_excel(writer, sheet_name="Raw_Results", index=False)
@@ -1375,119 +1303,28 @@ def save_fold(
         console_print(f"  Saved: {raw_xlsx.name} | {perf_xlsx.name}")
 
 
-def _add_prf_from_counts(df: pd.DataFrame) -> pd.DataFrame:
-    """Add weighted precision/recall/F1 to a dataframe containing M/C/S/N."""
-    if df.empty:
-        return df
-    prf = df.apply(
-        lambda row: pd.Series(
-            _weighted_prf(row.M, row.C, row.S, row.N),
-            index=["precision", "recall", "f1"],
-        ),
-        axis=1,
-    )
-    out = df.copy()
-    out[["precision", "recall", "f1"]] = prf
-    return out
-
-
 def build_overall_summary(
     results_dir: Path,
     all_overall: List[dict],
     all_per_label_dfs: List[pd.DataFrame],
-    *,
-    expected_folds: int,
 ):
-    """
-    Aggregate 10-fold x N-seed results in a manuscript-friendly way.
-
-    The key headline table is Per_Seed_Pooled: for each seed, M/C/S/N are pooled
-    across all test folds first, then micro P/R/F1 are computed. Mean +/- SD
-    across those seed-level pooled metrics isolates training-seed variability
-    while every document contributes exactly once to test for each seed.
-    """
     if not all_overall:
-        raise RuntimeError("No successful fold/seed runs are available for aggregation")
+        raise RuntimeError("No successful folds are available for aggregation")
 
-    overall_df = (
-        pd.DataFrame(all_overall)
-        .sort_values(["seed", "fold"])
-        .reset_index(drop=True)
-    )
-
-    per_seed_counts = (
-        overall_df.groupby("seed", as_index=False)
-        .agg(
-            folds_completed=("fold", "nunique"),
-            M=("M", "sum"),
-            C=("C", "sum"),
-            S=("S", "sum"),
-            N=("N", "sum"),
-        )
-    )
-    per_seed_pooled = _add_prf_from_counts(per_seed_counts)
-    per_seed_pooled["complete"] = per_seed_pooled["folds_completed"] == expected_folds
-
-    complete_seed_df = per_seed_pooled[per_seed_pooled["complete"]].copy()
-    seed_source = complete_seed_df if not complete_seed_df.empty else per_seed_pooled
-    overall_seed_summary = pd.DataFrame(
-        [
-            {
-                "expected_folds_per_seed": expected_folds,
-                "seeds_complete": int(per_seed_pooled["complete"].sum()),
-                "seeds_total": int(len(per_seed_pooled)),
-                "precision_mean": seed_source["precision"].mean(),
-                "precision_std": seed_source["precision"].std(ddof=1)
-                if len(seed_source) > 1
-                else 0.0,
-                "recall_mean": seed_source["recall"].mean(),
-                "recall_std": seed_source["recall"].std(ddof=1)
-                if len(seed_source) > 1
-                else 0.0,
-                "f1_mean": seed_source["f1"].mean(),
-                "f1_std": seed_source["f1"].std(ddof=1)
-                if len(seed_source) > 1
-                else 0.0,
-            }
-        ]
-    ).round(4)
+    overall_df = pd.DataFrame(all_overall).sort_values("fold").reset_index(drop=True)
 
     nonempty_label_frames = [df for df in all_per_label_dfs if not df.empty]
     if nonempty_label_frames:
         combined_per_label = pd.concat(nonempty_label_frames, ignore_index=True)
 
-        label_per_seed_counts = (
-            combined_per_label.groupby(
-                ["seed", "label", "eval_category"], as_index=False
-            )
+        label_summary = (
+            combined_per_label.groupby(["label", "eval_category"], as_index=False)
             .agg(
-                folds_completed=("fold", "nunique"),
+                folds_present=("fold", "nunique"),
                 M=("M", "sum"),
                 C=("C", "sum"),
                 S=("S", "sum"),
                 N=("N", "sum"),
-            )
-        )
-        label_per_seed = _add_prf_from_counts(label_per_seed_counts)
-        # A label need not occur in every test fold. Seed completeness is therefore
-        # determined from the overall fold/seed runs, not from label-specific fold
-        # presence. folds_completed remains informational for each label.
-        complete_seed_values = set(
-            per_seed_pooled.loc[per_seed_pooled["complete"], "seed"].tolist()
-        )
-        label_per_seed["complete_seed"] = label_per_seed["seed"].isin(
-            complete_seed_values
-        )
-
-        label_summary_source = label_per_seed[
-            label_per_seed["complete_seed"]
-        ].copy()
-        if label_summary_source.empty:
-            label_summary_source = label_per_seed
-        label_summary = (
-            label_summary_source.groupby(["label", "eval_category"], as_index=False)
-            .agg(
-                seeds_present=("seed", "nunique"),
                 precision_mean=("precision", "mean"),
                 precision_std=("precision", "std"),
                 recall_mean=("recall", "mean"),
@@ -1498,38 +1335,23 @@ def build_overall_summary(
             .round(4)
         )
 
-        category_per_run = (
-            combined_per_label.groupby(
-                ["seed", "fold", "eval_category"], as_index=False
-            )
+        cat_per_fold = (
+            combined_per_label.groupby(["fold", "eval_category"], as_index=False)
             .agg(M=("M", "sum"), C=("C", "sum"), S=("S", "sum"), N=("N", "sum"))
         )
-        category_per_run = _add_prf_from_counts(category_per_run)
-
-        category_per_seed_counts = (
-            category_per_run.groupby(["seed", "eval_category"], as_index=False)
-            .agg(
-                folds_completed=("fold", "nunique"),
-                M=("M", "sum"),
-                C=("C", "sum"),
-                S=("S", "sum"),
-                N=("N", "sum"),
-            )
+        prf = cat_per_fold.apply(
+            lambda row: pd.Series(
+                _weighted_prf(row.M, row.C, row.S, row.N),
+                index=["precision", "recall", "f1"],
+            ),
+            axis=1,
         )
-        category_per_seed = _add_prf_from_counts(category_per_seed_counts)
-        category_per_seed["complete_seed"] = category_per_seed["seed"].isin(
-            complete_seed_values
-        )
+        cat_per_fold[["precision", "recall", "f1"]] = prf
 
-        category_summary_source = category_per_seed[
-            category_per_seed["complete_seed"]
-        ].copy()
-        if category_summary_source.empty:
-            category_summary_source = category_per_seed
-        category_summary = (
-            category_summary_source.groupby("eval_category", as_index=False)
+        cat_agg = (
+            cat_per_fold.groupby("eval_category", as_index=False)
             .agg(
-                seeds_present=("seed", "nunique"),
+                folds_present=("fold", "nunique"),
                 precision_mean=("precision", "mean"),
                 precision_std=("precision", "std"),
                 recall_mean=("recall", "mean"),
@@ -1541,36 +1363,24 @@ def build_overall_summary(
         )
     else:
         combined_per_label = pd.DataFrame(columns=_PER_LABEL_COLUMNS)
-        label_per_seed = pd.DataFrame()
         label_summary = pd.DataFrame()
-        category_per_run = pd.DataFrame()
-        category_per_seed = pd.DataFrame()
-        category_summary = pd.DataFrame()
+        cat_per_fold = pd.DataFrame()
+        cat_agg = pd.DataFrame()
 
-    for df in (label_summary, category_summary):
+    # pandas std is NaN for a single observation; 0 is clearer in a one-fold run.
+    for df in (label_summary, cat_agg):
         if not df.empty:
             std_cols = [c for c in df.columns if c.endswith("_std")]
             df[std_cols] = df[std_cols].fillna(0.0)
 
     summary_xlsx = results_dir / "overall_summary.xlsx"
     with pd.ExcelWriter(summary_xlsx, engine="openpyxl") as writer:
-        overall_df.to_excel(writer, sheet_name="Per_Run_Overall", index=False)
-        per_seed_pooled.to_excel(writer, sheet_name="Per_Seed_Pooled", index=False)
-        overall_seed_summary.to_excel(writer, sheet_name="Overall_Seed_Summary", index=False)
-        label_per_seed.to_excel(writer, sheet_name="Per_Label_Per_Seed", index=False)
+        overall_df.to_excel(writer, sheet_name="Per_Fold_Overall", index=False)
         label_summary.to_excel(writer, sheet_name="Per_Label_Summary", index=False)
-        category_per_run.to_excel(writer, sheet_name="Category_Per_Run", index=False)
-        category_per_seed.to_excel(writer, sheet_name="Category_Per_Seed", index=False)
-        category_summary.to_excel(writer, sheet_name="Category_Summary", index=False)
+        cat_agg.to_excel(writer, sheet_name="Collapsed_Category_Summary", index=False)
+        cat_per_fold.to_excel(writer, sheet_name="Category_Per_Fold", index=False)
 
-    return (
-        summary_xlsx,
-        overall_df,
-        per_seed_pooled,
-        overall_seed_summary,
-        label_summary,
-        category_summary,
-    )
+    return summary_xlsx, overall_df, label_summary, cat_agg
 
 
 # -----------------------------------------------------------------------------
@@ -1583,14 +1393,13 @@ def _gpu_worker_loop(
     event_queue,
     result_queue,
 ):
-    """One worker process owns one GPU and runs its assigned fold/seed jobs sequentially."""
+    """One worker process owns one GPU and runs its assigned folds sequentially."""
 
     def callback(event: dict):
         event_queue.put(event)
 
     for kwargs in fold_kwargs_list:
         fold_idx = kwargs["fold_idx"]
-        seed = kwargs["seed"]
         try:
             raw_df, overall, per_label_df = run_fold(
                 **kwargs,
@@ -1601,7 +1410,6 @@ def _gpu_worker_loop(
             save_fold(
                 Path(results_dir),
                 fold_idx,
-                seed,
                 raw_df,
                 overall,
                 per_label_df,
@@ -1611,7 +1419,6 @@ def _gpu_worker_loop(
                 {
                     "type": "result",
                     "fold": fold_idx,
-                    "seed": seed,
                     "gpu_id": gpu_id,
                     "overall": overall,
                     "per_label": per_label_df,
@@ -1623,7 +1430,6 @@ def _gpu_worker_loop(
                 {
                     "type": "fold_failed",
                     "fold": fold_idx,
-                    "seed": seed,
                     "gpu_id": gpu_id,
                     "traceback": tb,
                 }
@@ -1632,7 +1438,6 @@ def _gpu_worker_loop(
                 {
                     "type": "result",
                     "fold": fold_idx,
-                    "seed": seed,
                     "gpu_id": gpu_id,
                     "overall": None,
                     "per_label": None,
@@ -1650,13 +1455,6 @@ def run_multi_gpu(
     max_steps: int,
     no_progress: bool,
 ):
-    """
-    Run up to one training process per GPU concurrently.
-
-    Jobs are assigned round-robin before workers start. Each GPU has exactly one
-    long-lived worker, so two BioBERT jobs are never launched simultaneously on
-    the same GPU by this script.
-    """
     ctx = mp.get_context("spawn")
     event_queue = ctx.Queue()
     result_queue = ctx.Queue()
@@ -1683,10 +1481,10 @@ def run_multi_gpu(
         processes.append(proc)
 
     use_bars = _progress_enabled(no_progress)
-    job_bar = tqdm(
+    fold_bar = tqdm(
         total=len(fold_kwargs_list),
-        desc="All fold/seed jobs",
-        unit="job",
+        desc="All folds",
+        unit="fold",
         position=0,
         dynamic_ncols=True,
         disable=not use_bars,
@@ -1714,18 +1512,12 @@ def run_multi_gpu(
         event_type = event.get("type")
         gpu_id = event.get("gpu_id")
         fold_idx = event.get("fold")
-        seed = event.get("seed")
         bar = gpu_bars.get(gpu_id)
-        run_label = (
-            f"F{int(fold_idx):02d} S{seed}"
-            if fold_idx is not None and seed is not None
-            else "waiting"
-        )
 
         if event_type == "fold_start" and bar is not None:
             bar.reset(total=max_steps)
             gpu_last_step[gpu_id] = 0
-            bar.set_description_str(f"GPU {gpu_id} | {run_label}")
+            bar.set_description_str(f"GPU {gpu_id} | fold {fold_idx:02d}")
             bar.set_postfix_str("starting")
         elif event_type == "train_progress" and bar is not None:
             step = int(event.get("step", 0))
@@ -1739,7 +1531,7 @@ def run_multi_gpu(
                 bar.set_postfix_str(f"F1={current_f1:.2f}% best={best_f1:.2f}%")
         elif event_type == "stage" and bar is not None:
             stage = event.get("stage", "")
-            bar.set_description_str(f"GPU {gpu_id} | {run_label} {stage}")
+            bar.set_description_str(f"GPU {gpu_id} | fold {fold_idx:02d} {stage}")
         elif event_type == "train_end" and bar is not None:
             last_step = event.get("last_step", 0)
             rc = event.get("returncode", 0)
@@ -1747,10 +1539,10 @@ def run_multi_gpu(
             bar.set_postfix_str(f"{state} @ {last_step}/{max_steps}")
         elif event_type == "fold_done" and bar is not None:
             overall = event.get("overall") or {}
-            bar.set_description_str(f"GPU {gpu_id} | {run_label} done")
+            bar.set_description_str(f"GPU {gpu_id} | fold {fold_idx:02d} done")
             bar.set_postfix_str(f"test F1={overall.get('f1', 0.0):.4f}")
         elif event_type == "fold_failed":
-            console_print(f"Fold {fold_idx:02d}, seed {seed} on GPU {gpu_id} FAILED")
+            console_print(f"Fold {fold_idx:02d} on GPU {gpu_id} FAILED")
             tb = event.get("traceback", "")
             if tb:
                 console_print(tb)
@@ -1777,34 +1569,34 @@ def run_multi_gpu(
 
         n_received += 1
         fold_idx = result["fold"]
-        seed = result["seed"]
-        key = (fold_idx, seed)
         if result.get("overall") is not None:
-            completed_results[key] = (result["overall"], result["per_label"])
+            completed_results[fold_idx] = (
+                result["overall"],
+                result["per_label"],
+            )
             overall = result["overall"]
-            job_bar.update(1)
+            fold_bar.update(1)
             console_print(
-                f"Completed fold {fold_idx:02d}, seed {seed} on GPU {result['gpu_id']}: "
+                f"Completed fold {fold_idx:02d} on GPU {result['gpu_id']}: "
                 f"P={overall['precision']:.4f} R={overall['recall']:.4f} "
                 f"F1={overall['f1']:.4f}"
             )
         else:
-            job_bar.update(1)
-            console_print(f"Skipping failed fold {fold_idx:02d}, seed {seed}.")
+            fold_bar.update(1)
+            console_print(f"Skipping failed fold {fold_idx:02d}.")
 
     for proc in processes:
         proc.join()
 
-    job_bar.close()
+    fold_bar.close()
     for bar in gpu_bars.values():
         bar.close()
 
     if n_received < len(fold_kwargs_list):
-        expected = {(x["fold_idx"], x["seed"]) for x in fold_kwargs_list}
-        missing = sorted(expected - set(completed_results))
+        missing = sorted(set(range(len(fold_kwargs_list))) - set(completed_results))
         console_print(
-            "WARNING: one or more GPU workers exited before reporting every job. "
-            f"Inspect per-run logs. Missing/failed jobs may include: {missing}"
+            "WARNING: one or more GPU workers exited before reporting every fold. "
+            f"Inspect per-fold logs. Missing/failed indices may include: {missing}"
         )
 
     return completed_results
@@ -1816,62 +1608,33 @@ def run_multi_gpu(
 def parse_args():
     parser = argparse.ArgumentParser(
         description=(
-            "BioBERT NER true k-fold cross-validation on VAERS with multiple "
-            "independent training seeds per fold and one worker per GPU."
+            "BioBERT NER repeated random holdout evaluation on the VAERS corpus "
+            "with clean logging and stable single-/multi-GPU progress output."
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog=(
-            "Recommended manuscript run:\n"
-            "  python scripts/run_VAERS_bert.py --folds 10 "
-            "--seeds 42 123 456 789 1011 --gpu-ids 0 1 2 3 4 5 6 7\n\n"
-            "For 10 folds, each run uses 8 train folds + 1 dev fold + 1 test fold. "
-            "The document partition is fixed across seeds."
-        ),
     )
-    parser.add_argument(
-        "--folds",
-        type=int,
-        default=10,
-        help="Number of disjoint CV folds. Default: 10 (80/10/10 train/dev/test per run).",
-    )
-    parser.add_argument(
-        "--cv-seed",
-        type=int,
-        default=42,
-        help=(
-            "Seed used ONCE to create the document-level fold partition. "
-            "This is separate from model training seeds. Default: 42."
-        ),
-    )
-    parser.add_argument(
-        "--dev-fold-offset",
-        type=int,
-        default=1,
-        help=(
-            "Development fold is (test_fold + offset) mod K. Default: 1. "
-            "With K=10 this yields 80/10/10."
-        ),
-    )
+    parser.add_argument("--folds", type=int, default=10)
     parser.add_argument(
         "--gpu-ids",
         type=int,
         nargs="+",
         default=[0],
-        help=(
-            "GPU IDs. One long-lived worker is created per GPU. Example for the "
-            "full node: --gpu-ids 0 1 2 3 4 5 6 7"
-        ),
+        help="GPU IDs. Multiple IDs run one sequential fold queue per GPU.",
     )
     parser.add_argument("--max-steps", type=int, default=20000)
     parser.add_argument(
         "--seeds",
         type=int,
         nargs="+",
-        default=[42, 123, 456, 789, 1011],
-        help=(
-            "Independent model-training seeds applied to EVERY fold. "
-            "Default: 42 123 456 789 1011."
-        ),
+        help="Custom seed list. Missing entries are filled deterministically.",
+    )
+    parser.add_argument(
+        "--split",
+        type=float,
+        nargs=3,
+        default=(0.70, 0.10, 0.20),
+        metavar=("TRAIN", "DEV", "TEST"),
+        help="Document split fractions; must sum to 1. Default: 0.70 0.10 0.20",
     )
     parser.add_argument(
         "--min-label-count",
@@ -1891,7 +1654,7 @@ def parse_args():
     parser.add_argument(
         "--eval-on-cpu",
         action="store_true",
-        help="Evaluate model-best on CPU instead of the run's GPU.",
+        help="Evaluate model-best on CPU instead of the fold's GPU.",
     )
     parser.add_argument(
         "--spacy-console",
@@ -1920,8 +1683,8 @@ def parse_args():
 
 
 def validate_args(args):
-    if args.folds < 3:
-        raise ValueError("--folds must be >= 3 for train/dev/test k-fold CV")
+    if args.folds < 1:
+        raise ValueError("--folds must be >= 1")
     if args.max_steps < 1:
         raise ValueError("--max-steps must be >= 1")
     if args.min_label_count < 1:
@@ -1932,41 +1695,18 @@ def validate_args(args):
         raise ValueError("At least one --gpu-ids value is required")
     if len(set(args.gpu_ids)) != len(args.gpu_ids):
         raise ValueError("--gpu-ids contains duplicates; each GPU ID must appear once")
-    if any(gpu_id < 0 for gpu_id in args.gpu_ids):
-        raise ValueError("--gpu-ids values must be >= 0")
-    if not args.seeds:
-        raise ValueError("At least one --seeds value is required")
-    if len(set(args.seeds)) != len(args.seeds):
-        raise ValueError("--seeds contains duplicates")
-    if args.dev_fold_offset % args.folds == 0:
-        raise ValueError("--dev-fold-offset must not select the same fold as test")
+
+    split = tuple(float(x) for x in args.split)
+    if any(x <= 0 for x in split):
+        raise ValueError("All --split fractions must be > 0")
+    if abs(sum(split) - 1.0) > 1e-8:
+        raise ValueError(f"--split must sum to 1.0; got {split} (sum={sum(split):.6f})")
+    args.split = split
 
     if not Path(args.train_python).exists():
         raise FileNotFoundError(f"--train-python does not exist: {args.train_python}")
     if not args.ref_scorer.exists():
         raise FileNotFoundError(f"Custom scorer not found: {args.ref_scorer}")
-
-
-def write_experiment_manifest(args, cv_folds, seeds):
-    manifest = {
-        "model": _BERT_MODEL_NAME,
-        "folds": args.folds,
-        "cv_seed": args.cv_seed,
-        "training_seeds": list(seeds),
-        "dev_fold_offset": args.dev_fold_offset,
-        "gpu_ids": list(args.gpu_ids),
-        "max_steps": args.max_steps,
-        "train_fraction": (args.folds - 2) / args.folds,
-        "dev_fraction": 1 / args.folds,
-        "test_fraction": 1 / args.folds,
-        "fold_documents": {
-            str(i): [record[0] for record in fold_records]
-            for i, fold_records in enumerate(cv_folds)
-        },
-    }
-    path = args.results_dir / "experiment_manifest.json"
-    path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
-    return path
 
 
 def main():
@@ -1977,7 +1717,16 @@ def main():
     work_dir = args.results_dir / "workdir"
     work_dir.mkdir(parents=True, exist_ok=True)
 
-    seeds = list(args.seeds)
+    seeds = list(args.seeds) if args.seeds else list(range(args.folds))
+    if len(seeds) < args.folds:
+        used = set(seeds)
+        candidate = 0
+        while len(seeds) < args.folds:
+            if candidate not in used:
+                seeds.append(candidate)
+                used.add(candidate)
+            candidate += 1
+    seeds = seeds[: args.folds]
 
     console_print(f"Loading JSON files from {args.data_dir}")
     records, load_stats = load_json_files(args.data_dir)
@@ -1991,58 +1740,36 @@ def main():
             f"with unmapped labels: {load_stats.get('unknown_labels', {})}"
         )
 
-    cv_folds = make_cv_folds(records, args.folds, args.cv_seed)
-    fold_sizes = [len(x) for x in cv_folds]
-    manifest_path = write_experiment_manifest(args, cv_folds, seeds)
-
     gpu_ids = list(args.gpu_ids)
-    n_jobs = args.folds * len(seeds)
-    n_workers = min(len(gpu_ids), n_jobs)
+    n_workers = min(len(gpu_ids), args.folds)
     console_print(
-        f"True {args.folds}-fold CV x {len(seeds)} seeds = {n_jobs} training jobs"
+        f"Folds={args.folds} | GPUs={gpu_ids} | active GPU workers={n_workers} | "
+        f"split={args.split} | max_steps={args.max_steps}"
     )
-    console_print(
-        f"Fold sizes={fold_sizes} | cv_seed={args.cv_seed} | "
-        f"dev_fold_offset={args.dev_fold_offset}"
-    )
-    console_print(
-        f"GPUs={gpu_ids} | active GPU workers={n_workers} | max_steps={args.max_steps}"
-    )
-    console_print(
-        f"Per run fractions: train={(args.folds - 2) / args.folds:.0%}, "
-        f"dev={1 / args.folds:.0%}, test={1 / args.folds:.0%}"
-    )
-    console_print(f"Training seeds: {seeds}")
     console_print(f"Train python: {args.train_python}")
     console_print(f"Results dir: {args.results_dir}")
-    console_print(f"Experiment manifest: {manifest_path}")
 
-    # Build one job for every (fold, seed) combination. The same cv_folds object
-    # is reused for all seeds, so the held-out documents never change with seed.
     fold_kwargs_list = []
-    task_idx = 0
     for fold_idx in range(args.folds):
-        for seed in seeds:
-            gpu_id = gpu_ids[task_idx % len(gpu_ids)]
-            fold_kwargs_list.append(
-                dict(
-                    fold_idx=fold_idx,
-                    cv_folds=cv_folds,
-                    seed=seed,
-                    gpu_id=gpu_id,
-                    max_steps=args.max_steps,
-                    work_dir=work_dir,
-                    ref_scorer=args.ref_scorer,
-                    train_python=args.train_python,
-                    dev_fold_offset=args.dev_fold_offset,
-                    min_label_count=args.min_label_count,
-                    include_negative_sentences=not args.positive_only,
-                    eval_batch_size=args.eval_batch_size,
-                    eval_on_gpu=not args.eval_on_cpu,
-                    spacy_console=args.spacy_console,
-                )
+        gpu_id = gpu_ids[fold_idx % len(gpu_ids)]
+        fold_kwargs_list.append(
+            dict(
+                fold_idx=fold_idx,
+                records=records,
+                seed=seeds[fold_idx],
+                gpu_id=gpu_id,
+                max_steps=args.max_steps,
+                work_dir=work_dir,
+                ref_scorer=args.ref_scorer,
+                train_python=args.train_python,
+                split=args.split,
+                min_label_count=args.min_label_count,
+                include_negative_sentences=not args.positive_only,
+                eval_batch_size=args.eval_batch_size,
+                eval_on_gpu=not args.eval_on_cpu,
+                spacy_console=args.spacy_console,
             )
-            task_idx += 1
+        )
 
     all_overall: List[dict] = []
     all_per_label_dfs: List[pd.DataFrame] = []
@@ -2051,7 +1778,6 @@ def main():
         # Sequential mode: clean local tqdm bars and immediate detailed messages.
         for kwargs in fold_kwargs_list:
             fold_idx = kwargs["fold_idx"]
-            seed = kwargs["seed"]
             try:
                 raw_df, overall, per_label_df = run_fold(
                     **kwargs,
@@ -2062,7 +1788,6 @@ def main():
                 save_fold(
                     args.results_dir,
                     fold_idx,
-                    seed,
                     raw_df,
                     overall,
                     per_label_df,
@@ -2071,11 +1796,9 @@ def main():
                 all_overall.append(overall)
                 all_per_label_dfs.append(per_label_df)
             except Exception:
-                console_print(
-                    f"Fold {fold_idx:02d}, seed {seed} FAILED:\n{traceback.format_exc()}"
-                )
+                console_print(f"Fold {fold_idx:02d} FAILED:\n{traceback.format_exc()}")
     else:
-        # Multi-GPU mode: one worker owns each GPU and runs its queue sequentially.
+        # Multi-GPU mode: one worker owns each GPU.
         completed = run_multi_gpu(
             fold_kwargs_list,
             gpu_ids,
@@ -2083,75 +1806,54 @@ def main():
             args.max_steps,
             args.no_progress,
         )
-        for key in sorted(completed, key=lambda x: (x[1], x[0])):
-            overall, per_label_df = completed[key]
+        for fold_idx in sorted(completed):
+            overall, per_label_df = completed[fold_idx]
             all_overall.append(overall)
             all_per_label_dfs.append(per_label_df)
 
     if not all_overall:
-        raise SystemExit(
-            "No fold/seed jobs completed successfully. Inspect "
-            "workdir/fold_*/seed_*/train.log"
-        )
+        raise SystemExit("No folds completed successfully. Inspect workdir/fold_*/train.log")
 
-    (
-        summary_xlsx,
-        overall_df,
-        per_seed_pooled,
-        overall_seed_summary,
-        label_summary,
-        category_summary,
-    ) = build_overall_summary(
+    summary_xlsx, overall_df, label_summary, cat_agg = build_overall_summary(
         args.results_dir,
         all_overall,
         all_per_label_dfs,
-        expected_folds=args.folds,
     )
 
     console_print("")
     console_print(f"Saved overall summary: {summary_xlsx}")
-    console_print("=== POOLED OUT-OF-FOLD MICRO METRICS BY TRAINING SEED ===")
-    for _, row in per_seed_pooled.sort_values("seed").iterrows():
-        state = "complete" if bool(row["complete"]) else "INCOMPLETE"
-        console_print(
-            f"Seed {int(row['seed']):>6}: P={row['precision']:.4f} "
-            f"R={row['recall']:.4f} F1={row['f1']:.4f} "
-            f"folds={int(row['folds_completed'])}/{args.folds} [{state}]"
-        )
-
-    headline = overall_seed_summary.iloc[0]
-    console_print("=== MEAN +/- SD ACROSS COMPLETE TRAINING SEEDS ===")
+    console_print("=== MACRO-AVERAGE ACROSS SUCCESSFUL FOLDS ===")
     console_print(
-        f"Precision: {headline['precision_mean']:.4f} +/- {headline['precision_std']:.4f}"
+        f"Precision: {overall_df['precision'].mean():.4f} +/- "
+        f"{overall_df['precision'].std(ddof=1) if len(overall_df) > 1 else 0.0:.4f}"
     )
     console_print(
-        f"Recall   : {headline['recall_mean']:.4f} +/- {headline['recall_std']:.4f}"
+        f"Recall   : {overall_df['recall'].mean():.4f} +/- "
+        f"{overall_df['recall'].std(ddof=1) if len(overall_df) > 1 else 0.0:.4f}"
     )
     console_print(
-        f"F1       : {headline['f1_mean']:.4f} +/- {headline['f1_std']:.4f}"
-    )
-    console_print(
-        f"Complete seeds: {int(headline['seeds_complete'])}/{int(headline['seeds_total'])}"
+        f"F1       : {overall_df['f1'].mean():.4f} +/- "
+        f"{overall_df['f1'].std(ddof=1) if len(overall_df) > 1 else 0.0:.4f}"
     )
 
     if not label_summary.empty:
-        console_print("Per-label pooled-across-folds mean F1 across seeds:")
+        console_print("Per-label mean F1:")
         for _, row in label_summary.sort_values("f1_mean", ascending=False).iterrows():
             console_print(
                 f"  {row['label']:<22} [{row['eval_category']:<10}] "
                 f"F1={row['f1_mean']:.3f}+/-{row['f1_std']:.3f} "
                 f"P={row['precision_mean']:.3f} R={row['recall_mean']:.3f} "
-                f"seeds={int(row['seeds_present'])}"
+                f"folds={int(row['folds_present'])}"
             )
 
-    if not category_summary.empty:
-        console_print("Collapsed category pooled-across-folds mean F1 across seeds:")
-        for _, row in category_summary.sort_values("f1_mean", ascending=False).iterrows():
+    if not cat_agg.empty:
+        console_print("Collapsed eval-category mean F1:")
+        for _, row in cat_agg.sort_values("f1_mean", ascending=False).iterrows():
             console_print(
                 f"  {row['eval_category']:<12} "
                 f"F1={row['f1_mean']:.3f}+/-{row['f1_std']:.3f} "
                 f"P={row['precision_mean']:.3f} R={row['recall_mean']:.3f} "
-                f"seeds={int(row['seeds_present'])}"
+                f"folds={int(row['folds_present'])}"
             )
 
 
