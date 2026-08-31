@@ -3,17 +3,17 @@
 generate_figure3.py
 
 Regenerates publication-ready Figure 3: Performance of Instruction-Tuned LLMs
-and Rule-Based Baseline (ETHER) in FAERS Annotation Across All 17 Clinical Concept Categories.
+and Rule-Based Baseline (ETHER) in FAERS Annotation.
 
 Panels:
 - Panel (a): Per-Category Performance of Instruction-Tuned LLMs (Claude 4.6 Sonnet vs. LLaMA 4)
-             across all 17 clinical concept categories + TOTAL on FAERS (N = 829).
-- Panel (b): Head-to-Head Comparison: ETHER vs. LLaMA 4 vs. Claude 4.6 Sonnet
-             on shared categories and overall performance.
+             across all 17 fine-grained clinical concept categories + TOTAL on FAERS (N = 829).
+- Panel (b): Fair Head-to-Head Comparison: ETHER vs. LLaMA 4 vs. Claude 4.6 Sonnet
+             on combined core schemas (AE [AE+mAE], DRUG [sDrug+cDrug+oDrug+Treatment], DX, HX [MHx+FHx], and Shared TOTAL).
+             Note: RO is excluded per reviewer feedback.
 
 Standard Manuscript Color Palette:
 - ETHER: Gray (#616161)
-- BERT: Blue (#1F77B4)
 - LLaMA 4: Warm Pink close to red (#FF6F61)
 - Claude Sonnet: Crimson Red (#C0392B)
 """
@@ -95,21 +95,27 @@ def main():
     ax0.legend(loc="upper left", bbox_to_anchor=(0.01, 0.98), fontsize=8.5, framealpha=0.95, ncol=2)
 
     # -------------------------------------------------------------
-    # Panel (b): Head-to-Head Comparison: ETHER vs. LLMs
+    # Panel (b): Fair Head-to-Head Comparison: ETHER vs. LLMs (Combined Schema, RO Excluded)
     # -------------------------------------------------------------
     ax1 = fig.add_subplot(gs[1, 0])
 
-    shared_cats = ["sDrug", "Dx", "R/O", "MHx", "FHx", "TOTAL"]
+    shared_cats = [
+        "AE\n(AE + mAE)",
+        "DRUG\n(sDrug + cDrug + oDrug + Tx)",
+        "DX\n(Diagnostic / Dx)",
+        "HX\n(MHx + FHx)",
+        "TOTAL\n(Shared Schema)"
+    ]
 
-    # ETHER Metrics
-    ether_f1_ade = [0.5803, 0.4530, 0.5437, 0.2069, 0.1148, 0.2437]
-    ether_f1_strict = [0.2422, 0.0015, 0.1429, 0.0634, 0.0160, 0.1050]
+    # Fair Combined Metrics
+    ether_f1_ade = [0.3141, 0.5966, 0.4458, 0.2030, 0.4210]
+    ether_f1_strict = [0.0460, 0.3645, 0.0004, 0.0624, 0.1584]
 
-    llama_sh_ade = [0.5465, 0.4020, 0.4444, 0.6124, 0.1736, 0.5517]
-    llama_sh_strict = [0.3184, 0.0017, 0.0073, 0.3481, 0.0606, 0.2986]
+    llama_sh_ade = [0.5751, 0.6310, 0.2191, 0.6075, 0.5980]
+    llama_sh_strict = [0.3681, 0.3855, 0.0021, 0.3477, 0.3659]
 
-    sonnet_sh_ade = [0.5620, 0.3709, 0.4545, 0.6891, 0.2130, 0.6062]
-    sonnet_sh_strict = [0.4008, 0.0000, 0.0095, 0.4904, 0.1395, 0.4195]
+    sonnet_sh_ade = [0.5805, 0.6768, 0.0997, 0.6825, 0.6295]
+    sonnet_sh_strict = [0.4574, 0.5196, 0.0000, 0.4871, 0.4788]
 
     x2 = np.arange(len(shared_cats))
     width2 = 0.26
@@ -130,12 +136,12 @@ def main():
         ax1.text(x2[i], llama_sh_ade[i] + 0.025, f"{llama_sh_ade[i]:.2f}", ha="center", va="bottom", fontsize=8.5, fontweight="bold", color="#922B21")
         ax1.text(x2[i] + width2, sonnet_sh_ade[i] + 0.025, f"{sonnet_sh_ade[i]:.2f}", ha="center", va="bottom", fontsize=8.5, fontweight="bold", color="#641E16")
 
-    ax1.set_title("(b) Head-to-Head Comparison: Rule-Based Baseline (ETHER) vs. LLMs on Shared Concepts and Overall Benchmark", fontsize=12.5, fontweight="bold", loc="left", pad=12)
+    ax1.set_title("(b) Fair Head-to-Head Comparison: Rule-Based Baseline (ETHER) vs. LLMs on Combined Schema (RO Excluded)", fontsize=12.5, fontweight="bold", loc="left", pad=12)
     ax1.set_xticks(x2)
-    ax1.set_xticklabels(shared_cats, fontsize=10.5, fontweight="bold")
+    ax1.set_xticklabels(shared_cats, fontsize=10, fontweight="bold")
     ax1.set_ylim(0, 1.05)
     ax1.set_ylabel("F1 Score", fontsize=11, fontweight="bold")
-    ax1.set_xlabel("Clinical Concept Category", fontsize=11, fontweight="bold", labelpad=8)
+    ax1.set_xlabel("Clinical Concept Category (Combined Baseline Schema)", fontsize=11, fontweight="bold", labelpad=8)
     ax1.grid(axis="y", linestyle="--", alpha=0.35, zorder=0)
 
     # Custom legend for panel b
@@ -158,7 +164,7 @@ def main():
     plt.savefig(out_docx_img, dpi=300, bbox_inches="tight")
     plt.close()
 
-    print(f"Figure 3 (17 Categories) successfully generated and saved to:\n  - {out_fig_path}\n  - {out_manuscript_fig}\n  - {out_docx_img}")
+    print(f"Figure 3 (Fair Combined Schema, RO Excluded) successfully generated and saved to:\n  - {out_fig_path}\n  - {out_manuscript_fig}\n  - {out_docx_img}")
 
 
 if __name__ == "__main__":
