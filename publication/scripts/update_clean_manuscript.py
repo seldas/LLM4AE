@@ -4,16 +4,16 @@ update_clean_manuscript.py
 
 Updates LLM4AE_rev1_clean.docx with:
 1. High-resolution Figures 2-6 (direct ZIP media replacement).
-2. Clean, synchronized publication tables:
+2. Clean, synchronized publication tables evaluated across the full 17 categories:
    - Table 1 (Section 2.1): Descriptive statistics of the annotated corpora (FAERS & VAERS)
    - Table 2 (Section 3.1): FAERS annotations, categorized by Human, ETHER and LLM
-   - Table 3 (Section 3.3): Master Performance Benchmark on FAERS (Clean primary model row, no multi-seed rows)
+   - Table 3 (Section 3.3): Master Performance Benchmark on FAERS (17 Categories: BioBERT, ClinicalBERT, LLaMA4 Tagged/JSON, Sonnet, ETHER)
    - [Figure 4 (Section 3.3): Comparative Concept Extraction Performance across all 17 Categories (BioBERT vs LLMs)]
-   - Table 4 (Section 3.5): Master Performance Benchmark on VAERS (Clean primary model row, no multi-seed rows)
-   - Table 5 (Section 3.6): Leave-One-Drug-Event-Pair-Out Performance across 4 Case Series on FAERS
-   - Table 6 (Section 3.6): BioBERT Random Seed Invariance Across 5 Seeds on FAERS (4-Fold LOO) and VAERS (10-Fold CV)
-   - Table 7 (Section 3.6): LLM Output Format Paradigm Comparison (Inline Tagged XML vs JSON Schema)
-3. Results text cleaned so random seed results ONLY appear in Section 3.6 (Random seed in BERT Training).
+   - Table 4 (Section 3.5): Master Performance Benchmark on VAERS (14 Categories: BioBERT, LLaMA 4)
+   - Table 5 (Section 3.6): Leave-One-Drug-Event-Pair-Out Performance across 4 Case Series on FAERS (17 Categories)
+   - Table 6 (Section 3.6): BioBERT Random Seed Invariance Across 5 Seeds on FAERS (4-Fold LOO, 17 Categories) and VAERS (10-Fold CV, 14 Categories)
+   - Table 7 (Section 3.6): LLM Output Format Paradigm Comparison (Inline Tagged XML vs JSON Schema, 17 Categories)
+3. Results text cleaned so all numbers across Table 3, Table 5, Table 6, and Table 7 are 100% consistent with 17-category evaluation.
 """
 
 from __future__ import annotations
@@ -120,17 +120,6 @@ def replace_table_in_place(old_table, new_table):
     parent.remove(old_table._tbl)
 
 
-def remove_table(table):
-    parent = table._tbl.getparent()
-    parent.remove(table._tbl)
-
-
-def insert_table_after_paragraph(para, new_table):
-    p_elem = para._p
-    parent = p_elem.getparent()
-    parent.insert(parent.index(p_elem) + 1, new_table._tbl)
-
-
 def main():
     repo_root = Path(__file__).resolve().parent.parent.parent
     manuscript_dir = repo_root / "publication" / "manuscripts"
@@ -140,19 +129,19 @@ def main():
     print(f"Loading base document from {src_docx_path}...")
     doc = docx.Document(str(src_docx_path))
 
-    # --- TABLE 3: MASTER BENCHMARK ON FAERS (Section 3.3) ---
+    # --- TABLE 3: MASTER BENCHMARK ON FAERS (Section 3.3, 17 Categories) ---
     t3_data = [
         ["Model Family", "Model & Configuration", "Input Paradigm", "Primary Tier: Strict Exact F1", "Secondary Tier: Adapted ADE F1"],
-        ["Fine-Tuned Encoder", "BioBERT (4-Fold LOO)", "Sentence Token Classification", "0.5258 ± 0.0097", "0.6698 ± 0.0095"],
+        ["Fine-Tuned Encoder", "BioBERT (4-Fold LOO)", "Sentence Token Classification", "0.5685 ± 0.0080", "0.7463 ± 0.0076"],
         ["Fine-Tuned Encoder", "ClinicalBERT (Fold 0)", "Sentence Token Classification", "0.5090", "0.6100"],
-        ["Open-Weight LLM", "LLaMA 4 (1-shot, Tagged P2_TAG)", "Inline Tagged XML", "0.3542", "0.5098"],
-        ["Open-Weight LLM", "LLaMA 4 (1-shot, JSON Schema)", "JSON Structured Output", "0.3200", "0.4700"],
-        ["Proprietary LLM", "Claude 4.6 Sonnet (1-shot, Tagged)", "Inline Tagged XML", "0.4222", "0.5786"],
+        ["Open-Weight LLM", "LLaMA 4 (1-shot, Tagged P2_TAG)", "Inline Tagged XML", "0.4043", "0.6249"],
+        ["Open-Weight LLM", "LLaMA 4 (1-shot, JSON Schema)", "JSON Structured Output", "0.4071", "0.5995"],
+        ["Proprietary LLM", "Claude 4.6 Sonnet (1-shot, Tagged)", "Inline Tagged XML", "0.4667", "0.6443"],
         ["Rule-Based System", "ETHER (Baseline, used=Yes)", "Rule-based Dictionary Match", "0.1147", "0.2447"]
     ]
     t3_styled = create_styled_table(doc, t3_data, col_widths=[1.3, 2.2, 1.8, 1.3, 1.3])
 
-    # --- TABLE 4: MASTER BENCHMARK ON VAERS (Section 3.5) ---
+    # --- TABLE 4: MASTER BENCHMARK ON VAERS (Section 3.5, 14 Categories) ---
     t4_data = [
         ["Model Family", "Model & Configuration", "Input Paradigm", "Primary Tier: Strict Exact F1", "Secondary Tier: Adapted ADE F1"],
         ["Fine-Tuned Encoder", "BioBERT (10-Fold CV)", "Sentence Token Classification", "0.6594 ± 0.0196", "0.7848 ± 0.0127"],
@@ -160,18 +149,18 @@ def main():
     ]
     t4_styled = create_styled_table(doc, t4_data, col_widths=[1.3, 2.2, 1.8, 1.3, 1.3])
 
-    # --- TABLE 5: LEAVE-ONE-DRUG-EVENT-PAIR-OUT (Section 3.6) ---
+    # --- TABLE 5: LEAVE-ONE-DRUG-EVENT-PAIR-OUT (Section 3.6, 17 Categories) ---
     t5_data = [
         ["Drug–Event Case Series", "Validation Cohort Size", "Primary Tier: Strict Exact F1", "Secondary Tier: Adapted ADE F1"],
-        ["Azacitidine – QT Prolongation", "N = 200 reports", "0.6280 ± 0.0097", "0.7412 ± 0.0085"],
-        ["Baricitinib – Hypersensitivity", "N = 200 reports", "0.6563 ± 0.0178", "0.7850 ± 0.0142"],
-        ["Tramadol – Hypoglycemia", "N = 229 reports", "0.5602 ± 0.0091", "0.6920 ± 0.0088"],
-        ["Erenumab – Stroke", "N = 200 reports", "0.5274 ± 0.0105", "0.6510 ± 0.0098"],
-        ["Macro-Average (All 4 Folds)", "N = 829 reports total", "0.5930 ± 0.0118", "0.7173 ± 0.0103"]
+        ["Azacitidine – QT Prolongation", "N = 200 reports", "0.6002 ± 0.0114", "0.7733 ± 0.0092"],
+        ["Baricitinib – Hypersensitivity", "N = 200 reports", "0.6367 ± 0.0201", "0.7751 ± 0.0128"],
+        ["Tramadol – Hypoglycemia", "N = 229 reports", "0.5289 ± 0.0093", "0.7242 ± 0.0036"],
+        ["Erenumab – Stroke", "N = 200 reports", "0.5084 ± 0.0122", "0.7126 ± 0.0077"],
+        ["Macro-Average (All 4 Folds)", "N = 829 reports total", "0.5685 ± 0.0080", "0.7463 ± 0.0076"]
     ]
     t5_styled = create_styled_table(doc, t5_data, col_widths=[2.4, 1.5, 1.6, 1.6])
 
-    # --- TABLE 6: RANDOM SEED INVARIANCE TABLE (Section 3.6) ---
+    # --- TABLE 6: RANDOM SEED INVARIANCE TABLE (Section 3.6, 17 FAERS / 14 VAERS Categories) ---
     t6_data = [
         ["Dataset & Evaluation Protocol", "Random Seed", "Primary Tier: Strict Exact F1", "Secondary Tier: Adapted ADE F1"],
         ["FAERS (4-Fold LOO, N = 829)", "Seed 42", "0.5582 ± 0.0649", "0.7431 ± 0.0295"],
@@ -189,12 +178,12 @@ def main():
     ]
     t6_styled = create_styled_table(doc, t6_data, col_widths=[2.4, 1.6, 1.8, 1.8])
 
-    # --- TABLE 7: OUTPUT FORMAT PARADIGM COMPARISON (Section 3.6) ---
+    # --- TABLE 7: OUTPUT FORMAT PARADIGM COMPARISON (Section 3.6, 17 Categories) ---
     t7_data = [
         ["Model", "Prompt Strategy & Output Paradigm", "Strict Exact-Match F1", "Adapted ADE-Eval F1", "Boundary Alignment Success"],
-        ["LLaMA 4 (1-shot)", "Inline Tagged XML (P2_TAG)", "0.3542", "0.5098", "100.0%"],
-        ["LLaMA 4 (1-shot)", "JSON Schema (Structured Span Offsets)", "0.3200", "0.4700", "93.4%"],
-        ["Claude 4.6 Sonnet (1-shot)", "Inline Tagged XML (P2_TAG)", "0.4222", "0.5786", "100.0%"]
+        ["LLaMA 4 (1-shot)", "Inline Tagged XML (P2_TAG)", "0.4043", "0.6249", "100.0%"],
+        ["LLaMA 4 (1-shot)", "JSON Schema (Structured Span Offsets)", "0.4071", "0.5995", "93.4%"],
+        ["Claude 4.6 Sonnet (1-shot)", "Inline Tagged XML (P2_TAG)", "0.4667", "0.6443", "100.0%"]
     ]
     t7_styled = create_styled_table(doc, t7_data, col_widths=[1.6, 2.3, 1.2, 1.2, 1.2])
 
@@ -212,11 +201,11 @@ def main():
         if txt.startswith("We trained and evaluated a supervised BioBERT"):
             p.text = (
                 "We trained and evaluated a supervised BioBERT named entity recognition (NER) model "
-                "using a 4-fold Leave-One-Drug-Event-Pair-Out cross-validation design on the 829 FAERS narratives. "
+                "using a 4-fold Leave-One-Drug-Event-Pair-Out cross-validation design on the 829 FAERS narratives across all 17 clinical concept categories. "
                 "Table 3 summarizes the overall benchmark comparison across model families, input paradigms, and evaluation tiers. "
-                "BioBERT achieved a strict exact-match F1 of 0.5258 and an adapted ADE-Eval F1 of 0.6698, "
-                "which substantially outperformed the few-shot LLaMA-4 (0.3542 Strict, 0.5098 Adapted), "
-                "Claude 4.6 Sonnet (0.4222 Strict, 0.5786 Adapted), and baseline ETHER system (0.1147 Strict, 0.2447 Adapted). "
+                "BioBERT achieved a strict exact-match F1 of 0.5685 ± 0.0080 and an adapted ADE-Eval F1 of 0.7463 ± 0.0076, "
+                "which substantially outperformed few-shot LLaMA 4 (0.4043 Strict, 0.6249 Adapted), "
+                "Claude 4.6 Sonnet (0.4667 Strict, 0.6443 Adapted), and baseline ETHER system (0.1147 Strict, 0.2447 Adapted). "
                 "Figure 4 details the fine-grained category-level performance breakdown across all 17 clinical concept categories."
             )
         
@@ -225,7 +214,7 @@ def main():
             if "Caption:" in txt or txt.startswith("Figure 4.") or txt.startswith("Fig. 4"):
                 p.text = "Figure 4. Comparative Concept Extraction Performance Across All 17 Clinical Concept Categories on the FAERS Benchmark Corpus (N = 829 Reports) for Fine-Tuned BioBERT (Blue Diamond / Bar), Claude 4.6 Sonnet (Red Circle / Bar), and LLaMA 4 (Pink Square / Bar)."
 
-        # Section 3.5 (VAERS Benchmark text - Remove random seed mentions)
+        # Section 3.5 (VAERS Benchmark text)
         elif txt.startswith("To evaluate cross-domain generalization beyond drug-related ICSRs"):
             p.text = (
                 "To evaluate cross-domain generalization beyond drug-related ICSRs, we benchmarked the systems "
@@ -245,12 +234,12 @@ def main():
         elif txt.startswith("We applied a repeated Leave-One-Drug-Event-Pair-Out cross-validation protocol"):
             p.text = (
                 "We applied a repeated Leave-One-Drug-Event-Pair-Out cross-validation protocol on the FAERS corpus "
-                "to evaluate model generalization across distinct therapeutic contexts. For each of the 4 curated drug-event cohorts, "
+                "to evaluate model generalization across distinct therapeutic contexts on all 17 clinical concept categories. For each of the 4 curated drug-event cohorts, "
                 "the model was trained on the remaining 3 case series and evaluated on the held-out series. "
-                "As shown in Table 5, strict exact-match F1 was 0.6280 ± 0.0097 for azacitidine–QT prolongation (N = 200), "
-                "0.6563 ± 0.0178 for baricitinib–hypersensitivity (N = 200), 0.5602 ± 0.0091 for tramadol–hypoglycemia (N = 229), "
-                "and 0.5274 ± 0.0105 for erenumab–stroke (N = 200), yielding a macro-average F1 of 0.5930 ± 0.0118 across folds "
-                "(0.7173 ± 0.0103 Adapted F1). The between-series performance variance exceeded within-fold variation, "
+                "As shown in Table 5, strict exact-match F1 was 0.6002 ± 0.0114 for azacitidine–QT prolongation (N = 200), "
+                "0.6367 ± 0.0201 for baricitinib–hypersensitivity (N = 200), 0.5289 ± 0.0093 for tramadol–hypoglycemia (N = 229), "
+                "and 0.5084 ± 0.0122 for erenumab–stroke (N = 200), yielding a macro-average F1 of 0.5685 ± 0.0080 across folds "
+                "(0.7463 ± 0.0076 Adapted F1). The between-series performance variance exceeded within-fold variation, "
                 "demonstrating that narrative complexity and therapeutic vocabulary differences contribute more variation than stochastic model initialization."
             )
         elif txt.startswith("Table 5.") and "Leave-One" in txt:
@@ -260,8 +249,8 @@ def main():
         elif txt.startswith("To rigorously verify neural network optimization stability"):
             p.text = (
                 "To rigorously verify neural network optimization stability, we conducted 5 independent training runs "
-                "using random initialization seeds (42, 123, 456, 789, 1011) across both FAERS 4-fold LOO (20 total model runs) "
-                "and VAERS 10-fold CV (50 total model runs). As summarized in Table 6, cross-seed variance was exceptionally low across both datasets. "
+                "using random initialization seeds (42, 123, 456, 789, 1011) across both FAERS 4-fold LOO (20 total model runs, 17 categories) "
+                "and VAERS 10-fold CV (50 total model runs, 14 categories). As summarized in Table 6, cross-seed variance was exceptionally low across both datasets. "
                 "On FAERS, strict F1 averaged 0.5685 ± 0.0080 (0.7463 ± 0.0076 Adapted F1) across the 5 seeds. "
                 "On VAERS, strict F1 averaged 0.6595 ± 0.0015 (0.7882 ± 0.0022 Adapted F1) across the 5 seeds. "
                 "These findings confirm that supervised BioBERT convergence is remarkably robust to stochastic weight initialization, "

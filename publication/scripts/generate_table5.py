@@ -2,12 +2,10 @@
 """
 generate_table5.py
 
-Generates publication-ready Table 5: Impact of Output Format Paradigm
-(Inline Tagged XML vs. Structured JSON for LLaMA 4 on FAERS D1, N = 829 Reports)
-in both Markdown (.md) and Excel (.xlsx with ESM Metadata Cover Sheet) formats.
+Generates publication-ready Table 5: Leave-One-Drug-Event-Pair-Out Cross-Validation
+Performance Across Four FAERS Case Series (N = 829 Reports Total) Evaluated on all 17 Categories.
 
-Reads directly from:
-- publication/results/comparison_three_schemes/three_schemes_summary.xlsx
+Exports in both Markdown (.md) and Excel (.xlsx with ESM Metadata Cover Sheet) formats.
 """
 
 from __future__ import annotations
@@ -23,205 +21,110 @@ def main():
     tables_dir.mkdir(parents=True, exist_ok=True)
     manuscript_dir = repo_root / "publication" / "manuscripts"
 
-    three_schemes_path = results_dir / "comparison_three_schemes" / "three_schemes_summary.xlsx"
-    print(f"Loading format comparison data from {three_schemes_path}...")
-    df_tagged = pd.read_excel(three_schemes_path, sheet_name="LLaMA4_FAERS_Categories")
-    df_json = pd.read_excel(three_schemes_path, sheet_name="LLaMA4_FAERS_JSON_Categories")
+    loo_summary_path = results_dir / "bert_runs_FAERS_LOO" / "loo_evaluation_summary.xlsx"
+    print(f"Loading FAERS LOO data from {loo_summary_path}...")
+    df_runs = pd.read_excel(loo_summary_path, sheet_name="All_Runs_Per_Seed")
 
-    # Overall Summary Table (Panel A)
-    # Tagged Overall
-    m_t = int(df_tagged["M"].sum())
-    cb_t = int(df_tagged["C_boundary"].sum())
-    cc_t = int(df_tagged["C_class"].sum())
-    c_t = int(df_tagged["C_total"].sum())
-    s_t = int(df_tagged["S_non_overlap"].sum())
-    n_t = int(df_tagged["N"].sum())
+    # Group by fold to calculate exact mean +/- std across 5 seeds for each case series
+    fold_names = {
+        0: "Azacitidine – QT Prolongation",
+        1: "Tramadol – Hypoglycemia",
+        2: "Baricitinib – Hypersensitivity",
+        3: "Erenumab – Stroke"
+    }
+    cohort_sizes = {
+        0: "N = 200 reports",
+        1: "N = 229 reports",
+        2: "N = 200 reports",
+        3: "N = 200 reports"
+    }
 
-    p3_t = m_t / (m_t + c_t + s_t)
-    r3_t = m_t / (m_t + c_t + n_t)
-    f1_3_t = 2 * p3_t * r3_t / (p3_t + r3_t)
-
-    mc2_t = m_t + 0.5 * c_t
-    p2_t = mc2_t / (m_t + c_t + 0.25 * s_t)
-    r2_t = mc2_t / (m_t + c_t + n_t)
-    f1_2_t = 2 * p2_t * r2_t / (p2_t + r2_t)
-
-    # JSON Overall
-    m_j = int(df_json["M"].sum())
-    cb_j = int(df_json["C_boundary"].sum())
-    cc_j = int(df_json["C_class"].sum())
-    c_j = int(df_json["C_total"].sum())
-    s_j = int(df_json["S_non_overlap"].sum())
-    n_j = int(df_json["N"].sum())
-
-    p3_j = m_j / (m_j + c_j + s_j)
-    r3_j = m_j / (m_j + c_j + n_j)
-    f1_3_j = 2 * p3_j * r3_j / (p3_j + r3_j)
-
-    mc2_j = m_j + 0.5 * c_j
-    p2_j = mc2_j / (m_j + c_j + 0.25 * s_j)
-    r2_j = mc2_j / (m_j + c_j + n_j)
-    f1_2_j = 2 * p2_j * r2_j / (p2_j + r2_j)
-
-    # Relative change in S_non_overlap
-    delta_s_pct = ((s_j - s_t) / s_t) * 100.0
-
-    df_panel_a = pd.DataFrame([
-        {
-            "Output Format Paradigm": "Inline Tagged XML (`P2_TAG`)",
-            "Prompt Template": "In-text XML tags",
-            "Strict Precision": f"{p3_t:.4f}",
-            "Strict Recall": f"{r3_t:.4f}",
-            "Strict F1": f"{f1_3_t:.4f}",
-            "ADE-Eval Precision": f"{p2_t:.4f}",
-            "ADE-Eval Recall": f"{r2_t:.4f}",
-            "ADE-Eval F1": f"{f1_2_t:.4f}",
-            "Exact Matches (M)": f"{m_t:,}",
-            "Boundary Inexact (C_boundary)": f"{cb_t:,}",
-            "Class Confusion (C_class)": f"{cc_t:,}",
-            "Non-Overlap FP (S_non_overlap)": f"{s_t:,}",
-            "Missed Entities (N)": f"{n_t:,}",
-        },
-        {
-            "Output Format Paradigm": "Structured JSON (`P1_JSON`)",
-            "Prompt Template": "Key-value schema + character offsets",
-            "Strict Precision": f"{p3_j:.4f}",
-            "Strict Recall": f"{r3_j:.4f}",
-            "Strict F1": f"{f1_3_j:.4f}",
-            "ADE-Eval Precision": f"{p2_j:.4f}",
-            "ADE-Eval Recall": f"{r2_j:.4f}",
-            "ADE-Eval F1": f"{f1_2_j:.4f}",
-            "Exact Matches (M)": f"{m_j:,}",
-            "Boundary Inexact (C_boundary)": f"{cb_j:,}",
-            "Class Confusion (C_class)": f"{cc_j:,}",
-            "Non-Overlap FP (S_non_overlap)": f"{s_j:,}",
-            "Missed Entities (N)": f"{n_j:,}",
-        },
-        {
-            "Output Format Paradigm": "Format Delta (JSON - Tagged)",
-            "Prompt Template": "-",
-            "Strict Precision": f"{p3_j - p3_t:+.4f}",
-            "Strict Recall": f"{r3_j - r3_t:+.4f}",
-            "Strict F1": f"{f1_3_j - f1_3_t:+.4f}",
-            "ADE-Eval Precision": f"{p2_j - p2_t:+.4f}",
-            "ADE-Eval Recall": f"{r2_j - r2_t:+.4f}",
-            "ADE-Eval F1": f"{f1_2_j - f1_2_t:+.4f}",
-            "Exact Matches (M)": f"{m_j - m_t:+,}",
-            "Boundary Inexact (C_boundary)": f"{cb_j - cb_t:+,}",
-            "Class Confusion (C_class)": f"{cc_j - cc_t:+,}",
-            "Non-Overlap FP (S_non_overlap)": f"{s_j - s_t:+,} ({delta_s_pct:.2f}%)",
-            "Missed Entities (N)": f"{n_j - n_t:+,}",
-        }
-    ])
-
-    # Per-Category Comparison (Panel B)
-    panel_b_rows = []
-    categories = sorted(df_tagged["Category"].unique())
-
-    for cat in categories:
-        r_t = df_tagged[df_tagged["Category"] == cat].iloc[0]
-        r_j = df_json[df_json["Category"] == cat].iloc[0]
-
-        delta_s3 = r_j["Strict_F1"] - r_t["Strict_F1"]
-        delta_s2 = r_j["ADE_F1"] - r_t["ADE_F1"]
-
-        panel_b_rows.append({
-            "Category": cat,
-            "Gold Total": int(r_t["Gold_Total"]),
-            "Tagged Strict F1": f"{r_t['Strict_F1']:.4f}",
-            "JSON Strict F1": f"{r_j['Strict_F1']:.4f}",
-            "Strict Delta (JSON - Tagged)": f"{delta_s3:+.4f}",
-            "Tagged ADE-Eval F1": f"{r_t['ADE_F1']:.4f}",
-            "JSON ADE-Eval F1": f"{r_j['ADE_F1']:.4f}",
-            "ADE-Eval Delta (JSON - Tagged)": f"{delta_s2:+.4f}",
+    t5_rows = []
+    # Order: Azacitidine, Baricitinib, Tramadol, Erenumab
+    display_order = [0, 2, 1, 3]
+    for fold_id in display_order:
+        df_f = df_runs[df_runs["fold"] == fold_id]
+        strict_mean = df_f["strict_F1"].mean()
+        strict_std = df_f["strict_F1"].std()
+        ade_mean = df_f["ade_F1"].mean()
+        ade_std = df_f["ade_F1"].std()
+        
+        t5_rows.append({
+            "Drug–Event Case Series": fold_names[fold_id],
+            "Validation Cohort Size": cohort_sizes[fold_id],
+            "Strict Exact F1": f"{strict_mean:.4f} ± {strict_std:.4f}",
+            "Adapted ADE F1": f"{ade_mean:.4f} ± {ade_std:.4f}",
         })
-    df_panel_b = pd.DataFrame(panel_b_rows)
+
+    # Macro-average across all 4 folds
+    seed_macro_strict = df_runs.groupby("seed")["strict_F1"].mean()
+    seed_macro_ade = df_runs.groupby("seed")["ade_F1"].mean()
+
+    t5_rows.append({
+        "Drug–Event Case Series": "Macro-Average (All 4 Folds)",
+        "Validation Cohort Size": "N = 829 reports total",
+        "Strict Exact F1": f"{seed_macro_strict.mean():.4f} ± {seed_macro_strict.std():.4f}",
+        "Adapted ADE F1": f"{seed_macro_ade.mean():.4f} ± {seed_macro_ade.std():.4f}",
+    })
+
+    df_table5 = pd.DataFrame(t5_rows)
 
     # 1. Generate Markdown File
     md_lines = [
-        "# Table 5: Impact of Output Format Paradigm on LLaMA 4 Concept Extraction (FAERS D1, N = 829 Reports)",
+        "# Table 5: Leave-One-Drug-Event-Pair-Out Cross-Validation Performance Across Four FAERS Case Series (N = 829 Reports Total)",
         "",
-        "Empirical comparison between **Inline Tagged XML (`P2_TAG`)** and **Structured JSON (`P1_JSON`)** representations evaluated on the full FAERS corpus across overall metrics, error distributions, and per-category performance.",
+        "Supervised BioBERT model generalization evaluated under a 4-fold Leave-One-Drug-Event-Pair-Out cross-validation protocol on the 17 clinical concept categories. For each case series, the model was trained on the remaining 3 case series and evaluated on the held-out target series across 5 independent random initialization seeds.",
         "",
-        "### Panel A: Overall Performance and Error Count Distribution",
-        "",
-        "| Output Format Paradigm | Primary Tier: Strict Exact-Match NER ||| Secondary Tier: Adapted ADE-Eval Weighted Metric ||| Outcome Category Counts |||||",
-        "| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |",
-        "| | **P** | **R** | **F1** | **P** | **R** | **F1** | **M** | **C_bound** | **C_class** | **S_non_overlap** | **N** |"
+        "| Drug–Event Case Series | Validation Cohort Size | Primary Tier: Strict Exact F1 | Secondary Tier: Adapted ADE F1 |",
+        "| :--- | :---: | :---: | :---: |"
     ]
 
-    for _, r in df_panel_a.iterrows():
-        is_delta = "Delta" in r["Output Format Paradigm"]
-        p_name = f"*{r['Output Format Paradigm']}*" if is_delta else f"**{r['Output Format Paradigm']}**"
-        f1_str = f"**{r['Strict F1']}**" if not is_delta else r['Strict F1']
-        ade_str = f"**{r['ADE-Eval F1']}**" if not is_delta else r['ADE-Eval F1']
+    for _, r in df_table5.iterrows():
+        is_macro = "Macro-Average" in r["Drug–Event Case Series"]
+        ds_name = f"**{r['Drug–Event Case Series']}**" if is_macro else r['Drug–Event Case Series']
+        f1_s = f"**{r['Strict Exact F1']}**" if is_macro else r['Strict Exact F1']
+        f1_a = f"**{r['Adapted ADE F1']}**" if is_macro else r['Adapted ADE F1']
 
         md_lines.append(
-            f"| {p_name} | {r['Strict Precision']} | {r['Strict Recall']} | {f1_str} | "
-            f"{r['ADE-Eval Precision']} | {r['ADE-Eval Recall']} | {ade_str} | "
-            f"{r['Exact Matches (M)']} | {r['Boundary Inexact (C_boundary)']} | {r['Class Confusion (C_class)']} | {r['Non-Overlap FP (S_non_overlap)']} | {r['Missed Entities (N)']} |"
+            f"| {ds_name} | {r['Validation Cohort Size']} | {f1_s} | {f1_a} |"
         )
 
     md_lines.extend([
         "",
         "---",
         "",
-        "### Panel B: Per-Category Performance Comparison",
-        "",
-        "| Clinical Category | Gold Support (N) | Strict Exact-Match F1 ||| Adapted ADE-Eval Weighted F1 |||",
-        "| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |",
-        "| | | **Tagged XML** | **Structured JSON** | **$\\Delta$ (JSON - Tagged)** | **Tagged XML** | **Structured JSON** | **$\\Delta$ (JSON - Tagged)** |"
-    ])
-
-    for _, r in df_panel_b.iterrows():
-        md_lines.append(
-            f"| **{r['Category']}** | {r['Gold Total']:,} | "
-            f"{r['Tagged Strict F1']} | {r['JSON Strict F1']} | {r['Strict Delta (JSON - Tagged)']} | "
-            f"{r['Tagged ADE-Eval F1']} | {r['JSON ADE-Eval F1']} | {r['ADE-Eval Delta (JSON - Tagged)']} |"
-        )
-
-    md_lines.extend([
-        "",
-        "---",
-        "",
-        "### Footnotes & Methodological Takeaways:",
-        "1. **Spurious False Positive Suppression:** Formatting outputs as **Structured JSON suppresses non-overlapping spurious hallucinations ($S_{\\text{non\\_overlap}}$) by 46.52%** (from 15,269 spans in Tagged XML down to 8,166 in JSON), resulting in higher Strict Precision (0.3785 vs. 0.3470) and higher ADE-Eval Precision (0.7019 vs. 0.6763).",
-        "2. **Narrative Token Grounding & Recall:** **Inline Tagged XML preserves narrative context alignment**, yielding fewer missed clinical entities ($N = 9,241$ in Tagged vs. $10,728$ in JSON) and higher ADE-Eval Recall (0.5673 vs. 0.5232). JSON generation occasionally experiences list truncation on long complex narratives.",
-        "3. **Category Shifts:** Structured JSON substantially improves extraction of outcome disposition phrases (`STATUS`, $+0.1681$ ADE F1), but exhibits slight sensitivity to multi-token clinical modifier phrases (`DOSE`, $-0.0656$ ADE F1; `LAB`, $-0.0415$ ADE F1) where offset boundaries are harder for the autoregressive decoder to align exactly.",
+        "### Footnotes & Methodological Notes:",
+        "1. **Validation Design:** In each fold, all cases of a specific drug-event pair were completely held out from training to simulate real-world pharmacovigilance surveillance for emerging adverse drug reactions.",
+        "2. **Evaluation Metrics:** Evaluated across the full 17 clinical concept categories. Mean $\\pm$ SD reflects variance across 5 independent training runs per case series ($N = 20$ total model runs).",
+        "3. **Consistency with Master Benchmark:** The overall 4-fold macro-average strictly aligns with Table 3 and Table 6 ($0.5685 \\pm 0.0080$ Strict F1, $0.7463 \\pm 0.0076$ Adapted ADE F1).",
         ""
     ])
 
     md_content = "\n".join(md_lines)
 
-    # Write Markdown outputs
-    out_md_tables = tables_dir / "table5_output_format_comparison.md"
+    out_md_tables = tables_dir / "table5_leave_one_out_faers.md"
     out_md_manuscript = manuscript_dir / "table5.md"
-    out_md_results = results_dir / "table5.md"
-
     with open(out_md_tables, "w", encoding="utf-8") as f:
         f.write(md_content)
     with open(out_md_manuscript, "w", encoding="utf-8") as f:
         f.write(md_content)
-    with open(out_md_results, "w", encoding="utf-8") as f:
-        f.write(md_content)
 
-    # 2. Generate Excel Workbook with ESM Cover Sheet
+    # 2. Generate Excel Workbook
     esm_cover = pd.DataFrame([
         {"Metadata Field": "Article Title", "Value": "Benchmarking Fine-Tuned Encoders and Instruction-Tuned Large Language Models for Adverse Event Clinical Concept Extraction from Spontaneous Reporting Narratives"},
         {"Metadata Field": "Journal", "Value": "Drug Safety"},
-        {"Metadata Field": "Table Identifier", "Value": "Table 5: Output Format Paradigm Comparison (Tagged XML vs. Structured JSON)"},
-        {"Metadata Field": "Corpus", "Value": "FDA Adverse Event Reporting System (FAERS D1, N = 829 Reports)"},
-        {"Metadata Field": "Model Evaluated", "Value": "LLaMA 4 (1-shot In-Context Prompting)"},
+        {"Metadata Field": "Table Identifier", "Value": "Table 5: Leave-One-Drug-Event-Pair-Out Cross-Validation Performance on FAERS"},
+        {"Metadata Field": "Corpus", "Value": "FDA Adverse Event Reporting System (FAERS, N = 829 Reports across 4 Case Series)"},
+        {"Metadata Field": "Evaluation Framework", "Value": "17 Clinical Concept Categories (Two-Tier Evaluation Framework)"},
         {"Metadata Field": "Generated By", "Value": "publication/scripts/generate_table5.py"}
     ])
 
-    out_excel = tables_dir / "table5_output_format_comparison.xlsx"
+    out_excel = tables_dir / "table5_leave_one_out_faers.xlsx"
     with pd.ExcelWriter(out_excel, engine="openpyxl") as writer:
         esm_cover.to_excel(writer, sheet_name="ESM_Cover_Sheet", index=False)
-        df_panel_a.to_excel(writer, sheet_name="Panel_A_Overall_Comparison", index=False)
-        df_panel_b.to_excel(writer, sheet_name="Panel_B_Category_Comparison", index=False)
+        df_table5.to_excel(writer, sheet_name="Table_5_FAERS_LOO", index=False)
 
-    print(f"Table 5 successfully exported to:\n  - {out_md_tables}\n  - {out_md_manuscript}\n  - {out_excel}")
+    print(f"Table 5 successfully generated:\n  - {out_md_tables}\n  - {out_excel}")
 
 
 if __name__ == "__main__":
