@@ -233,6 +233,26 @@ def main():
             if "Caption:" in txt or txt.startswith("Figure 4.") or txt.startswith("Fig. 4"):
                 p.text = "Figure 4. Comparative Concept Extraction Performance Across All 17 Clinical Concept Categories on the FAERS Benchmark Corpus (N = 829 Reports) for Fine-Tuned BioBERT (Blue Diamond / Bar), Claude 4.6 Sonnet (Red Circle / Bar), and LLaMA 4 (Pink Square / Bar)."
 
+        # Section 3.4 (Figure 5 text & caption)
+        elif txt.startswith("Figure 5a shows that BERT produces"):
+            p.text = (
+                "Figure 5a shows that BERT produces substantially more exact matches and fewer boundary, conflation, and hallucination errors "
+                "than the LLM across the full FAERS benchmark corpus (N = 829 reports). For BERT, 58.0% of spans are exact matches (26,891), "
+                "compared with 31.6% (17,396) for the LLM. The LLM, in contrast, exhibits more than double the proportion of coverage errors "
+                "(29.7% vs 14.0%; 16,358 vs 6,485 spans), where a predicted span overlaps the reference span but has inaccurate boundaries or conflated labels. "
+                "The LLM also produces significantly more spurious spans (25.7% vs 15.5%; 14,185 vs 7,195), reflecting hallucinated entities or over-segmentation. "
+                "Missed spans (N) show comparable proportions between systems (13.0% vs 12.5%; 7,156 vs 5,793), consistent with the recall patterns observed across categories."
+            )
+        elif "Fig. 5" in txt or "Figure 5" in txt:
+            if "Caption:" in txt or txt.startswith("Figure 5.") or txt.startswith("Fig. 5"):
+                p.text = (
+                    "Figure 5. Error Anatomy and Extraction Discrepancy Breakdown for Supervised BERT versus Few-Shot LLM (LLaMA 4) "
+                    "on the Full FAERS Benchmark Corpus (N = 829 Reports). (a) Overall M/C/S/N error distribution (M: exact match; C: coverage error; S: spurious prediction; N: miss). "
+                    "(b) Top label misclassifications for BERT. (c) Top label misclassifications for LLM. "
+                    "(d) Typical concomitant drug and treatment terms misclassified as suspect drug (sDrug) by LLM. "
+                    "(e) Typical clinical terms exhibiting medical history (MHx) versus diagnosis (Dx) or adverse event (AE) confusions by LLM."
+                )
+
         # Section 3.5 (VAERS Benchmark text)
         elif txt.startswith("To evaluate cross-domain generalization beyond drug-related ICSRs"):
             p.text = (
@@ -317,7 +337,10 @@ def main():
         print(f"Saved directly to {dst_docx_path}")
         replace_media_images_in_memory(dst_docx_path, img_map)
     except PermissionError:
-        print(f"PermissionError writing to {dst_docx_path}. Please make sure the file is closed.")
+        alt_path = manuscript_dir / "LLM4AE_rev1_clean_updated2.docx"
+        doc.save(str(alt_path))
+        print(f"PermissionError on {dst_docx_path}. Saved directly to alternative path: {alt_path}")
+        replace_media_images_in_memory(alt_path, img_map)
 
 
 if __name__ == "__main__":
