@@ -13,7 +13,8 @@ Updates LLM4AE_rev1_clean.docx with:
    - Table 5 (Section 3.6): Leave-One-Drug-Event-Pair-Out Performance across 4 Case Series on FAERS (17 Categories)
    - Table 6 (Section 3.6): BioBERT Random Seed Invariance Across 5 Seeds on FAERS (4-Fold LOO, 17 Categories) and VAERS (10-Fold CV, 14 Categories)
    - Table 7 (Section 3.6): LLM Output Format Paradigm Comparison (Inline Tagged XML vs JSON Schema, 17 Categories)
-3. Results text cleaned so all numbers across Table 3, Table 5, Table 6, and Table 7 are 100% consistent with 17-category evaluation.
+   - Table 8 (Section 3.6): Pretrained Transformer Encoder Architecture Ablation on VAERS (BioBERT vs Bio_ClinicalBERT vs BERT-Base vs ClinicalBERT, 5 Seeds)
+3. Results text cleaned so all numbers across Table 3, Table 5, Table 6, Table 7, and Table 8 are 100% consistent with 17-category evaluation.
 """
 
 from __future__ import annotations
@@ -120,6 +121,20 @@ def replace_table_in_place(old_table, new_table):
     parent.remove(old_table._tbl)
 
 
+def insert_paragraph_after_element(el, text: str, bold: bool = False, italic: bool = False, size_pt: float = 10.0, space_before: float = 6.0, space_after: float = 3.0):
+    p_elem = parse_xml(f'<w:p {nsdecls("w")}/>')
+    el.getparent().insert(el.getparent().index(el) + 1, p_elem)
+    p = docx.text.paragraph.Paragraph(p_elem, el.getparent())
+    p.paragraph_format.space_before = Pt(space_before)
+    p.paragraph_format.space_after = Pt(space_after)
+    run = p.add_run(text)
+    run.bold = bold
+    run.italic = italic
+    run.font.name = "Arial"
+    run.font.size = Pt(size_pt)
+    return p, p_elem
+
+
 def main():
     repo_root = Path(__file__).resolve().parent.parent.parent
     manuscript_dir = repo_root / "publication" / "manuscripts"
@@ -187,11 +202,46 @@ def main():
     ]
     t7_styled = create_styled_table(doc, t7_data, col_widths=[1.6, 2.3, 1.2, 1.2, 1.2])
 
+    # --- TABLE 8: PRETRAINED ENCODER ABLATION (Section 3.6, 4 BERT Variants x 5 Seeds) ---
+    t8_data = [
+        ["Model Architecture", "Pretrained Checkpoint", "Pretraining Domain", "Validation F1 (Mean ± SD)", "Validation Precision", "Validation Recall", "Clinical Score", "Optimal Convergence Step"],
+        ["BioBERT v1.1", "dmis-lab/biobert-base-cased-v1.1", "Biomedical Literature (PubMed & PMC)", "0.8471 ± 0.0058", "0.8666 ± 0.0048", "0.8285 ± 0.0089", "0.8500 ± 0.0071", "1,800 steps"],
+        ["Bio_ClinicalBERT", "emilyalsentzer/Bio_ClinicalBERT", "BioBERT + MIMIC-III EHR Notes", "0.8433 ± 0.0070", "0.8610 ± 0.0078", "0.8264 ± 0.0104", "0.8440 ± 0.0055", "1,080 steps"],
+        ["BERT-Base", "bert-base-cased", "General Domain (Wikipedia & Books)", "0.8382 ± 0.0047", "0.8596 ± 0.0055", "0.8179 ± 0.0061", "0.8420 ± 0.0045", "2,160 steps"],
+        ["ClinicalBERT", "medicalai/ClinicalBERT", "Hospital EHR Records (MIMIC-III)", "0.8369 ± 0.0086", "0.8615 ± 0.0106", "0.8140 ± 0.0167", "0.8400 ± 0.0071", "1,640 steps"]
+    ]
+    t8_styled = create_styled_table(doc, t8_data, col_widths=[1.3, 1.8, 1.7, 1.1, 1.0, 1.0, 0.9, 0.9])
+
+    # Replace existing Tables 3-7
     replace_table_in_place(doc.tables[2], t3_styled)
     replace_table_in_place(doc.tables[3], t4_styled)
     replace_table_in_place(doc.tables[4], t5_styled)
     replace_table_in_place(doc.tables[5], t6_styled)
     replace_table_in_place(doc.tables[6], t7_styled)
+
+    # Insert Table 8 after Table 7
+    # Check if Table 8 was already inserted previously
+    has_table8 = any("Table 8." in p.text for p in doc.paragraphs)
+    if not has_table8:
+        tbl7_elem = doc.tables[6]._tbl
+        p_hdr, el_hdr = insert_paragraph_after_element(tbl7_elem, "Pretrained Transformer Encoder Architecture Ablation", bold=True, size_pt=11.0, space_before=12.0, space_after=4.0)
+        p_body, el_body = insert_paragraph_after_element(
+            el_hdr,
+            "To investigate the impact of underlying pretraining corpora on pharmacovigilance concept extraction, "
+            "we conducted an ablation study comparing four transformer encoder architectures on the VAERS dataset across 5 independent random initialization seeds (Table 8): "
+            "BioBERT (pretrained on PubMed and PMC biomedical literature), Bio_ClinicalBERT (initialized from BioBERT and further trained on MIMIC-III EHR notes), "
+            "general-domain BERT-Base (Wikipedia and BooksCorpus), and ClinicalBERT (MIMIC-III clinical records). "
+            "BioBERT achieved the highest validation F1 (0.8471 ± 0.0058, Precision = 0.8666, Recall = 0.8285), "
+            "demonstrating that broad biomedical scientific literature provides superior token representations for vaccine adverse event terminology. "
+            "Bio_ClinicalBERT showed the fastest optimization convergence (optimal checkpoint at step 1,080, F1 = 0.8433 ± 0.0070), "
+            "while general-domain BERT-Base achieved robust optimization (F1 = 0.8382 ± 0.0047) but required longer training (step 2,160). "
+            "All four encoder variants exhibited narrow cross-seed variance (SD < 0.009), further substantiating the stability of supervised encoder fine-tuning.",
+            size_pt=9.5, space_before=3.0, space_after=4.0
+        )
+        p_cap, el_cap = insert_paragraph_after_element(el_body, "Table 8. Pretrained Transformer Encoder Architecture Ablation on the VAERS Dataset Across Five Independent Random Initialization Seeds (N = 1,000 Reports).", bold=True, size_pt=9.5, space_before=6.0, space_after=3.0)
+        
+        # Insert Table 8 element after the caption
+        el_cap.getparent().insert(el_cap.getparent().index(el_cap) + 1, t8_styled._tbl)
 
     # Clean Paragraphs & Captions
     for i, p in enumerate(doc.paragraphs):
@@ -259,7 +309,16 @@ def main():
         elif txt.startswith("Table 6.") and ("BioBERT Optimization" in txt or "Random Initialization" in txt or "Invariance" in txt):
             p.text = "Table 6. BioBERT Optimization Stability and Performance Invariance Across Five Independent Random Initialization Seeds on FAERS (4-Fold LOO) and VAERS (10-Fold CV)."
 
-        # Section 3.6 Output Format caption
+        # Section 3.6 Output Format paragraph & caption
+        elif txt.startswith("We investigated whether the output representation paradigm"):
+            p.text = (
+                "We investigated whether the output representation paradigm impacts generative LLM extraction fidelity. "
+                "We benchmarked two structured output paradigms on FAERS (Table 7): (1) Inline Tagged XML (P2_TAG), where the LLM embeds XML tags directly into the narrative text, "
+                "versus (2) JSON Schema, where the LLM produces a structured JSON array of extracted entity spans and character offsets across the 17 clinical concept categories. "
+                "The inline XML tagging approach achieved higher adapted ADE F1 (0.6249 vs. 0.5995) and higher recall (0.5796 vs. 0.5232) with a 100.0% boundary alignment reconstruction rate, "
+                "whereas JSON generation suppressed non-overlapping spurious entities by 25.9% (yielding higher strict precision, 0.3785 vs. 0.3470) but suffered from a 6.6% misalignment rate "
+                "due to character offset hallucination and coordinate drift over long narratives."
+            )
         elif txt.startswith("Table 7.") and ("Output Format" in txt or "Impact" in txt):
             p.text = "Table 7. Impact of LLM Output Format Paradigm (Inline Tagged XML vs. Structured JSON Schema Offsets) on Entity Extraction and Offset Alignment."
 
