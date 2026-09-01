@@ -151,10 +151,10 @@ RAW_TO_LABEL = {
     "Sex": "sex",
     "SEX": "sex",
     "sex": "sex",
-    # Explicitly excluded from the CURRENT 17-category prompt/evaluation.
-    "bSYM": None,
-    "BSYM": None,
-    "BASELINE SYMPTOM": None,
+    # Baseline symptoms are part of the formal Dx category.
+    "bSYM": "diagnostic",
+    "BSYM": "diagnostic",
+    "BASELINE SYMPTOM": "diagnostic",
     "TEMPO": None,
     "tempo": None,
     "TEMPORAL": None,
@@ -390,8 +390,8 @@ def load_gold(fpath: Path, page_text: str) -> Tuple[List[Tuple[int, int, str]], 
     """
     Load SME1 ground truth AFTER inference.
 
-    Only the current 17 categories are retained. bSYM and temporal categories are
-    intentionally excluded because they are not present in the current P2_TAG.
+    Baseline symptoms are normalized to the current Dx category. Temporal
+    categories remain excluded because they are not present in the current P2_TAG.
     """
     with fpath.open(encoding="utf-8") as handle:
         doc = json.load(handle)

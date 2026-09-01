@@ -12,10 +12,10 @@
       "N": 5436
     },
     "LLaMA_4": {
-      "M": 13768,
-      "C": 5420,
-      "S": 20491,
-      "N": 9241
+      "M": 13770,
+      "C": 5421,
+      "S": 20488,
+      "N": 10957
     }
   },
   "corrected_match_type_counts": {
@@ -26,22 +26,22 @@
       "N": 5436
     },
     "LLaMA_4": {
-      "M": 13768,
-      "C": 8742,
-      "S": 17169,
-      "N": 5919
+      "M": 13770,
+      "C": 10119,
+      "S": 15790,
+      "N": 6259
     }
   },
   "correction_rule": "Each one-to-one overlapping raw N/S pair with different labels is reclassified as C.",
   "reclassified_N_S_pairs": {
     "BERT": 0,
-    "LLaMA_4": 3322
+    "LLaMA_4": 4698
   },
   "top_label_confusions": {
     "BERT": [
       [
-        "Baseline symptom → AE",
-        392
+        "Dx → AE",
+        396
       ],
       [
         "sDrug → cDrug",
@@ -64,15 +64,23 @@
         124
       ],
       [
-        "AE → Baseline symptom",
+        "AE → Dx",
         121
       ],
       [
-        "MHx → Baseline symptom",
+        "MHx → Dx",
         117
       ]
     ],
     "LLaMA_4": [
+      [
+        "Dx → MHx",
+        698
+      ],
+      [
+        "Dx → Indication",
+        456
+      ],
       [
         "sDrug → cDrug",
         403
@@ -80,6 +88,10 @@
       [
         "AE → mAE",
         308
+      ],
+      [
+        "Dx → AE",
+        175
       ],
       [
         "cDrug → Treatment",
@@ -92,18 +104,6 @@
       [
         "Lab → Dx",
         157
-      ],
-      [
-        "AE → MHx",
-        150
-      ],
-      [
-        "sDrug → oDrug",
-        144
-      ],
-      [
-        "sDrug → Treatment",
-        141
       ]
     ]
   },

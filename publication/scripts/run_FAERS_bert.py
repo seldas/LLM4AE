@@ -103,9 +103,10 @@ RAW_TO_LABEL = {
     "LAB": "lab",
     "Dose": "dose",
     "DOSE": "dose",
-    "bSYM": "bsym",
-    "BSYM": "bsym",
-    "BASELINE SYMPTOM": "bsym",
+    # Baseline symptoms are part of the formal Dx category.
+    "bSYM": "diagnostic",
+    "BSYM": "diagnostic",
+    "BASELINE SYMPTOM": "diagnostic",
     "MHx": "mhx",
     "MHX": "mhx",
     "MEDICAL HISTORY": "mhx",

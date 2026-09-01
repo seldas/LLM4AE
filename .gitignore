@@ -55,3 +55,6 @@ publication/Datasets/VAERS/*.json
 publication/results/**/model/
 publication/results/**/*.spacy
 publication/results/**/workdir/
+
+.codex_work/
+~$*
