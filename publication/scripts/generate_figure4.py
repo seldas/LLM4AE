@@ -94,20 +94,20 @@ def main():
     ax.set_xticklabels(cats_17, fontsize=10.5, fontweight="bold", rotation=25)
     ax.set_ylim(0, 1.18)
     ax.set_ylabel("F1 Score", fontsize=11.5, fontweight="bold")
-    ax.set_xlabel("Clinical Concept Category", fontsize=11.5, fontweight="bold", labelpad=8)
+    ax.set_xlabel("Category", fontsize=11.5, fontweight="bold", labelpad=8)
     ax.grid(axis="y", linestyle="--", alpha=0.35, zorder=0)
 
     # Column-wise interleaving ensures:
-    # Row 1 (top): BioBERT (Adapted) | Claude Sonnet (Adapted) | LLaMA 4 (Adapted)
-    # Row 2 (bottom): BioBERT (Strict)  | Claude Sonnet (Strict)  | LLaMA 4 (Strict)
-    h_b_bar = mpatches.Patch(facecolor=c_bert, edgecolor="#111", label="BioBERT (Adapted ADE F1)")
-    h_b_pt  = plt.Line2D([0], [0], color="#0B3C5D", marker="D", linestyle="", markersize=6.5, label="BioBERT (Strict Exact F1)")
+    # Row 1 (top): BioBERT (Adapted) | Claude Sonnet (Adapted) | Llama-4 (Adapted)
+    # Row 2 (bottom): BioBERT (Strict)  | Claude Sonnet (Strict)  | Llama-4 (Strict)
+    h_b_bar = mpatches.Patch(facecolor=c_bert, edgecolor="#111", label="BioBERT (Adapted F1)")
+    h_b_pt  = plt.Line2D([0], [0], color="#0B3C5D", marker="D", linestyle="", markersize=6.5, label="BioBERT (Strict F1)")
     
-    h_s_bar = mpatches.Patch(facecolor=c_sonnet, edgecolor="#111", label="Claude 4.6 Sonnet (Adapted ADE F1)")
-    h_s_pt  = plt.Line2D([0], [0], color="#641E16", marker="o", linestyle="", markersize=6.5, label="Claude Sonnet (Strict Exact F1)")
+    h_s_bar = mpatches.Patch(facecolor=c_sonnet, edgecolor="#111", label="Claude 4.6 Sonnet (Adapted F1)")
+    h_s_pt  = plt.Line2D([0], [0], color="#641E16", marker="o", linestyle="", markersize=6.5, label="Claude Sonnet (Strict F1)")
     
-    h_l_bar = mpatches.Patch(facecolor=c_llama, edgecolor="#111", label="LLaMA 4 (Adapted ADE F1)")
-    h_l_pt  = plt.Line2D([0], [0], color="#922B21", marker="s", linestyle="", markersize=6.5, label="LLaMA 4 (Strict Exact F1)")
+    h_l_bar = mpatches.Patch(facecolor=c_llama, edgecolor="#111", label="Llama-4 (Adapted F1)")
+    h_l_pt  = plt.Line2D([0], [0], color="#922B21", marker="s", linestyle="", markersize=6.5, label="Llama-4 (Strict F1)")
     
     custom_handles = [h_b_bar, h_b_pt, h_s_bar, h_s_pt, h_l_bar, h_l_pt]
     
@@ -122,10 +122,7 @@ def main():
 
     plt.savefig(out_fig_path, dpi=300, bbox_inches="tight")
     plt.savefig(out_manuscript_fig, dpi=300, bbox_inches="tight")
-    plt.savefig(out_docx_img, dpi=300, bbox_inches="tight")
     plt.close()
-
-    print(f"Figure 4 (Title Removed, Organized 2-Row Legend) successfully generated and saved to:\n  - {out_fig_path}\n  - {out_manuscript_fig}\n  - {out_docx_img}")
 
 
 if __name__ == "__main__":

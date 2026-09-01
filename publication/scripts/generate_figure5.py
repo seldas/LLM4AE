@@ -183,7 +183,7 @@ def main():
         ax_a.text(x[i] - width/2, b_pct + 1.0, f"{b_cnt:,}\n({b_pct:.1f}%)", ha="center", va="bottom", fontsize=9.2, fontweight="bold", color="#0B3C5D")
         ax_a.text(x[i] + width/2, l_pct + 1.0, f"{l_cnt:,}\n({l_pct:.1f}%)", ha="center", va="bottom", fontsize=9.2, fontweight="bold", color="#922B21")
 
-    ax_a.set_title("(a) M/C/S/N Error Distribution for BERT vs. LLM (Full FAERS Corpus, N = 829 Reports)", fontsize=13, fontweight="bold", loc="left", pad=12)
+    ax_a.set_title("(a) M/C/S/N Error Distribution for BERT vs. LLM (Llama-4)", fontsize=13, fontweight="bold", loc="left", pad=12)
     ax_a.set_xticks(x)
     ax_a.set_xticklabels(err_labels, fontsize=11, fontweight="bold")
     ax_a.set_ylim(0, max(max(bert_pcts), max(llm_pcts)) * 1.25)
@@ -218,7 +218,7 @@ def main():
     ax_b.set_title("(b) BERT: Top Label Misclassifications", fontsize=12.5, fontweight="bold", loc="left", pad=10)
     ax_b.set_yticks(y_b)
     ax_b.set_yticklabels(b_pairs, fontsize=10, fontweight="bold")
-    ax_b.set_xlim(0, max(b_vals) * 1.22)
+    ax_b.set_xlim(0, 3000)
     ax_b.set_xlabel("Number of Confusions", fontsize=10.5, fontweight="bold")
     ax_b.set_ylabel("True → Predicted", fontsize=10.5, fontweight="bold")
     ax_b.grid(axis="x", linestyle="--", alpha=0.35, zorder=0)
@@ -263,7 +263,7 @@ def main():
 
     ax_d.imshow(wc_drug, interpolation="bilinear")
     ax_d.axis("off")
-    ax_d.set_title("(d) Typical cDrug / Treatment Terms Misclassified as sDrug by LLM", fontsize=12, fontweight="bold", pad=8)
+    ax_d.set_title("(d) cDrug / Treatment Terms Misclassified as sDrug by LLM", fontsize=12, fontweight="bold", pad=8)
 
     # -------------------------------------------------------------
     # Panel (e): Word Cloud: MHx / AE Confusions
@@ -283,7 +283,7 @@ def main():
 
     ax_e.imshow(wc_mhx, interpolation="bilinear")
     ax_e.axis("off")
-    ax_e.set_title("(e) Typical Clinical Terms with MHx ↔ Dx / AE Confusions by LLM", fontsize=12, fontweight="bold", pad=8)
+    ax_e.set_title("(e) MHx ↔ Dx / AE Confusions by LLM", fontsize=12, fontweight="bold", pad=8)
 
     plt.tight_layout()
 
