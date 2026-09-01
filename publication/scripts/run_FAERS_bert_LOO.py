@@ -99,7 +99,9 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_DB_PATH = PROJECT_ROOT / "dataset.db"
 DEFAULT_DATA_DIR = PROJECT_ROOT / "Datasets" / "FAERS_D1_clean"
 DEFAULT_RESULTS_DIR = PROJECT_ROOT / "results" / "bert_runs_FAERS_LOO"
-DEFAULT_REF_SCORER = PROJECT_ROOT.parent / "development" / "BERT" / "Error_analysis" / "custom_scorer_v5.py"
+# Saved models retain this registry reference in config.cfg.  Keep the scorer
+# with the repository so ``--export-existing`` can load cloud-trained models.
+DEFAULT_REF_SCORER = PROJECT_ROOT / "code" / "custom_scorer_v5.py"
 DEFAULT_TRAIN_PYTHON = sys.executable
 
 _BERT_MODEL_NAME = "dmis-lab/biobert-base-cased-v1.1"
@@ -256,7 +258,10 @@ def _get_tokenizer():
 def _ensure_custom_scorer_loaded(ref_scorer: Path) -> None:
     """Register custom spaCy scorer once per Python process."""
     if not ref_scorer.exists():
-        return
+        raise FileNotFoundError(
+            "Custom scorer required by the saved spaCy model was not found: "
+            f"{ref_scorer}. Pass --ref-scorer /path/to/publication/code/custom_scorer_v5.py"
+        )
     key = str(ref_scorer.resolve())
     if key in _custom_scorer_loaded:
         return
