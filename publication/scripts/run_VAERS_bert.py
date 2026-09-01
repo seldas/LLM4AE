@@ -116,69 +116,79 @@ _custom_scorer_loaded: Set[str] = set()
 # Maps every raw annotation label seen in SME1 annotations to a canonical
 # lowercase string, or to None to explicitly exclude it from training.
 RAW_TO_LABEL: Dict[str, Optional[str]] = {
-    # ── Adverse-event / symptom labels ──────────────────────────────────────
-    "SYM": "sym",          # symptom / adverse-event sign
-    "sym": "sym",
-    "sDx": "sdx",          # signed/confirmed AE diagnosis
-    "SDX": "sdx",
-    "sdx": "sdx",
-    "pDx": "pdx",          # provisional AE diagnosis
+    # ── Primary Diagnosis ───────────────────────────────────────────────────
+    "pDx": "pdx",
     "PDX": "pdx",
     "pdx": "pdx",
-    # ── Diagnosis (non-AE context) ───────────────────────────────────────────
-    "DX": "dx",
-    "dx": "dx",
-    "Dx": "dx",
-    # ── Vaccine / causative agent ────────────────────────────────────────────
-    "VAX": "vax",
-    "vax": "vax",
-    "Vax": "vax",
-    # ── Medical / family history ─────────────────────────────────────────────
-    "MHx": "mhx",
-    "MHX": "mhx",
-    "mhx": "mhx",
-    "MEDICAL HISTORY": "mhx",
+    "Dx": "pdx",
+    # ── Secondary Diagnosis (Second Level) ──────────────────────────────────
+    "sDx": "sdx",
+    "SDX": "sdx",
+    "sdx": "sdx",
+    # ── Rule-out Diagnosis ──────────────────────────────────────────────────
+    "R/O": "ro",
+    "RO": "ro",
+    "ro": "ro",
+    "r/o": "ro",
+    # ── Symptom / Adverse-Event Sign ────────────────────────────────────────
+    "SYM": "sym",
+    "sym": "sym",
+    "SX": "sym",
+    "sx": "sym",
+    # ── Cause of Death ──────────────────────────────────────────────────────
+    "CoD": "cod",
+    "COD": "cod",
+    "cod": "cod",
+    "CAUSE OF DEATH": "cod",
+    "cause of death": "cod",
+    # ── Laboratory Finding / Diagnostic Instrument ──────────────────────────
+    "Lab": "lab",
+    "LAB": "lab",
+    "lab": "lab",
+    # ── Patient Status / Outcome ────────────────────────────────────────────
+    "STATUS": "status",
+    "Status": "status",
+    "status": "status",
+    # ── Family History ──────────────────────────────────────────────────────
     "FHx": "fhx",
     "FHX": "fhx",
     "fhx": "fhx",
     "FAMILY HISTORY": "fhx",
-    # ── Laboratory / vital signs ─────────────────────────────────────────────
-    "Lab": "lab",
-    "LAB": "lab",
-    "lab": "lab",
-    # ── Temporal ────────────────────────────────────────────────────────────
-    "TEMPO": "temporal",
-    "tempo": "temporal",
-    "Tempo": "temporal",
-    "TEMPORAL": "temporal",
-    # ── Dose / lot number ────────────────────────────────────────────────────
-    "DOSE": "dose",
-    "Dose": "dose",
-    "dose": "dose",
-    # ── Patient status / outcome ─────────────────────────────────────────────
-    "STATUS": "status",
-    "Status": "status",
-    "status": "status",
-    # ── Treatment / provider / intervention ─────────────────────────────────
+    # ── Medical History ─────────────────────────────────────────────────────
+    "MHx": "mhx",
+    "MHX": "mhx",
+    "mhx": "mhx",
+    "MEDICAL HISTORY": "mhx",
+    # ── Drug Product / Treatment ────────────────────────────────────────────
     "TX": "tx",
     "Tx": "tx",
     "tx": "tx",
     "TREATMENT": "tx",
     "Treatment": "tx",
     "treatment": "tx",
-    # ── Demographics ─────────────────────────────────────────────────────────
-    "AGE": "age",
-    "Age": "age",
-    "age": "age",
-    "SEX": "sex",
-    "Sex": "sex",
-    "sex": "sex",
-    # ── Explicit exclusions ──────────────────────────────────────────────────
-    "R/O": None,
-    "RO": None,
-    "CAUSE OF DEATH": None,
-    "CoD": None,
-    "COD": None,
+    # ── Vaccine Product ─────────────────────────────────────────────────────
+    "VAX": "vax",
+    "Vax": "vax",
+    "vax": "vax",
+    "VACCINE": "vax",
+    "Vaccine": "vax",
+    "vaccine": "vax",
+    # ── Excluded / unsupported legacy metadata tags ─────────────────────────
+    "TEMPO": None,
+    "Tempo": None,
+    "tempo": None,
+    "TEMPORAL": None,
+    "DOSE": None,
+    "Dose": None,
+    "dose": None,
+    "AGE": None,
+    "Age": None,
+    "age": None,
+    "SEX": None,
+    "Sex": None,
+    "sex": None,
+    "DX": None,
+    "dx": None,
 }
 
 # Fallback: harmless case/whitespace variations not listed above.
@@ -186,20 +196,17 @@ _RAW_TO_LABEL_CASEFOLD = {str(k).strip().casefold(): v for k, v in RAW_TO_LABEL.
 
 # Maps canonical label → broad evaluation category.
 EVAL_LABEL_POOL: Dict[str, str] = {
-    "sym": "AE",
-    "sdx": "AE",
-    "pdx": "AE",
-    "dx": "DX",
-    "vax": "VAX",
-    "mhx": "HX",
-    "fhx": "HX",
-    "lab": "LAB",
-    "dose": "DOSE",
+    "pdx": "pDx",
+    "sdx": "sDx",
+    "ro": "RO",
+    "sym": "SYM",
+    "cod": "CoD",
+    "lab": "Lab",
     "status": "STATUS",
+    "fhx": "FHx",
+    "mhx": "MHx",
     "tx": "TX",
-    "temporal": "TEMPORAL",
-    "age": "AGE",
-    "sex": "SEX",
+    "vax": "VAX",
 }
 
 _nlp_sent = spacy.blank("en")

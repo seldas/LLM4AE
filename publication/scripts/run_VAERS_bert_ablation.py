@@ -93,40 +93,50 @@ _nlp_sent.add_pipe("sentencizer")
 # ==============================================================================
 
 RAW_TO_LABEL: Dict[str, Optional[str]] = {
-    "SYM": "sym", "sym": "sym",
+    # ── Primary Diagnosis ───────────────────────────────────────────────────
+    "pDx": "pdx", "PDX": "pdx", "pdx": "pdx", "Dx": "pdx",
+    # ── Secondary Diagnosis (Second Level) ──────────────────────────────────
     "sDx": "sdx", "SDX": "sdx", "sdx": "sdx",
-    "pDx": "pdx", "PDX": "pdx", "pdx": "pdx",
-    "DX": "dx", "dx": "dx", "Dx": "dx",
-    "VAX": "vax", "vax": "vax", "Vax": "vax",
-    "MHx": "mhx", "MHX": "mhx", "mhx": "mhx", "MEDICAL HISTORY": "mhx",
-    "FHx": "fhx", "FHX": "fhx", "fhx": "fhx", "FAMILY HISTORY": "fhx",
+    # ── Rule-out Diagnosis ──────────────────────────────────────────────────
+    "R/O": "ro", "RO": "ro", "ro": "ro", "r/o": "ro",
+    # ── Symptom / Adverse-Event Sign ────────────────────────────────────────
+    "SYM": "sym", "sym": "sym", "SX": "sym", "sx": "sym",
+    # ── Cause of Death ──────────────────────────────────────────────────────
+    "CoD": "cod", "COD": "cod", "cod": "cod", "CAUSE OF DEATH": "cod", "cause of death": "cod",
+    # ── Laboratory Finding / Diagnostic Instrument ──────────────────────────
     "Lab": "lab", "LAB": "lab", "lab": "lab",
-    "TEMPO": "temporal", "tempo": "temporal", "Tempo": "temporal", "TEMPORAL": "temporal",
-    "DOSE": "dose", "Dose": "dose", "dose": "dose",
+    # ── Patient Status / Outcome ────────────────────────────────────────────
     "STATUS": "status", "Status": "status", "status": "status",
+    # ── Family History ──────────────────────────────────────────────────────
+    "FHx": "fhx", "FHX": "fhx", "fhx": "fhx", "FAMILY HISTORY": "fhx",
+    # ── Medical History ─────────────────────────────────────────────────────
+    "MHx": "mhx", "MHX": "mhx", "mhx": "mhx", "MEDICAL HISTORY": "mhx",
+    # ── Drug Product / Treatment ────────────────────────────────────────────
     "TX": "tx", "Tx": "tx", "tx": "tx", "TREATMENT": "tx", "Treatment": "tx", "treatment": "tx",
-    "AGE": "age", "Age": "age", "age": "age",
-    "SEX": "sex", "Sex": "sex", "sex": "sex",
-    "R/O": None, "RO": None, "CAUSE OF DEATH": None, "CoD": None, "COD": None,
+    # ── Vaccine Product ─────────────────────────────────────────────────────
+    "VAX": "vax", "Vax": "vax", "vax": "vax", "VACCINE": "vax", "Vaccine": "vax", "vaccine": "vax",
+    # ── Excluded / unsupported legacy metadata tags ─────────────────────────
+    "TEMPO": None, "Tempo": None, "tempo": None, "TEMPORAL": None,
+    "DOSE": None, "Dose": None, "dose": None,
+    "AGE": None, "Age": None, "age": None,
+    "SEX": None, "Sex": None, "sex": None,
+    "DX": None, "dx": None,
 }
 
 _RAW_TO_LABEL_CASEFOLD = {str(k).strip().casefold(): v for k, v in RAW_TO_LABEL.items()}
 
 EVAL_LABEL_POOL: Dict[str, str] = {
-    "sym": "AE",
-    "sdx": "AE",
-    "pdx": "AE",
-    "dx": "DX",
-    "vax": "VAX",
-    "mhx": "HX",
-    "fhx": "HX",
-    "lab": "LAB",
-    "dose": "DOSE",
+    "pdx": "pDx",
+    "sdx": "sDx",
+    "ro": "RO",
+    "sym": "SYM",
+    "cod": "CoD",
+    "lab": "Lab",
     "status": "STATUS",
+    "fhx": "FHx",
+    "mhx": "MHx",
     "tx": "TX",
-    "temporal": "TEMPORAL",
-    "age": "AGE",
-    "sex": "SEX",
+    "vax": "VAX",
 }
 
 

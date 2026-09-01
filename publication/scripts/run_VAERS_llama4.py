@@ -81,116 +81,114 @@ DEFAULT_RESULTS_DIR = BASE / "results" / "llama4_runs_VAERS"
 DEFAULT_PROMPT_FILE = BASE / "scripts" / "annotation_prompts.py"
 DEFAULT_ENV_FILE = BASE / ".env"
 
-# Canonical VAERS evaluation labels. These mirror run_VAERS_bert.py exactly.
-# R/O and CoD remain excluded because the VAERS BioBERT reference taxonomy
-# does not model them.
+# Canonical VAERS evaluation labels for the 11-category schema.
 RAW_TO_LABEL = {
-    # Adverse-event / symptom labels
-    "SYM": "sym",
-    "sym": "sym",
-    "sDx": "sdx",
-    "SDX": "sdx",
-    "sdx": "sdx",
+    # Primary Diagnosis
     "pDx": "pdx",
     "PDX": "pdx",
     "pdx": "pdx",
-    # Diagnosis (non-AE context)
-    "DX": "dx",
-    "Dx": "dx",
-    "dx": "dx",
-    # Vaccine / causative agent
-    "VAX": "vax",
-    "Vax": "vax",
-    "vax": "vax",
-    # History
-    "MHx": "mhx",
-    "MHX": "mhx",
-    "mhx": "mhx",
-    "MEDICAL HISTORY": "mhx",
+    "Dx": "pdx",
+    # Secondary Diagnosis (Second Level)
+    "sDx": "sdx",
+    "SDX": "sdx",
+    "sdx": "sdx",
+    # Rule-out Diagnosis
+    "R/O": "ro",
+    "RO": "ro",
+    "ro": "ro",
+    "r/o": "ro",
+    # Symptom / Adverse-Event Sign
+    "SYM": "sym",
+    "sym": "sym",
+    "SX": "sym",
+    "sx": "sym",
+    # Cause of Death
+    "CoD": "cod",
+    "COD": "cod",
+    "cod": "cod",
+    "CAUSE OF DEATH": "cod",
+    "cause of death": "cod",
+    # Laboratory Finding / Diagnostic Instrument
+    "Lab": "lab",
+    "LAB": "lab",
+    "lab": "lab",
+    # Patient Status / Outcome
+    "STATUS": "status",
+    "Status": "status",
+    "status": "status",
+    # Family History
     "FHx": "fhx",
     "FHX": "fhx",
     "fhx": "fhx",
     "FAMILY HISTORY": "fhx",
-    # Laboratory / vital findings
-    "Lab": "lab",
-    "LAB": "lab",
-    "lab": "lab",
-    # Temporal expressions
-    "TEMPO": "temporal",
-    "Tempo": "temporal",
-    "tempo": "temporal",
-    "TEMPORAL": "temporal",
-    "Temporal": "temporal",
-    "temporal": "temporal",
-    # Dose / lot number
-    "DOSE": "dose",
-    "Dose": "dose",
-    "dose": "dose",
-    # Patient status / outcome
-    "STATUS": "status",
-    "Status": "status",
-    "status": "status",
-    # Treatment / provider / intervention
+    # Medical History
+    "MHx": "mhx",
+    "MHX": "mhx",
+    "mhx": "mhx",
+    "MEDICAL HISTORY": "mhx",
+    # Drug Product / Treatment
     "TX": "tx",
     "Tx": "tx",
     "tx": "tx",
     "TREATMENT": "tx",
     "Treatment": "tx",
     "treatment": "tx",
-    # Demographics
-    "AGE": "age",
-    "Age": "age",
-    "age": "age",
-    "SEX": "sex",
-    "Sex": "sex",
-    "sex": "sex",
-    # Explicit exclusions from the VAERS reference taxonomy
-    "R/O": None,
-    "RO": None,
-    "CAUSE OF DEATH": None,
-    "CoD": None,
-    "COD": None,
+    # Vaccine Product
+    "VAX": "vax",
+    "Vax": "vax",
+    "vax": "vax",
+    "VACCINE": "vax",
+    "Vaccine": "vax",
+    "vaccine": "vax",
+    # Excluded / unsupported legacy metadata tags
+    "TEMPO": None,
+    "Tempo": None,
+    "tempo": None,
+    "TEMPORAL": None,
+    "DOSE": None,
+    "Dose": None,
+    "dose": None,
+    "AGE": None,
+    "Age": None,
+    "age": None,
+    "SEX": None,
+    "Sex": None,
+    "sex": None,
+    "DX": None,
+    "dx": None,
 }
 
 _RAW_TO_LABEL_CASEFOLD = {
     str(key).strip().casefold(): value for key, value in RAW_TO_LABEL.items()
 }
 
-# XML-style tags expected from the VAERS P2 prompt. Canonical labels are kept
-# identical to run_VAERS_bert.py for apples-to-apples evaluation.
+# XML-style tags expected from the VAERS 11-category P2 prompt.
 TAG_TO_LABEL = {
-    "SYM": "sym",
-    "SDX": "sdx",
     "PDX": "pdx",
-    "DX": "dx",
-    "VAX": "vax",
-    "MHX": "mhx",
-    "FHX": "fhx",
+    "SDX": "sdx",
+    "RO": "ro",
+    "SYM": "sym",
+    "COD": "cod",
     "LAB": "lab",
-    "TEMPO": "temporal",
-    "TEMPORAL": "temporal",  # accepted alias; normalized to temporal
-    "DOSE": "dose",
     "STATUS": "status",
+    "FHX": "fhx",
+    "MHX": "mhx",
     "TX": "tx",
-    "AGE": "age",
-    "SEX": "sex",
+    "VAX": "vax",
 }
 
 EVAL_LABEL_POOL = {
-    "sym": "AE",
-    "sdx": "AE",
-    "pdx": "AE",
-    "dx": "DX",
-    "vax": "VAX",
-    "mhx": "HX",
-    "fhx": "HX",
-    "lab": "LAB",
-    "dose": "DOSE",
+    "pdx": "pDx",
+    "sdx": "sDx",
+    "ro": "RO",
+    "sym": "SYM",
+    "cod": "CoD",
+    "lab": "Lab",
     "status": "STATUS",
+    "fhx": "FHx",
+    "mhx": "MHx",
     "tx": "TX",
-    "temporal": "TEMPORAL",
-    "age": "AGE",
-    "sex": "SEX",
+    "vax": "VAX",
 }
 
 ALL_LABELS = tuple(sorted(set(TAG_TO_LABEL.values())))
@@ -298,8 +296,8 @@ def load_p2_tag(prompt_file: Path, prompt_var: str) -> str:
     if not hasattr(module, prompt_var):
         raise AttributeError(
             f"{prompt_file} does not define {prompt_var}. "
-            "For VAERS, define a tagged-text prompt using the VAERS taxonomy "
-            "(SYM, sDx, pDx, DX, VAX, MHx, FHx, Lab, TEMPO, DOSE, STATUS, TX, AGE, SEX)."
+            "For VAERS, define a tagged-text prompt using the 11-category VAERS taxonomy "
+            "(pDx, sDx, RO, SYM, CoD, Lab, STATUS, FHx, MHx, TX, VAX)."
         )
     prompt = getattr(module, prompt_var)
     if not isinstance(prompt, str) or not prompt.strip():
@@ -308,8 +306,9 @@ def load_p2_tag(prompt_file: Path, prompt_var: str) -> str:
         raise ValueError(f"{prompt_var} must contain a {{text}} placeholder")
 
     # Prevent accidental use of the FAERS P2 prompt with the VAERS evaluator.
-    required_concepts = ("SYM", "SDX", "PDX", "DX", "VAX", "MHX", "FHX",
-                         "LAB", "DOSE", "STATUS", "TX", "AGE", "SEX")
+    required_concepts = (
+        "PDX", "SDX", "RO", "SYM", "COD", "LAB", "STATUS", "FHX", "MHX", "TX", "VAX"
+    )
     upper = prompt.upper()
     missing = [name for name in required_concepts if name not in upper]
     if missing:
@@ -317,8 +316,6 @@ def load_p2_tag(prompt_file: Path, prompt_var: str) -> str:
             f"{prompt_var} appears not to be a VAERS annotation prompt; "
             f"missing concept names: {missing}"
         )
-    if "TEMPO" not in upper and "TEMPORAL" not in upper:
-        raise ValueError(f"{prompt_var} must define the VAERS temporal/TEMPO category")
     return prompt
 
 
