@@ -318,7 +318,7 @@ Correct:
 ANNOTATION_GUIDE_VAERS = r'''
 ### Annotation Schema
 
-Annotate ONLY the following 14 VAERS clinical/contextual concept categories:
+Annotate ONLY the following 13 VAERS clinical/contextual concept categories:
 
 | Clinical Concept | Definition | Annotation Rule | Trigger Words / Phrases |
 |---|---|---|---|
@@ -330,7 +330,6 @@ Annotate ONLY the following 14 VAERS clinical/contextual concept categories:
 | **MHx: Medical History** | A symptom, diagnosis, condition, or medical finding that pre-existed the vaccination/adverse-event episode or is explicitly described as part of the patient's past or chronic medical history. | Annotate the historical/pre-existing clinical condition itself. Do not include contextual phrases such as "history of" when the underlying condition can be separately captured. | past medical history, medical history, PMH, history of, baseline, chronic, pre-existing, underlying condition, known condition, longstanding, prior diagnosis |
 | **FHx: Family History** | A disease, condition, or clinically relevant finding explicitly attributed to the patient's family members or family medical history. | Annotate the condition/finding attributed to family history. Do not classify the patient's own condition as FHx. | family history, FHx, mother had, father had, sibling had, familial, hereditary, inherited, genetic predisposition |
 | **Lab: Laboratory Finding / Vital Sign** | A laboratory test, laboratory result, vital sign, physiologic measurement, or other objective measured clinical finding. | Annotate the test/measurement and its reported result when expressed as one clinically meaningful span when practical. Include normal, abnormal, positive, negative, quantitative, and qualitative findings. Include vital signs and objective measurements when they are reported as clinical findings. | laboratory, lab, level, result, value, positive, negative, elevated, decreased, normal, abnormal, CBC, WBC, hemoglobin, platelet, creatinine, glucose, temperature, blood pressure, heart rate, oxygen saturation |
-| **TEMPO: Temporal Expression** | A date, time, duration, interval, relative-time phrase, latency, or other expression locating an event in time. | Annotate the temporal expression itself. Include absolute dates/times and relative expressions such as time since vaccination, onset latency, duration, or sequence timing. Do not include the clinical event unless it is inseparable from the temporal phrase. | on, at, after, before, later, same day, next day, hours later, days later, weeks later, for 3 days, since vaccination, shortly after, immediately after, date, time |
 | **DOSE: Dose / Lot Information** | Vaccine dose information, dose number, amount, sequence, administration-dose descriptor, or vaccine lot/batch number. | Annotate explicit vaccine dose or lot information, including ordinal dose number and lot/batch identifier. Keep vaccine product name under VAX rather than DOSE. | first dose, second dose, third dose, booster, dose 1, dose 2, dose, dosage, lot, lot number, batch, batch number, 0.5 mL |
 | **STATUS: Patient Status / Outcome** | A statement describing the patient's clinical course, disposition, recovery, persistence, worsening, hospitalization status, disability, death status, or other outcome. | Annotate the status/outcome expression itself. STATUS describes what happened to the patient or event over time, not the underlying symptom/diagnosis. | recovered, recovering, resolved, improved, worsened, stable, persistent, ongoing, hospitalized, admitted, discharged, emergency room, disability, life-threatening, outcome, died, death |
 | **TX: Treatment / Provider / Intervention** | A treatment, therapeutic intervention, clinical management action, procedure used for treatment, or explicitly mentioned treating/provider service associated with management of the patient. | Annotate the treatment/intervention/provider entity or therapeutic action used to manage the patient or adverse event. Do not annotate the indication as TX. Drug names used as treatment may be included as TX when explicitly administered therapeutically. | treated with, treatment, therapy, given, administered, prescribed, managed with, IV fluids, acetaminophen, antihistamine, steroids, epinephrine, surgery, physician, provider, emergency department |
@@ -346,7 +345,6 @@ Annotate ONLY the following 14 VAERS clinical/contextual concept categories:
    Examples:
    - "history of asthma" -> annotate "asthma" as MHx.
    - "treated with acetaminophen" -> annotate "acetaminophen" as TX.
-   - "two days after vaccination" -> annotate "two days after vaccination" or the smallest complete temporal expression as TEMPO, while the vaccine itself remains VAX when separately expressed.
 
 3. **Use exact text spans.**
    Every annotated span must occur verbatim in the source narrative. Do not normalize spelling, capitalization, abbreviations, numbers, or units.
@@ -385,22 +383,19 @@ Annotate ONLY the following 14 VAERS clinical/contextual concept categories:
 12. **DOSE includes vaccine sequence and lot information.**
     Dose number, amount, booster designation, and lot/batch identifiers belong to DOSE when explicitly stated.
 
-13. **TEMPO captures temporal information only.**
-    Dates, times, durations, latency, and relative temporal phrases belong to TEMPO. Do not absorb the associated symptom, diagnosis, vaccine, or treatment into the temporal span unless the phrase cannot be separated without losing its meaning.
-
-14. **Lab includes objective laboratory findings and vital signs.**
+13. **Lab includes objective laboratory findings and vital signs.**
     Diagnostic labels inferred from those findings should not be added unless explicitly stated elsewhere in the narrative.
 
-15. **STATUS describes course, disposition, or outcome.**
+14. **STATUS describes course, disposition, or outcome.**
     Do not label the underlying symptom or diagnosis as STATUS merely because its course or outcome is discussed.
 
-16. **TX includes therapeutic management/intervention.**
+15. **TX includes therapeutic management/intervention.**
     Annotate what was done to treat or manage the patient. Do not label the condition being treated as TX.
 
-17. **Repeated mentions may be annotated separately.**
+16. **Repeated mentions may be annotated separately.**
     If the same concept appears multiple times, annotate each explicit occurrence according to its local context.
 
-18. **Annotate only the 14 VAERS categories defined above.**
+17. **Annotate only the 13 VAERS categories defined above.**
     Do not invent or add additional categories.
 '''
 
@@ -417,7 +412,7 @@ structured JSON.
 
 ### JSON Output Schema
 
-Return exactly one JSON object containing all 14 keys below:
+Return exactly one JSON object containing all 13 keys below:
 
 {
   "sym": [],
@@ -428,7 +423,6 @@ Return exactly one JSON object containing all 14 keys below:
   "mhx": [],
   "fhx": [],
   "lab": [],
-  "temporal": [],
   "dose": [],
   "status": [],
   "tx": [],
@@ -463,7 +457,7 @@ Each detected entity must be represented as:
 - Repeated occurrences must be returned as separate objects.
 - Do not collapse repeated mentions into a single object.
 - If a category has no entities, return an empty list.
-- Return all 14 keys, even when their values are empty lists.
+- Return all 13 keys, even when their values are empty lists.
 - Do not return duplicate objects for the same occurrence.
 - Within each category list, order annotations by ascending "start", then ascending "end".
 
@@ -504,7 +498,6 @@ Use ONLY these tags:
 <MHX>...</MHX>
 <FHX>...</FHX>
 <LAB>...</LAB>
-<TEMPO>...</TEMPO>
 <DOSE>...</DOSE>
 <STATUS>...</STATUS>
 <TX>...</TX>
@@ -543,7 +536,7 @@ Original:
 A 45-year-old female received the second dose of Pfizer COVID-19 vaccine and developed fever and headache the next day.
 
 Correct:
-A <AGE>45-year-old</AGE> <SEX>female</SEX> received the <DOSE>second dose</DOSE> of <VAX>Pfizer COVID-19 vaccine</VAX> and developed <SYM>fever</SYM> and <SYM>headache</SYM> <TEMPO>the next day</TEMPO>.
+A <AGE>45-year-old</AGE> <SEX>female</SEX> received the <DOSE>second dose</DOSE> of <VAX>Pfizer COVID-19 vaccine</VAX> and developed <SYM>fever</SYM> and <SYM>headache</SYM> the next day.
 
 Original:
 She was diagnosed with myocarditis and treated with ibuprofen.
@@ -573,7 +566,7 @@ Original:
 Symptoms resolved after two days and the patient was discharged home.
 
 Correct:
-Symptoms <STATUS>resolved</STATUS> <TEMPO>after two days</TEMPO> and the patient was <STATUS>discharged home</STATUS>.
+Symptoms <STATUS>resolved</STATUS> after two days and the patient was <STATUS>discharged home</STATUS>.
 
 ### Narrative
 
