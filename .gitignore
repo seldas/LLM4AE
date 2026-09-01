@@ -50,7 +50,8 @@ __pycache__/
 .ipynb_checkpoints/
 .env
 
-publication/results/**/workdir/
 publication/Datasets/FAERS_D1_clean/*.json
 publication/Datasets/VAERS/*.json
 publication/results/**/model/
+publication/results/**/*.spacy
+publication/results/**/workdir/

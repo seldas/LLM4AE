@@ -1,0 +1,38 @@
+2026-09-01 11:55:33,976 | INFO | Run started
+2026-09-01 11:55:33,976 | INFO | Data directory: /compute001/lwu/projects/LLM4AE/LLM4AE-dev/publication/Datasets/VAERS
+2026-09-01 11:55:33,976 | INFO | Results directory: /compute001/lwu/projects/LLM4AE/LLM4AE-dev/publication/results/sonnet_runs_VAERS
+2026-09-01 11:55:33,976 | INFO | Prompt file: /compute001/lwu/projects/LLM4AE/LLM4AE-dev/publication/scripts/annotation_prompts.py
+2026-09-01 11:55:33,976 | INFO | Prompt variable: P2_TAG_VAERS
+2026-09-01 11:55:33,976 | INFO | Prompt SHA256: 36485842682a2ffa9a3dfdae87c813489418ed2f2566219cd2ce6f9d73c2a305
+2026-09-01 11:55:33,976 | INFO | Elsa endpoint: https://elsa-dev.preprod.fda.gov/Monolith/api/engine/runPixel
+2026-09-01 11:55:33,976 | INFO | Elsa model ID: 8405ac40-89c6-4613-848c-3d89986fbc01
+2026-09-01 11:55:33,976 | INFO | Elsa model name: CLAUDE_46_SONNET
+2026-09-01 11:55:33,976 | INFO | Documents: 3
+2026-09-01 11:55:33,976 | INFO | Resume cache: 0 successful documents
+2026-09-01 11:55:34,341 | ERROR | VAERS_133422-1.json | FAILED | Traceback (most recent call last):
+  File "/compute001/lwu/projects/LLM4AE/LLM4AE-dev/publication/scripts/run_VAERS_sonnet.py", line 1191, in main
+    tagged_output, api_meta = client.annotate(prompt)
+                              ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/compute001/lwu/projects/LLM4AE/LLM4AE-dev/publication/scripts/run_VAERS_sonnet.py", line 549, in annotate
+    raise RuntimeError(
+RuntimeError: Elsa request failed after 4 attempt(s): Elsa Service Error (302): 
+
+2026-09-01 11:55:34,453 | ERROR | VAERS_150001-1.json | FAILED | Traceback (most recent call last):
+  File "/compute001/lwu/projects/LLM4AE/LLM4AE-dev/publication/scripts/run_VAERS_sonnet.py", line 1191, in main
+    tagged_output, api_meta = client.annotate(prompt)
+                              ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/compute001/lwu/projects/LLM4AE/LLM4AE-dev/publication/scripts/run_VAERS_sonnet.py", line 549, in annotate
+    raise RuntimeError(
+RuntimeError: Elsa request failed after 4 attempt(s): Elsa Service Error (302): 
+
+2026-09-01 11:55:34,566 | ERROR | VAERS_150083-1.json | FAILED | Traceback (most recent call last):
+  File "/compute001/lwu/projects/LLM4AE/LLM4AE-dev/publication/scripts/run_VAERS_sonnet.py", line 1191, in main
+    tagged_output, api_meta = client.annotate(prompt)
+                              ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/compute001/lwu/projects/LLM4AE/LLM4AE-dev/publication/scripts/run_VAERS_sonnet.py", line 549, in annotate
+    raise RuntimeError(
+RuntimeError: Elsa request failed after 4 attempt(s): Elsa Service Error (302): 
+
+2026-09-01 11:55:34,681 | INFO | Run finished
+2026-09-01 11:55:34,682 | INFO | Completed=0 Failed=3
+2026-09-01 11:55:34,682 | INFO | Overall: {'M': 0, 'C': 0, 'S': 0, 'N': 0, 'precision': 0.0, 'recall': 0.0, 'f1': 0.0}
