@@ -100,7 +100,7 @@ def main():
         "- **Secondary Tier (Adapted ADE-Eval Clinical Weighted Metric / Scheme 2):** Grants partial credit (0.5 weight) to partially localized/misclassified clinical mentions ($C_{\\text{total}}$) and applies a 0.25 denominator weight to non-overlapping false positives ($S_{\\text{non\\_overlap}}$). $\\text{Precision} = (M + 0.5 C_{\\text{total}}) / (M + C_{\\text{total}} + 0.25 S_{\\text{non\\_overlap}})$, $\\text{Recall} = (M + 0.5 C_{\\text{total}}) / (M + C_{\\text{total}} + N)$.",
         "- $^\\dagger$ **BioBERT (Seed 42 Default):** Primary in-distribution 10-fold cross-validation on the 1,000 VAERS reports using random initialization seed 42. Mean $\\pm$ SD reflects variance across the 10 test folds.",
         "- $^\\ddagger$ **BioBERT (5-Seed Pooled):** 10-fold cross-validation repeated across 5 independent random initialization seeds (`42, 123, 456, 789, 1011`), summarizing cross-fold variance and optimization stability ($N = 50$ total training runs).",
-        "- **Target Schema Filtering:** Performance is evaluated against the 6 core VAERS gold target categories (`AE`, `HX`, `LAB`, `STATUS`, `TX`, `VAX`). Non-gold categories extracted by the LLM (e.g., `DOSE`, `AGE`, `SEX`) are filtered prior to scoring to prevent artificial false positive penalties.",
+        "- **Target Schema Evaluation:** Performance is evaluated across all 11 active VAERS concept categories (`VAX`, `TX`, `STATUS`, `MHx`, `sDx`, `pDx`, `SYM`, `Lab`, `FHx`, `CoD`, `RO`) in accordance with the VAERS annotation guideline.",
         ""
     ])
 

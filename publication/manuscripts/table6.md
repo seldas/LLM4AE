@@ -10,12 +10,12 @@ Evaluation of neural network optimization stability across 5 independent trainin
 | FAERS (4-Fold LOO, N = 829) | Seed 789 | 0.5663 ± 0.0476 | 0.7413 ± 0.0324 |
 | FAERS (4-Fold LOO, N = 829) | Seed 1011 | 0.5748 ± 0.0694 | 0.7484 ± 0.0371 |
 | **FAERS (4-Fold LOO, Pooled)** | **Mean ± SD (5 Seeds)** | **0.5685 ± 0.0080** | **0.7463 ± 0.0075** |
-| VAERS (10-Fold CV, N = 1,000) | Seed 42 | 0.6594 ± 0.0196 | 0.7848 ± 0.0127 |
-| VAERS (10-Fold CV, N = 1,000) | Seed 123 | 0.6601 ± 0.0175 | 0.7891 ± 0.0104 |
-| VAERS (10-Fold CV, N = 1,000) | Seed 456 | 0.6593 ± 0.0218 | 0.7883 ± 0.0138 |
-| VAERS (10-Fold CV, N = 1,000) | Seed 789 | 0.6615 ± 0.0159 | 0.7907 ± 0.0095 |
-| VAERS (10-Fold CV, N = 1,000) | Seed 1011 | 0.6574 ± 0.0169 | 0.7879 ± 0.0106 |
-| **VAERS (10-Fold CV, Pooled)** | **Mean ± SD (5 Seeds)** | **0.6595 ± 0.0015** | **0.7882 ± 0.0022** |
+| VAERS (10-Fold CV, N = 1,000) | Seed 42 | 0.7015 ± 0.0174 | 0.8370 ± 0.0095 |
+| VAERS (10-Fold CV, N = 1,000) | Seed 123 | 0.7013 ± 0.0156 | 0.8405 ± 0.0070 |
+| VAERS (10-Fold CV, N = 1,000) | Seed 456 | 0.7008 ± 0.0202 | 0.8400 ± 0.0113 |
+| VAERS (10-Fold CV, N = 1,000) | Seed 789 | 0.7026 ± 0.0152 | 0.8419 ± 0.0082 |
+| VAERS (10-Fold CV, N = 1,000) | Seed 1011 | 0.6983 ± 0.0159 | 0.8389 ± 0.0091 |
+| **VAERS (10-Fold CV, Pooled)** | **Mean ± SD (5 Seeds)** | **0.7009 ± 0.0016** | **0.8397 ± 0.0018** |
 
 ---
 

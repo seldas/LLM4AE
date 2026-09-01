@@ -147,8 +147,8 @@ def main():
     # --- TABLE 4: MASTER BENCHMARK ON VAERS (Section 3.5) ---
     t4_data = [
         ["Model & Configuration", "Primary Tier: Strict Exact F1", "Secondary Tier: Adapted ADE F1"],
-        ["BioBERT (10-Fold CV)", "0.6594 ± 0.0196", "0.7848 ± 0.0127"],
-        ["LLaMA 4 (1-shot, Tagged P2_TAG_VAERS)", "0.2797", "0.5113"]
+        ["BioBERT (10-Fold CV)", "0.7015 ± 0.0174", "0.8370 ± 0.0095"],
+        ["LLaMA 4 (1-shot, Tagged P2_TAG_VAERS)", "0.3383", "0.6400"]
     ]
     t4_styled = create_styled_table(doc, t4_data, col_widths=[2.8, 1.8, 1.8])
 
@@ -172,12 +172,12 @@ def main():
         ["FAERS (4-Fold LOO, N = 829)", "Seed 789", "0.5662 ± 0.0476", "0.7413 ± 0.0324"],
         ["FAERS (4-Fold LOO, N = 829)", "Seed 1011", "0.5748 ± 0.0694", "0.7484 ± 0.0371"],
         ["FAERS (4-Fold LOO, Pooled)", "Mean ± SD (5 Seeds)", "0.5685 ± 0.0080", "0.7463 ± 0.0076"],
-        ["VAERS (10-Fold CV, N = 1,000)", "Seed 42", "0.6594 ± 0.0196", "0.7848 ± 0.0127"],
-        ["VAERS (10-Fold CV, N = 1,000)", "Seed 123", "0.6601 ± 0.0175", "0.7891 ± 0.0104"],
-        ["VAERS (10-Fold CV, N = 1,000)", "Seed 456", "0.6593 ± 0.0218", "0.7883 ± 0.0138"],
-        ["VAERS (10-Fold CV, N = 1,000)", "Seed 789", "0.6615 ± 0.0159", "0.7907 ± 0.0095"],
-        ["VAERS (10-Fold CV, N = 1,000)", "Seed 1011", "0.6574 ± 0.0169", "0.7879 ± 0.0106"],
-        ["VAERS (10-Fold CV, Pooled)", "Mean ± SD (5 Seeds)", "0.6595 ± 0.0015", "0.7882 ± 0.0022"]
+        ["VAERS (10-Fold CV, N = 1,000)", "Seed 42", "0.7015 ± 0.0174", "0.8370 ± 0.0095"],
+        ["VAERS (10-Fold CV, N = 1,000)", "Seed 123", "0.7013 ± 0.0156", "0.8405 ± 0.0070"],
+        ["VAERS (10-Fold CV, N = 1,000)", "Seed 456", "0.7008 ± 0.0202", "0.8400 ± 0.0113"],
+        ["VAERS (10-Fold CV, N = 1,000)", "Seed 789", "0.7026 ± 0.0152", "0.8419 ± 0.0082"],
+        ["VAERS (10-Fold CV, N = 1,000)", "Seed 1011", "0.6983 ± 0.0159", "0.8389 ± 0.0091"],
+        ["VAERS (10-Fold CV, Pooled)", "Mean ± SD (5 Seeds)", "0.7009 ± 0.0016", "0.8397 ± 0.0018"]
     ]
     t6_styled = create_styled_table(doc, t6_data, col_widths=[2.4, 1.6, 1.8, 1.8])
 
@@ -298,35 +298,36 @@ def main():
         elif txt.startswith("To evaluate cross-domain generalization beyond"):
             p.text = (
                 "To evaluate cross-domain generalization beyond the FAERS dataset, we further analyzed the public VAERS corpus (N = 1,000 narratives). "
-                "As reported in Table 4, BioBERT fine-tuned via 10-fold cross-validation achieved a strict exact-match F1 of 0.6594 ± 0.0196 "
-                "(0.7848 ± 0.0127 Adapted ADE-Eval F1). In contrast, the 1-shot LLaMA 4 baseline evaluated under the official 11-category annotation guidance "
-                "achieved a strict F1 of 0.2797 and an adapted ADE-Eval F1 of 0.5113 (with 0.6714 Precision and 0.4129 Recall)."
+                "As reported in Table 4, BioBERT fine-tuned via 10-fold cross-validation achieved a strict exact-match F1 of 0.7015 ± 0.0174 "
+                "(0.8370 ± 0.0095 Adapted ADE-Eval F1). In contrast, the 1-shot LLaMA 4 baseline evaluated under the official 11-category annotation guidance "
+                "achieved a strict F1 of 0.3383 and an adapted ADE-Eval F1 of 0.6400 (with 0.6691 Precision and 0.6134 Recall)."
             )
         elif txt.startswith("Category-level analysis (Figure 6a)"):
             p.text = (
                 "Category-level analysis (Figure 6a) across all 11 clinical concept categories confirmed strong supervised encoder advantages "
-                "across vaccines (VAX: 0.92 vs 0.77), treatments (TX: 0.89 vs 0.73), patient clinical status (STATUS: 0.83 vs 0.60), "
-                "medical history (MHx: 0.83 vs 0.51), primary diagnoses (pDx: 0.66 vs 0.59), adverse-event symptoms (SYM: 0.77 vs 0.41), "
-                "laboratory findings (Lab: 0.72 vs 0.47), and family history (FHx: 0.48 vs 0.45). Notably, few-shot LLaMA 4 successfully identified "
-                "rare specialized categories unmodeled by the encoder, including cause of death (CoD: 0.50 F1; P = 0.67) and rule-out diagnoses (RO: 0.33 F1), "
-                "while confirmed secondary diagnoses presented the steepest generalization gap (sDx: 0.77 vs 0.19). "
-                "Error anatomy (Figure 6b) on the complete VAERS corpus (N = 1,000 reports) revealed that BioBERT achieved a high proportion "
-                "of exact matches (56.0% vs 21.3%; 29,984 vs 12,026 spans) and low coverage errors (6.9% vs 13.7%; 3,679 vs 7,762 spans). "
-                "Importantly, aligning the prompt to the official 11-category guideline substantially reduced LLaMA 4 hallucinations by 52.8% "
-                "(spurious spans decreased from 33,421 down to 15,782; 27.9% vs 20.5% for BioBERT), while missed entities accounted for 37.0% (20,902 spans) "
-                "versus 16.6% (8,875 spans) for BioBERT. "
-                "Confusion breakdowns (Figure 6c & 6d) demonstrated that the primary error mode for both models was distinguishing secondary diagnoses "
-                "from adverse symptoms (sDx → SYM: 2,174 for BioBERT; 8,295 for LLaMA 4), alongside reciprocal symptom-to-diagnosis shifts "
-                "(SYM → sDx: 921 for BioBERT; 1,320 for LLaMA 4) and symptom conflation with medical history (SYM → MHx: 908 for LLaMA 4) and lab findings "
-                "(SYM → Lab: 647 for BioBERT; 906 for LLaMA 4)."
+                "across vaccines (VAX: 0.93 vs 0.85), treatments (TX: 0.92 vs 0.76), secondary diagnoses (sDx: 0.87 vs 0.62), "
+                "medical history (MHx: 0.85 vs 0.58), patient clinical status (STATUS: 0.83 vs 0.61), primary diagnoses (pDx: 0.83 vs 0.70), "
+                "adverse-event symptoms (SYM: 0.78 vs 0.57), laboratory findings (Lab: 0.76 vs 0.56), and family history (FHx: 0.65 vs 0.51). "
+                "Notably, few-shot LLaMA 4 successfully extracted specialized categories unmodeled by the encoder, including cause of death "
+                "(CoD: 0.70 F1; P = 0.67, R = 0.73) and rule-out diagnoses (RO: 0.53 F1), while overall micro-average performance reached "
+                "0.84 for BioBERT versus 0.64 for LLaMA 4. "
+                "Error anatomy (Figure 6b) on the complete VAERS corpus (N = 1,000 reports) evaluated under 1-to-1 best-overlap matching "
+                "revealed that BioBERT achieved 64.5% exact matches (15,068 spans) and 19.3% coverage errors (4,506 spans), with only 8.9% "
+                "spurious spans (2,081) and 7.3% misses (1,711). In contrast, LLaMA 4 produced 30.4% exact matches (12,015 spans) and 49.3% "
+                "coverage errors (19,476 spans), while spurious hallucinations (10.3%; 4,079 spans) and true unpredicted omissions (10.0%; "
+                "3,972 spans) remained balanced. "
+                "Confusion breakdowns (Figure 6c & 6d) demonstrated that the predominant error mode for LLaMA 4 was subsuming secondary diagnoses "
+                "under adverse symptoms (sDx → SYM: 4,452), accompanied by reciprocal symptom-to-diagnosis misclassifications (SYM → sDx: 1,093), "
+                "symptom conflation with medical history (SYM → MHx: 758), and symptom labeling of laboratory results (SYM → Lab: 745). "
+                "For BioBERT, confusions similarly peaked at sDx → SYM (782) and SYM → sDx (350), but at markedly lower absolute frequencies."
             )
         elif "Fig. 6" in txt or "Figure 6" in txt:
             if "Caption:" in txt or txt.startswith("Figure 6.") or txt.startswith("Fig. 6"):
                 p.text = (
                     "Figure 6. Cross-Domain Annotation Benchmark and Error Anatomy on the Full VAERS Vaccine Safety Corpus Across 11 Concept Categories (N = 1,000 Reports). "
                     "(a) Per-category performance across all 11 clinical concept categories and overall micro-average for BioBERT (Blue) vs. LLaMA 4 (Pink-Coral), "
-                    "showing F1 bars and precision/recall trajectories. (b) M/C/S/N error distribution for BioBERT vs. LLaMA 4 across the complete corpus. "
-                    "(c) BioBERT top label misclassifications (X-axis: 0–9,500). (d) LLaMA 4 top label misclassifications (X-axis: 0–9,500, aligned with panel c)."
+                    "showing F1 bars and precision/recall trajectories. (b) M/C/S/N error distribution for BioBERT vs. LLaMA 4 evaluated using 1-to-1 best-overlap matching (M: exact match; C: coverage and conflation error; S: spurious prediction; N: miss). "
+                    "(c) BioBERT top label misclassifications (X-axis: 0–5,200). (d) LLaMA 4 top label misclassifications (X-axis: 0–5,200, aligned with panel c)."
                 )
         elif txt.startswith("Table 4.") and "VAERS" in txt:
             p.text = "Table 4. Master Performance Benchmark on the VAERS Dataset (N = 1,000 Reports)."
@@ -353,7 +354,7 @@ def main():
                 "using random initialization seeds (42, 123, 456, 789, 1011) across both FAERS 4-fold LOO (20 total model runs, 17 categories) "
                 "and VAERS 10-fold CV (50 total model runs). As summarized in Table 6, cross-seed variance was exceptionally low across both datasets. "
                 "On FAERS, strict F1 averaged 0.5685 ± 0.0080 (0.7463 ± 0.0076 Adapted F1) across the 5 seeds. "
-                "On VAERS, strict F1 averaged 0.6595 ± 0.0015 (0.7882 ± 0.0022 Adapted F1) across the 5 seeds. "
+                "On VAERS, strict F1 averaged 0.7009 ± 0.0016 (0.8397 ± 0.0018 Adapted F1) across the 5 seeds. "
                 "These findings confirm that supervised BioBERT convergence is remarkably robust to stochastic weight initialization, "
                 "with between-series clinical diversity accounting for substantially greater performance variance than random initialization."
             )

@@ -34,49 +34,47 @@ def main():
     figures_dir.mkdir(parents=True, exist_ok=True)
     manuscript_dir = repo_root / "publication" / "manuscripts"
 
-    # All 11 VAERS Categories + Overall TOTAL
+    # Category labels: 11 active VAERS categories + Overall Micro-Average
     cats = [
-        "VAX", "TX", "STATUS", "MHx", "sDx", "pDx", "SYM", "Lab",
-        "FHx", "CoD", "RO", "TOTAL"
+        "VAX", "TX", "STATUS", "MHx", "sDx", "pDx",
+        "SYM", "Lab", "FHx", "CoD", "RO", "TOTAL"
     ]
 
-    # Full VAERS Corpus (N = 1,000 reports) 11-Category Performance Metrics
     # BioBERT 10-Fold CV (Seed 42)
-    b_f1 = [0.9200, 0.8946, 0.8322, 0.8322, 0.7719, 0.6627, 0.7669, 0.7216, 0.4826, 0.0000, 0.0000, 0.8062]
-    b_p  = [0.9350, 0.9348, 0.8686, 0.8803, 0.9056, 0.8566, 0.8275, 0.8103, 0.6977, 0.0000, 0.0000, 0.8741]
-    b_r  = [0.9054, 0.8576, 0.7988, 0.7890, 0.6726, 0.5404, 0.7145, 0.6503, 0.3689, 0.0000, 0.0000, 0.7481]
+    b_f1 = [0.9281, 0.9162, 0.8291, 0.8547, 0.8663, 0.8299, 0.7794, 0.7645, 0.6524, 0.0000, 0.0000, 0.8372]
+    b_p  = [0.9347, 0.9297, 0.8637, 0.8725, 0.8789, 0.8609, 0.8095, 0.8163, 0.7238, 0.0000, 0.0000, 0.8620]
+    b_r  = [0.9215, 0.9030, 0.7971, 0.8376, 0.8540, 0.8011, 0.7515, 0.7188, 0.5938, 0.0000, 0.0000, 0.8138]
 
     # LLaMA 4 (1-shot Tagged P2_TAG_VAERS)
-    l_f1 = [0.7669, 0.7316, 0.6000, 0.5102, 0.1947, 0.5862, 0.4061, 0.4741, 0.4492, 0.5017, 0.3291, 0.4938]
-    l_p  = [0.8601, 0.7831, 0.6099, 0.5221, 0.6169, 0.7157, 0.6032, 0.5506, 0.5123, 0.6667, 0.3196, 0.6702]
-    l_r  = [0.6920, 0.6865, 0.5904, 0.4987, 0.1156, 0.4964, 0.3061, 0.4163, 0.4000, 0.4022, 0.3392, 0.3909]
+    l_f1 = [0.8475, 0.7625, 0.6081, 0.5764, 0.6194, 0.6965, 0.5661, 0.5629, 0.5142, 0.6984, 0.5322, 0.6400]
+    l_p  = [0.8448, 0.7631, 0.6278, 0.5793, 0.6384, 0.7007, 0.6265, 0.5787, 0.5350, 0.6667, 0.5338, 0.6691]
+    l_r  = [0.8502, 0.7619, 0.5896, 0.5735, 0.6015, 0.6923, 0.5163, 0.5478, 0.4949, 0.7333, 0.5307, 0.6134]
 
     # Overall Error Distribution (Full VAERS N = 1,000)
     # M, C, S, N
-    bert_counts = {"M": 29984, "C": 3679, "S": 10971, "N": 8875}
-    llm_counts  = {"M": 12026, "C": 7762, "S": 15782, "N": 20902}
+    bert_counts = {"M": 15068, "C": 4506, "S": 2081, "N": 1711}
+    llm_counts  = {"M": 12015, "C": 19476, "S": 4079, "N": 3972}
 
     # Top Label Misclassifications (Full VAERS N = 1,000, 11 Categories)
     bert_top = [
-        ("TX → SYM", 266),
-        ("SYM → pDx", 278),
-        ("SYM → STATUS", 341),
-        ("SYM → Lab", 647),
-        ("pDx → SYM", 788),
-        ("Lab → SYM", 921),
-        ("SYM → sDx", 921),
-        ("sDx → SYM", 2174)
+        ("TX → VAX", 67),
+        ("SYM → STATUS", 82),
+        ("SYM → Lab", 151),
+        ("pDx → SYM", 224),
+        ("Lab → SYM", 255),
+        ("SYM → sDx", 350),
+        ("sDx → SYM", 782)
     ]
 
     llm_top = [
-        ("RO → VAX", 343),
-        ("SYM → pDx", 376),
-        ("SYM → STATUS", 545),
-        ("sDx → STATUS", 824),
-        ("SYM → Lab", 906),
-        ("SYM → MHx", 908),
-        ("SYM → sDx", 1320),
-        ("sDx → SYM", 8295)
+        ("SYM → pDx", 312),
+        ("sDx → STATUS", 353),
+        ("RO → VAX", 365),
+        ("SYM → STATUS", 510),
+        ("SYM → Lab", 745),
+        ("SYM → MHx", 758),
+        ("SYM → sDx", 1093),
+        ("sDx → SYM", 4452)
     ]
 
     # -------------------------------------------------------------
@@ -185,7 +183,7 @@ def main():
     ax_b.legend(title="Model", title_fontsize=9.5, loc="upper right", fontsize=9, framealpha=0.95)
 
     # -------------------------------------------------------------
-    # Panel (c): BioBERT Top Label Confusions on VAERS (Aligned to 9,500)
+    # Panel (c): BioBERT Top Label Confusions on VAERS (Aligned to 5,200)
     # -------------------------------------------------------------
     b_pairs = [p[0] for p in bert_top]
     b_vals  = [p[1] for p in bert_top]
@@ -193,18 +191,18 @@ def main():
     y_c = np.arange(len(b_pairs))
     ax_c.barh(y_c, b_vals, height=0.62, color=c_bert, alpha=0.92, edgecolor="#111", linewidth=0.7, zorder=2)
     for i, v in enumerate(b_vals):
-        ax_c.text(v + 100, y_c[i], f"{v:,}", va="center", ha="left", fontsize=9, fontweight="bold", color="#0B3C5D")
+        ax_c.text(v + 50, y_c[i], f"{v:,}", va="center", ha="left", fontsize=9, fontweight="bold", color="#0B3C5D")
 
     ax_c.set_title("(c) BioBERT: Top Label Misclassifications on VAERS", fontsize=12, fontweight="bold", loc="left", pad=10)
     ax_c.set_yticks(y_c)
     ax_c.set_yticklabels(b_pairs, fontsize=9.5, fontweight="bold")
-    ax_c.set_xlim(0, 9500)  # ALIGNED TO IDENTICAL 0-9500 SCALE PER COMMENT 3.14
+    ax_c.set_xlim(0, 5200)  # ALIGNED TO IDENTICAL 0-5200 SCALE PER COMMENT 3.14
     ax_c.set_xlabel("Number of Confusions", fontsize=10.5, fontweight="bold")
     ax_c.set_ylabel("True → Predicted", fontsize=10.5, fontweight="bold")
     ax_c.grid(axis="x", linestyle="--", alpha=0.35, zorder=0)
 
     # -------------------------------------------------------------
-    # Panel (d): LLaMA 4 Top Label Confusions on VAERS (Aligned to 9,500)
+    # Panel (d): LLaMA 4 Top Label Confusions on VAERS (Aligned to 5,200)
     # -------------------------------------------------------------
     l_pairs = [p[0] for p in llm_top]
     l_vals  = [p[1] for p in llm_top]
@@ -212,12 +210,12 @@ def main():
     y_d = np.arange(len(l_pairs))
     ax_d.barh(y_d, l_vals, height=0.62, color=c_llm, alpha=0.92, edgecolor="#111", linewidth=0.7, zorder=2)
     for i, v in enumerate(l_vals):
-        ax_d.text(v + 100, y_d[i], f"{v:,}", va="center", ha="left", fontsize=9, fontweight="bold", color="#922B21")
+        ax_d.text(v + 50, y_d[i], f"{v:,}", va="center", ha="left", fontsize=9, fontweight="bold", color="#922B21")
 
     ax_d.set_title("(d) LLaMA 4: Top Label Misclassifications on VAERS", fontsize=12, fontweight="bold", loc="left", pad=10)
     ax_d.set_yticks(y_d)
     ax_d.set_yticklabels(l_pairs, fontsize=9.5, fontweight="bold")
-    ax_d.set_xlim(0, 9500)  # ALIGNED TO IDENTICAL 0-9500 SCALE PER COMMENT 3.14
+    ax_d.set_xlim(0, 5200)  # ALIGNED TO IDENTICAL 0-5200 SCALE PER COMMENT 3.14
     ax_d.set_xlabel("Number of Confusions", fontsize=10.5, fontweight="bold")
     ax_d.set_ylabel("True → Predicted", fontsize=10.5, fontweight="bold")
     ax_d.grid(axis="x", linestyle="--", alpha=0.35, zorder=0)
