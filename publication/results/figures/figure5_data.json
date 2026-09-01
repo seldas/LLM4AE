@@ -1,25 +1,15 @@
 {
   "inputs": {
     "llama4_raw": "publication\\results\\llama4_runs_FAERS\\llama4_raw.xlsx",
-    "bert_raw_folds": [
-      "publication\\results\\bert_runs_FAERS\\fold_00_raw.xlsx",
-      "publication\\results\\bert_runs_FAERS\\fold_01_raw.xlsx",
-      "publication\\results\\bert_runs_FAERS\\fold_02_raw.xlsx",
-      "publication\\results\\bert_runs_FAERS\\fold_03_raw.xlsx",
-      "publication\\results\\bert_runs_FAERS\\fold_04_raw.xlsx",
-      "publication\\results\\bert_runs_FAERS\\fold_05_raw.xlsx",
-      "publication\\results\\bert_runs_FAERS\\fold_06_raw.xlsx",
-      "publication\\results\\bert_runs_FAERS\\fold_07_raw.xlsx",
-      "publication\\results\\bert_runs_FAERS\\fold_08_raw.xlsx",
-      "publication\\results\\bert_runs_FAERS\\fold_09_raw.xlsx"
-    ]
+    "bert_raw": "publication\\results\\bert_runs_FAERS_LOO\\raw.xlsx",
+    "bert_seed": 42
   },
   "raw_match_type_counts": {
     "BERT": {
-      "M": 41994,
-      "C": 6791,
-      "S": 20379,
-      "N": 13340
+      "M": 17864,
+      "C": 7146,
+      "S": 9861,
+      "N": 5436
     },
     "LLaMA_4": {
       "M": 13768,
@@ -30,10 +20,10 @@
   },
   "corrected_match_type_counts": {
     "BERT": {
-      "M": 41994,
-      "C": 11325,
-      "S": 15845,
-      "N": 8806
+      "M": 17864,
+      "C": 7146,
+      "S": 9861,
+      "N": 5436
     },
     "LLaMA_4": {
       "M": 13768,
@@ -44,42 +34,42 @@
   },
   "correction_rule": "Each one-to-one overlapping raw N/S pair with different labels is reclassified as C.",
   "reclassified_N_S_pairs": {
-    "BERT": 4534,
+    "BERT": 0,
     "LLaMA_4": 3322
   },
   "top_label_confusions": {
     "BERT": [
       [
-        "MHx → Baseline symptom",
-        368
-      ],
-      [
         "Baseline symptom → AE",
-        337
+        392
       ],
       [
-        "AE → Lab",
-        286
+        "sDrug → cDrug",
+        347
       ],
       [
-        "cDrug → sDrug",
-        269
-      ],
-      [
-        "AE → Baseline symptom",
-        264
-      ],
-      [
-        "Baseline symptom → MHx",
-        229
-      ],
-      [
-        "Lab → AE",
-        213
+        "sDrug → Treatment",
+        211
       ],
       [
         "MHx → AE",
-        165
+        157
+      ],
+      [
+        "AE → Lab",
+        134
+      ],
+      [
+        "Lab → AE",
+        124
+      ],
+      [
+        "AE → Baseline symptom",
+        121
+      ],
+      [
+        "MHx → Baseline symptom",
+        117
       ]
     ],
     "LLaMA_4": [

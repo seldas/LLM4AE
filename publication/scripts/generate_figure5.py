@@ -1,14 +1,13 @@
 #!/usr/bin/env python3
 """Generate the reproducible FAERS error-analysis Figure 5.
 
-All data come from the current raw evaluator outputs, not a legacy aggregate:
-``results/llama4_runs_FAERS/llama4_raw.xlsx`` and
-``results/bert_runs_FAERS/fold_*_raw.xlsx``. The legacy evaluator reserves
-partial matches (C) for overlapping spans with the same label; wrong-label
-predictions therefore remain S rows while their gold spans remain N rows. This
-script corrects that bookkeeping: every one-to-one overlapping S/N wrong-label
-pair is reclassified as one C outcome. Panels (a)--(e) are generated from these
-corrected, source-derived data.
+All data come from current raw evaluator outputs, not a legacy aggregate:
+``results/llama4_runs_FAERS/llama4_raw.xlsx`` and the requested seed from
+``results/bert_runs_FAERS_LOO/raw.xlsx``. The LOO evaluator already records
+class confusions as C. The legacy LLaMA evaluator instead leaves wrong-label
+overlaps as one S row plus one N row, so this script deterministically collapses
+each one-to-one overlapping S/N wrong-label pair into C. Panels (a)--(e) are
+generated from these source-derived data.
 """
 
 from __future__ import annotations
@@ -16,6 +15,7 @@ from __future__ import annotations
 import json
 import os
 import tempfile
+import argparse
 from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Iterable, Sequence
@@ -86,19 +86,22 @@ def read_raw_workbook(path: Path, group_columns: Sequence[str]) -> pd.DataFrame:
     return frame
 
 
-def load_inputs(repo_root: Path) -> tuple[pd.DataFrame, pd.DataFrame, list[Path]]:
+def load_inputs(
+    repo_root: Path,
+    bert_seed: int,
+) -> tuple[pd.DataFrame, pd.DataFrame, Path]:
     results_dir = repo_root / "publication" / "results"
     llama_path = results_dir / "llama4_runs_FAERS" / "llama4_raw.xlsx"
-    bert_dir = results_dir / "bert_runs_FAERS"
-    bert_paths = sorted(p for p in bert_dir.glob("fold_*_raw.xlsx") if not p.name.startswith("~$"))
-    if not bert_paths:
-        raise FileNotFoundError(f"No BERT raw fold workbooks found in {bert_dir}")
+    bert_path = results_dir / "bert_runs_FAERS_LOO" / "raw.xlsx"
     llama = read_raw_workbook(llama_path, ("document",))
-    bert = pd.concat(
-        [read_raw_workbook(path, ("fold", "sent_id")) for path in bert_paths],
-        ignore_index=True,
-    )
-    return llama, bert, bert_paths
+    bert_all = read_raw_workbook(bert_path, ("fold_name", "seed", "doc_idx"))
+    if "seed" not in bert_all.columns:
+        raise ValueError(f"{bert_path} does not include the required seed column")
+    bert = bert_all.loc[bert_all["seed"] == bert_seed].copy()
+    if bert.empty:
+        available = sorted(int(seed) for seed in bert_all["seed"].dropna().unique())
+        raise ValueError(f"BERT seed {bert_seed} is absent from {bert_path}; available seeds: {available}")
+    return llama, bert, bert_path
 
 
 def match_type_counts(frame: pd.DataFrame) -> dict[str, int]:
@@ -200,6 +203,32 @@ def correct_label_mismatches(
     )
 
 
+def recorded_class_confusions(
+    frame: pd.DataFrame,
+    group_columns: Sequence[str],
+) -> pd.DataFrame:
+    """Return class confusions directly recorded as C by the current evaluator."""
+    columns = ["source_group", "label_gold", "label_pred", "gold_text", "pred_text", "iou"]
+    if "error_subtype" not in frame.columns:
+        return pd.DataFrame(columns=columns)
+    rows = frame.loc[
+        (frame["match_type"] == "C") & (frame["error_subtype"] == "class_confusion")
+    ]
+    if rows.empty:
+        return pd.DataFrame(columns=columns)
+    records = []
+    for row in rows.itertuples(index=False):
+        records.append({
+            "source_group": "|".join(str(getattr(row, column)) for column in group_columns),
+            "label_gold": canonical_label(row.label_gold),
+            "label_pred": canonical_label(row.label_pred),
+            "gold_text": str(row.gold_text),
+            "pred_text": str(row.pred_text),
+            "iou": span_iou(int(row.gold_start), int(row.gold_end), int(row.pred_start), int(row.pred_end)),
+        })
+    return pd.DataFrame(records, columns=columns)
+
+
 def top_confusions(confusions: pd.DataFrame, top_k: int = 8) -> list[tuple[str, int]]:
     if confusions.empty:
         return []
@@ -258,7 +287,8 @@ def plot_word_cloud(axis, frequencies: Counter[str], colormap: str, title: str) 
 def save_audit_data(
     output_path: Path,
     llama_path: Path,
-    bert_paths: Iterable[Path],
+    bert_path: Path,
+    bert_seed: int,
     bert_raw_counts: dict[str, int],
     llama_raw_counts: dict[str, int],
     bert_corrected_counts: dict[str, int],
@@ -272,7 +302,8 @@ def save_audit_data(
     payload = {
         "inputs": {
             "llama4_raw": str(llama_path.relative_to(repo_root)),
-            "bert_raw_folds": [str(path.relative_to(repo_root)) for path in bert_paths],
+            "bert_raw": str(bert_path.relative_to(repo_root)),
+            "bert_seed": bert_seed,
         },
         "raw_match_type_counts": {"BERT": bert_raw_counts, "LLaMA_4": llama_raw_counts},
         "corrected_match_type_counts": {
@@ -293,18 +324,29 @@ def save_audit_data(
     output_path.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
 
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--bert-seed", type=int, default=42,
+        help="LOO BERT random seed to include in Figure 5 (default: 42).",
+    )
+    return parser.parse_args()
+
+
 def main() -> None:
+    args = parse_args()
     repo_root = Path(__file__).resolve().parents[2]
     results_dir = repo_root / "publication" / "results"
     figures_dir = results_dir / "figures"
     manuscript_dir = repo_root / "publication" / "manuscripts"
     figures_dir.mkdir(parents=True, exist_ok=True)
 
-    llama, bert, bert_paths = load_inputs(repo_root)
+    llama, bert, bert_path = load_inputs(repo_root, args.bert_seed)
     llama_path = results_dir / "llama4_runs_FAERS" / "llama4_raw.xlsx"
     bert_raw_counts = match_type_counts(bert)
     llama_raw_counts = match_type_counts(llama)
-    bert_counts, bert_confusions = correct_label_mismatches(bert, ("fold", "sent_id"))
+    bert_counts, _ = correct_label_mismatches(bert, ("fold_name", "seed", "doc_idx"))
+    bert_confusions = recorded_class_confusions(bert, ("fold_name", "seed", "doc_idx"))
     llama_counts, llama_confusions = correct_label_mismatches(llama, ("document",))
     bert_top = top_confusions(bert_confusions)
     llama_top = top_confusions(llama_confusions)
@@ -316,9 +358,10 @@ def main() -> None:
 
     print("BERT raw M/C/S/N:", bert_raw_counts)
     print("BERT corrected M/C/S/N:", bert_counts)
+    print("BERT source: LOO seed", args.bert_seed)
     print("LLaMA 4 raw M/C/S/N:", llama_raw_counts)
     print("LLaMA 4 corrected M/C/S/N:", llama_counts)
-    print("BERT S/N-to-C corrections:", len(bert_confusions))
+    print("BERT recorded class confusions:", len(bert_confusions))
     print("LLaMA 4 S/N-to-C corrections:", len(llama_confusions))
     print("LLaMA 4 panel (d) terms:", sum(drug_terms.values()))
     print("LLaMA 4 panel (e) terms:", sum(history_terms.values()))
@@ -333,20 +376,19 @@ def main() -> None:
     grid = figure.add_gridspec(3, 2, height_ratios=[1.0, 1.1, 1.0], hspace=0.34, wspace=0.24)
     axis_a = figure.add_subplot(grid[0, :])
     error_labels = ["M: exact match", "C: coverage error", "S: spurious prediction", "N: miss"]
-    bert_total, llama_total = sum(bert_counts.values()), sum(llama_counts.values())
-    bert_percentages = [bert_counts[code] / bert_total * 100 for code in MATCH_TYPES]
-    llama_percentages = [llama_counts[code] / llama_total * 100 for code in MATCH_TYPES]
+    bert_values = [bert_counts[code] for code in MATCH_TYPES]
+    llama_values = [llama_counts[code] for code in MATCH_TYPES]
     x, width = np.arange(len(MATCH_TYPES)), 0.35
-    axis_a.bar(x - width / 2, bert_percentages, width, label="BERT", color=bert_color, alpha=0.92, edgecolor="#111", linewidth=0.7, zorder=2)
-    axis_a.bar(x + width / 2, llama_percentages, width, label="LLM (LLaMA 4)", color=llama_color, alpha=0.92, edgecolor="#111", linewidth=0.7, zorder=2)
+    axis_a.bar(x - width / 2, bert_values, width, label="BERT", color=bert_color, alpha=0.92, edgecolor="#111", linewidth=0.7, zorder=2)
+    axis_a.bar(x + width / 2, llama_values, width, label="LLM (LLaMA 4)", color=llama_color, alpha=0.92, edgecolor="#111", linewidth=0.7, zorder=2)
     for index, code in enumerate(MATCH_TYPES):
-        axis_a.text(x[index] - width / 2, bert_percentages[index] + 1.0, f"{bert_counts[code]:,}\n({bert_percentages[index]:.1f}%)", ha="center", va="bottom", fontsize=9.2, fontweight="bold", color="#0B3C5D")
-        axis_a.text(x[index] + width / 2, llama_percentages[index] + 1.0, f"{llama_counts[code]:,}\n({llama_percentages[index]:.1f}%)", ha="center", va="bottom", fontsize=9.2, fontweight="bold", color="#922B21")
+        axis_a.text(x[index] - width / 2, bert_values[index] + 300, f"{bert_counts[code]:,}", ha="center", va="bottom", fontsize=9.2, fontweight="bold", color="#0B3C5D")
+        axis_a.text(x[index] + width / 2, llama_values[index] + 300, f"{llama_counts[code]:,}", ha="center", va="bottom", fontsize=9.2, fontweight="bold", color="#922B21")
     axis_a.set_title("(a) M/C/S/N Error Distribution for BERT vs. LLM (LLaMA 4)", fontsize=13, fontweight="bold", loc="left", pad=12)
     axis_a.set_xticks(x)
     axis_a.set_xticklabels(error_labels, fontsize=11, fontweight="bold")
-    axis_a.set_ylim(0, max(max(bert_percentages), max(llama_percentages)) * 1.25)
-    axis_a.set_ylabel("Proportion of corrected alignment outcomes (%)", fontsize=11, fontweight="bold")
+    axis_a.set_ylim(0, max(max(bert_values), max(llama_values)) * 1.16)
+    axis_a.set_ylabel("Number of alignment outcomes", fontsize=11, fontweight="bold")
     axis_a.set_xlabel("Error type", fontsize=11, fontweight="bold", labelpad=6)
     axis_a.grid(axis="y", linestyle="--", alpha=0.35, zorder=0)
     axis_a.legend(title="Model", title_fontsize=10, loc="upper right", fontsize=10, framealpha=0.95)
@@ -364,7 +406,7 @@ def main() -> None:
 
     audit_path = figures_dir / "figure5_data.json"
     save_audit_data(
-        audit_path, llama_path, bert_paths,
+        audit_path, llama_path, bert_path, args.bert_seed,
         bert_raw_counts, llama_raw_counts, bert_counts, llama_counts,
         bert_top, llama_top, drug_terms, history_terms,
     )
