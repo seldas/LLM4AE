@@ -233,7 +233,16 @@ def main():
             if "Caption:" in txt or txt.startswith("Figure 4.") or txt.startswith("Fig. 4"):
                 p.text = "Figure 4. Comparative Concept Extraction Performance Across All 17 Clinical Concept Categories on the FAERS Benchmark Corpus (N = 829 Reports) for Fine-Tuned BioBERT (Blue Diamond / Bar), Claude 4.6 Sonnet (Red Circle / Bar), and LLaMA 4 (Pink Square / Bar)."
 
-        # Section 3.4 (Figure 5 text & caption)
+        # Section 3.4 (Error Analysis text & caption)
+        elif txt.startswith("Next, we conducted a detailed error analysis"):
+            p.text = (
+                "Next, we conducted a detailed error analysis on the complete FAERS benchmark corpus (N = 829 reports) "
+                "to characterize how the supervised BERT model and the few-shot LLM differ in their failure modes. "
+                "Using character-level span alignment between model predictions and curated reference annotations across all 17 clinical concept categories, "
+                "each predicted entity was categorized as an exact match (M), coverage error (C, overlapping a reference span but with mismatched start/end boundaries "
+                "or a conflated category label), or spurious prediction / hallucination (S, non-overlapping span with no corresponding reference entity). "
+                "Unpredicted reference entities were counted as misses (N)."
+            )
         elif txt.startswith("Figure 5a shows that BERT produces"):
             p.text = (
                 "Figure 5a shows that BERT produces substantially more exact matches and fewer boundary, conflation, and hallucination errors "
@@ -241,7 +250,39 @@ def main():
                 "compared with 31.6% (17,396) for the LLM. The LLM, in contrast, exhibits more than double the proportion of coverage errors "
                 "(29.7% vs 14.0%; 16,358 vs 6,485 spans), where a predicted span overlaps the reference span but has inaccurate boundaries or conflated labels. "
                 "The LLM also produces significantly more spurious spans (25.7% vs 15.5%; 14,185 vs 7,195), reflecting hallucinated entities or over-segmentation. "
-                "Missed spans (N) show comparable proportions between systems (13.0% vs 12.5%; 7,156 vs 5,793), consistent with the recall patterns observed across categories."
+                "Missed spans (N) show comparable proportions between both paradigms (13.0% vs 12.5%; 7,156 vs 5,793 spans), which is consistent with the recall "
+                "patterns observed in Figure 4, while the much larger excess of coverage and spurious errors for the LLM reflects its tendency to over-segment or "
+                "hallucinate entities rather than leaving spans unannotated."
+            )
+        elif txt.startswith("The top confusion pairs for both systems"):
+            p.text = (
+                "The top confusion pairs for both systems (Figure 5b and 5c) demonstrate that errors cluster within clinically related concept types "
+                "rather than dispersing randomly. For BERT, misclassifications primarily involve context-dependent clinical boundaries, notably medical history "
+                "conflated with therapeutic indications (MHx → Indication: 345), adverse events confused with laboratory findings (AE → Lab: 191), and bidirectional "
+                "medical history versus AE boundary ambiguities (MHx → AE: 172; AE → MHx: 168), typically occurring when chronic comorbidities and acute symptoms "
+                "are documented within the same sentence. For the LLM, the single largest error mode is the misclassification of concomitant medications as primary "
+                "suspect drugs (cDrug → sDrug: 2,737), followed by treatment interventions labeled as suspect drugs (Treatment → sDrug: 847). Additional prominent "
+                "LLM confusions include medical history categorized as current diagnoses (MHx → Dx: 364) or adverse events (MHx → AE: 342), laboratory values labeled "
+                "as dosages (Lab → Dose: 328), and laboratory findings classified as adverse events (Lab → AE: 230). While BERT errors are concentrated in a tight set "
+                "of adjacent clinical categories, the LLM exhibits widespread role conflation across pharmacological and historical categories."
+            )
+        elif txt.startswith("We observed a low performance in annotating DX"):
+            p.text = (
+                "We applied word-cloud visualizations on the primary LLM misclassification categories to clarify these failure modes at the entity level. "
+                "For concomitant and treatment spans misclassified as suspect drug (sDrug) by the LLM (Figure 5d), the most prominent tokens were common co-administered "
+                "medications and supportive therapies, including methylprednisolone, methotrexate, prednisone, esomeprazole, folic acid, and dexamethasone. "
+                "When multiple therapeutic agents appeared in complex clinical narratives, the few-shot LLM frequently assigned the primary sDrug label indiscriminately "
+                "across all mentioned medications rather than recognizing their secondary concomitant or supportive roles. In contrast, clinical spans exhibiting "
+                "medical history and diagnosis/AE confusions (Figure 5e) were dominated by prevalent chronic conditions and comorbidities, such as hypertension, "
+                "myelodysplastic syndrome, pneumonia, rheumatoid arthritis, osteoporosis, and recurrent infections. This reflects a systematic tendency of the LLM "
+                "to conflate chronological baseline disease history with active acute adverse event episodes."
+            )
+        elif txt.startswith("Overall, the LLM") and "few-shot annotations" in txt:
+            p.text = (
+                "Overall, the few-shot LLM annotations are prone to spurious span hallucinations, boundary drift, and broad drug role conflation "
+                "(cDrug/Treatment → sDrug), which substantially depresses precision and necessitates extensive post-processing for downstream pharmacovigilance pipelines. "
+                "Supervised BERT models, while strictly preserving schema conformity and entity boundaries, require targeted contextual features to resolve fine-grained "
+                "distinctions between baseline medical history, therapeutic indications, and acute adverse event manifestations."
             )
         elif "Fig. 5" in txt or "Figure 5" in txt:
             if "Caption:" in txt or txt.startswith("Figure 5.") or txt.startswith("Fig. 5"):
