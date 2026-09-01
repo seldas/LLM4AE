@@ -313,9 +313,9 @@ def generate_vaers_workbook(out_path: Path):
         ("Document Title:", "VAERS Vaccine Adverse Event Annotation Guidance & Category Schema"),
         ("Associated Manuscript:", "Benchmarking Large Language Models and Fine-Tuned Encoders for Clinical Concept Extraction from Pharmacovigilance and Vaccine Adverse Event Narratives"),
         ("Target Corpus:", "Vaccine Adverse Event Reporting System (VAERS) Benchmark (N = 1,000 Narratives)"),
-        ("Total Categories:", "13 Primary Clinical and Contextual Concept Categories (Exact Verbatim Prompt Schema)"),
-        ("In-Text XML Tags:", "<SYM>, <SDX>, <PDX>, <DX>, <VAX>, <MHX>, <FHX>, <LAB>, <DOSE>, <STATUS>, <TX>, <AGE>, <SEX>"),
-        ("Structured JSON Keys:", "sym, sdx, pdx, dx, vax, mhx, fhx, lab, dose, status, tx, age, sex"),
+        ("Total Categories:", "11 Primary Clinical Feature Categories (Exact Verbatim Prompt Schema)"),
+        ("In-Text XML Tags:", "<PDX>, <SDX>, <RO>, <SYM>, <COD>, <LAB>, <STATUS>, <FHX>, <MHX>, <TX>, <VAX>"),
+        ("Structured JSON Keys:", "pdx, sdx, ro, sym, cod, lab, status, fhx, mhx, tx, vax"),
         ("Evaluation Protocol:", "10-Fold Cross-Validation on BioBERT vs. Zero-Shot/1-Shot Instruction-Tuned LLMs (LLaMA 4)"),
         ("Version & Date:", "Revision 1 (August 2026)")
     ]
@@ -326,18 +326,17 @@ def generate_vaers_workbook(out_path: Path):
     vaers_table, vaers_rules = parse_guide_markdown(annotation_prompts.ANNOTATION_GUIDE_VAERS)
     
     tag_map_vaers = {
-        "SYM": "<SYM>", "sDx": "<SDX>", "pDx": "<PDX>", "DX": "<DX>",
-        "VAX": "<VAX>", "MHx": "<MHX>", "FHx": "<FHX>", "Lab": "<LAB>",
-        "DOSE": "<DOSE>", "STATUS": "<STATUS>", "TX": "<TX>",
-        "AGE": "<AGE>", "SEX": "<SEX>"
+        "pDx": "<PDX>", "sDx": "<SDX>", "RO": "<RO>", "SYM": "<SYM>",
+        "CoD": "<COD>", "Lab": "<LAB>", "STATUS": "<STATUS>",
+        "FHx": "<FHX>", "MHx": "<MHX>", "TX": "<TX>", "VAX": "<VAX>"
     }
 
-    ws_schema = wb.create_sheet(title="VAERS_13_Category_Schema")
+    ws_schema = wb.create_sheet(title="VAERS_11_Category_Schema")
     ws_schema.views.sheetView[0].showGridLines = True
     
     # Title
     ws_schema.merge_cells("B2:G2")
-    ws_schema["B2"] = "VAERS 13 Clinical Concept Category Annotation Schema (Verbatim LLM Prompt)"
+    ws_schema["B2"] = "VAERS 11 Clinical Feature Category Annotation Schema (Verbatim LLM Prompt)"
     ws_schema["B2"].font = Font(name="Calibri", size=14, bold=True, color="FFFFFF")
     ws_schema["B2"].fill = get_header_fill()
     ws_schema["B2"].alignment = Alignment(horizontal="left", vertical="center", indent=1)
