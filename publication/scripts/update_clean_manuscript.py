@@ -294,19 +294,27 @@ def main():
                     "(e) Typical clinical terms exhibiting medical history (MHx) versus diagnosis (Dx) or adverse event (AE) confusions by LLM."
                 )
 
-        # Section 3.5 (VAERS Benchmark text)
-        elif txt.startswith("To evaluate cross-domain generalization beyond drug-related ICSRs"):
+        # Section 3.5 (VAERS Benchmark text & caption)
+        elif txt.startswith("Category-level analysis (Figure 6a) confirmed strong supervised encoder advantages"):
             p.text = (
-                "To evaluate cross-domain generalization beyond drug-related ICSRs, we benchmarked the systems "
-                "on the public VAERS vaccine adverse event corpus (N = 1,000 narratives). As reported in Table 4 and Figure 6, "
-                "BioBERT fine-tuned via 10-fold cross-validation achieved a strict exact-match F1 of 0.6594 ± 0.0196 "
-                "(0.7848 ± 0.0127 Adapted F1). In contrast, the zero-shot/1-shot LLaMA 4 baseline achieved a strict F1 of 0.2364 "
-                "and adapted F1 of 0.4766. Category-level analysis (Figure 6a) confirmed strong supervised encoder advantages across "
-                "treatments (TX: 0.74 vs 0.54), vaccines (VAX: 0.72 vs 0.63), diagnoses (DX: 0.52 vs 0.35), "
-                "patient status (STATUS: 0.59 vs 0.04), symptoms (SYM: 0.43 vs 0.16), and laboratory findings (LAB: 0.44 vs 0.10). "
-                "Error anatomy (Figure 6b–d) revealed that LLM errors on VAERS were driven by high spurious entity predictions "
-                "(29.1% vs 5.2% for BERT) and prominent SYM ↔ DX and RO misclassifications."
+                "Category-level analysis (Figure 6a) confirmed strong supervised encoder advantages across "
+                "treatments (TX: 0.79 vs 0.54), vaccines (VAX: 0.77 vs 0.65), patient status (STATUS: 0.67 vs 0.04), "
+                "laboratory findings (LAB: 0.51 vs 0.11), medical history (HX: 0.50 vs 0.22), diagnoses (DX: 0.49 vs 0.29), "
+                "symptoms (SYM: 0.46 vs 0.15), and rule-out expressions (RO: 0.23 vs 0.10), yielding an overall exact-match F1 of 0.56 vs 0.30. "
+                "Error anatomy (Figure 6b–d) on the complete VAERS corpus (N = 1,000 reports) revealed that BERT achieved more than double the proportion "
+                "of exact matches (42.2% vs 19.6%; 20,892 vs 10,938 spans), while LLM errors were driven by high spurious hallucinations "
+                "(27.2% vs 17.9%; 15,174 vs 8,842 spans) and extensive misses (41.4% vs 30.8%; 23,123 vs 15,230 spans). "
+                "Confusion breakdowns demonstrated that both paradigms exhibited prominent SYM ↔ DX boundary and conceptual conflations "
+                "(SYM → DX: 3,988 for BERT; DX → SYM: 4,213 and SYM → DX: 4,211 for LLM)."
             )
+        elif "Fig. 6" in txt or "Figure 6" in txt:
+            if "Caption:" in txt or txt.startswith("Figure 6.") or txt.startswith("Fig. 6"):
+                p.text = (
+                    "Figure 6. Cross-Domain Annotation Benchmark and Error Anatomy on the Full VAERS Vaccine Safety Corpus (N = 1,000 Reports). "
+                    "(a) Per-category performance across all 8 VAERS entity classes and overall micro-average for BERT (Blue) vs. LLM (Pink-Coral), "
+                    "showing F1 bars and precision/recall trajectories. (b) M/C/S/N error distribution for BERT vs. LLM across the complete corpus. "
+                    "(c) BERT top label misclassifications (X-axis: 0–4,600). (d) LLM top label misclassifications (X-axis: 0–4,600, aligned with panel c)."
+                )
         elif txt.startswith("Table 4.") and "VAERS" in txt:
             p.text = "Table 4. Master Performance Benchmark on the VAERS Dataset (N = 1,000 Reports)."
 
