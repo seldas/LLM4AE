@@ -29,6 +29,8 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
+archived/
+
 #train data folder
 development/BERT/Error_analysis/model
 development/BERT/new_results/model
@@ -46,11 +48,9 @@ development/NER/data
 .venv/
 __pycache__/
 .ipynb_checkpoints/
-publication/results/**/workdir/
-
 .env
 
+publication/results/**/workdir/
 publication/Datasets/FAERS_D1_clean/*.json
 publication/Datasets/VAERS/*.json
-
 publication/results/**/model/
