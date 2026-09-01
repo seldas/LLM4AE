@@ -23,8 +23,8 @@ Key Methodological Capabilities:
      - Scheme 3 (Primary): Strict exact-match micro-P/R/F1.
      - Scheme 2 (Secondary Clinical): ADE-Eval back-office weighted micro-P/R/F1.
      - Scheme 1 (Supplementary): Relaxed entity detection micro-P/R/F1.
-     - Terminology: Uses 'non-overlapping spurious false positive (S_non_overlap)' and
-       'class confusion (S_wrong_class)'; completely eliminates 'hallucination'.
+     - Error accounting: uses M/C/S/N, where overlapping class confusions are C
+       (with ``error_subtype=class_confusion``) and S is non-overlapping only.
   5. Multi-GPU True Concurrent Parallel Architecture:
      - Spawns independent concurrent worker processes across all specified GPUs (--gpu-ids 0 1 2 3 4 5 6).
      - Dynamic task queue automatically load-balances folds and seeds across GPUs.
@@ -45,6 +45,10 @@ Usage Examples:
 
   # Single GPU / Quick Debug Run:
   python publication/scripts/run_FAERS_bert_LOO.py --mode loo --max-steps 100 --seeds 42 --gpu-ids 0
+
+  # Re-evaluate already-trained cloud runs; this never calls spaCy training:
+  python publication/scripts/run_FAERS_bert_LOO.py --export-existing \
+      --existing-work-dir /path/to/bert_runs_FAERS_LOO/workdir
 """
 
 from __future__ import annotations
@@ -671,9 +675,8 @@ def align_and_classify_spans(
     """
     Align gold and predicted spans into a compliant error taxonomy:
       - 'M': Exact span & exact class match
-      - 'C': Inexact boundary match with exact class
-      - 'S_wrong_class': Overlapping match with mismatched class
-      - 'S_non_overlap': Spurious prediction with no gold overlap (Non-overlapping FP)
+      - 'C': Inexact boundary match or overlapping class confusion
+      - 'S': Spurious prediction with no gold overlap (Non-overlapping FP)
       - 'N': Missed gold entity (False Negative)
     """
     rows = []
@@ -710,6 +713,7 @@ def align_and_classify_spans(
             pred_used[exact_j] = True
             rows.append({
                 "match_type": "M",
+                "error_subtype": "exact",
                 "label_gold": glab,
                 "gold_start": g0, "gold_end": g1, "gold_text": text[g0:g1],
                 "label_pred": plab,
@@ -721,6 +725,7 @@ def align_and_classify_spans(
             pred_used[same_label_partial_j] = True
             rows.append({
                 "match_type": "C",
+                "error_subtype": "boundary",
                 "label_gold": glab,
                 "gold_start": g0, "gold_end": g1, "gold_text": text[g0:g1],
                 "label_pred": plab,
@@ -731,7 +736,10 @@ def align_and_classify_spans(
             p0, p1, plab, pconf = pred_sorted[diff_label_partial_j]
             pred_used[diff_label_partial_j] = True
             rows.append({
-                "match_type": "S_wrong_class",
+                # A label confusion is an overlapping partial match, i.e. C,
+                # not an S.  Preserve the reason in a separate audit column.
+                "match_type": "C",
+                "error_subtype": "class_confusion",
                 "label_gold": glab,
                 "gold_start": g0, "gold_end": g1, "gold_text": text[g0:g1],
                 "label_pred": plab,
@@ -741,6 +749,7 @@ def align_and_classify_spans(
         else:
             rows.append({
                 "match_type": "N",
+                "error_subtype": "missed",
                 "label_gold": glab,
                 "gold_start": g0, "gold_end": g1, "gold_text": text[g0:g1],
                 "label_pred": None,
@@ -752,7 +761,8 @@ def align_and_classify_spans(
         if pred_used[j]:
             continue
         rows.append({
-            "match_type": "S_non_overlap",
+            "match_type": "S",
+            "error_subtype": "non_overlap_spurious",
             "label_gold": None,
             "gold_start": None, "gold_end": None, "gold_text": None,
             "label_pred": plab,
@@ -769,8 +779,8 @@ def calculate_three_schemes(df: pd.DataFrame) -> Dict[str, Dict[str, float]]:
       - Scheme 3 (Primary Standard NER): Strict exact-match micro-P/R/F1.
       - Scheme 2 (Secondary Clinical Utility): ADE-Eval back-office weighted micro-P/R/F1,
         where Category C unifies boundary inexactness (C_boundary) and category
-        misclassification (C_class / S_wrong_class) with 0.5 partial credit,
-        and Category S is strictly reserved for non-overlapping spurious predictions (S_non_overlap).
+        misclassification (C_class) with 0.5 partial credit, and Category S is
+        strictly reserved for non-overlapping spurious predictions.
       (Note: Former Scheme 1 has been discontinued).
     """
     if df.empty:
@@ -779,10 +789,18 @@ def calculate_three_schemes(df: pd.DataFrame) -> Dict[str, Dict[str, float]]:
 
     counts = df["match_type"].value_counts().to_dict()
     M = int(counts.get("M", 0))
-    C_boundary = int(counts.get("C", 0))
-    C_class = int(counts.get("S_wrong_class", 0))
-    C_total = C_boundary + C_class
-    S_non_overlap = int(counts.get("S_non_overlap", 0))
+    # ``S_wrong_class`` and ``S_non_overlap`` are accepted for backwards
+    # compatibility with pre-correction task CSVs. Newly exported raw results
+    # always use only M/C/S/N in ``match_type``.
+    class_confusion_mask = (
+        (df["match_type"] == "C") & (df["error_subtype"] == "class_confusion")
+        if "error_subtype" in df.columns
+        else pd.Series(False, index=df.index)
+    )
+    C_class = int(class_confusion_mask.sum()) + int(counts.get("S_wrong_class", 0))
+    C_total = int(counts.get("C", 0)) + int(counts.get("S_wrong_class", 0))
+    C_boundary = C_total - C_class
+    S_non_overlap = int(counts.get("S", 0)) + int(counts.get("S_non_overlap", 0))
     N = int(counts.get("N", 0))
 
     # 1. Scheme 3: Strict Exact-Match Standard NER (Primary Benchmark)
@@ -924,6 +942,181 @@ def evaluate_model_on_test(
     del nlp
     gc.collect()
     return pd.DataFrame(all_rows)
+
+
+def summarize_evaluation(
+    raw_df: pd.DataFrame,
+    *,
+    fold_idx: int,
+    fold_name: str,
+    seed: int,
+) -> Tuple[dict, pd.DataFrame]:
+    """Calculate overall and per-category metrics for one saved model evaluation."""
+    schemes = calculate_three_schemes(raw_df)
+    strict = schemes["strict_scheme3"]
+    ade = schemes["ade_weighted_scheme2"]
+
+    overall_row = {
+        "fold": fold_idx,
+        "fold_name": fold_name,
+        "seed": seed,
+        "test_case_series": fold_name,
+        "M": strict["M"],
+        "C_boundary": strict["C_boundary"],
+        "C_class": strict["C_class"],
+        "C_total": strict["C_total"],
+        "S_non_overlap": strict["S_non_overlap"],
+        "N": strict["N"],
+        "strict_P": strict["precision"],
+        "strict_R": strict["recall"],
+        "strict_F1": strict["f1"],
+        "ade_P": ade["precision"],
+        "ade_R": ade["recall"],
+        "ade_F1": ade["f1"],
+    }
+
+    cat_rows = []
+    for cat in sorted(set(EVAL_LABEL_POOL.values())):
+        cat_df = raw_df[
+            (raw_df["label_gold"].map(EVAL_LABEL_POOL) == cat) |
+            (raw_df["label_pred"].map(EVAL_LABEL_POOL) == cat)
+        ]
+        cat_schemes = calculate_three_schemes(cat_df)
+        cat_strict = cat_schemes["strict_scheme3"]
+        cat_ade = cat_schemes["ade_weighted_scheme2"]
+        cat_rows.append({
+            "fold": fold_idx,
+            "fold_name": fold_name,
+            "seed": seed,
+            "category": cat,
+            "M": cat_strict["M"],
+            "C_boundary": cat_strict["C_boundary"],
+            "C_class": cat_strict["C_class"],
+            "C_total": cat_strict["C_total"],
+            "S_non_overlap": cat_strict["S_non_overlap"],
+            "N": cat_strict["N"],
+            "strict_P": cat_strict["precision"],
+            "strict_R": cat_strict["recall"],
+            "strict_F1": cat_strict["f1"],
+            "ade_P": cat_ade["precision"],
+            "ade_R": cat_ade["recall"],
+            "ade_F1": cat_ade["f1"],
+        })
+
+    return overall_row, pd.DataFrame(cat_rows)
+
+
+def _saved_run_metadata(run_dir: Path) -> Tuple[str, int]:
+    """Read the fold name and seed from the directory created by ``run_single_run``."""
+    match = re.fullmatch(r"(.+)_seed_(\d+)", run_dir.name)
+    if match is None:
+        raise ValueError(
+            f"Cannot infer fold name and seed from '{run_dir.name}'. Expected <fold_name>_seed_<seed>."
+        )
+    return match.group(1), int(match.group(2))
+
+
+def export_existing_runs(
+    *,
+    existing_work_dir: Path,
+    results_dir: Path,
+    gpu_id: int,
+    eval_batch_size: int,
+    ref_scorer: Path,
+) -> None:
+    """Create raw.xlsx and metrics.xlsx by evaluating saved model-best/test.spacy pairs.
+
+    This deliberately does not load the source dataset, regenerate splits, or invoke
+    ``spacy train``.  It is intended for completed cloud runs whose work directory
+    contains ``<fold_name>_seed_<seed>/model/model-best`` and ``test.spacy``.
+    """
+    if not existing_work_dir.is_dir():
+        raise FileNotFoundError(f"Existing work directory not found: {existing_work_dir}")
+
+    run_dirs = sorted(
+        run_dir for run_dir in existing_work_dir.iterdir()
+        if run_dir.is_dir()
+        and (run_dir / "model" / "model-best").is_dir()
+        and (run_dir / "test.spacy").is_file()
+    )
+    if not run_dirs:
+        raise FileNotFoundError(
+            "No saved runs found. Expected directories containing both "
+            "model/model-best and test.spacy under "
+            f"{existing_work_dir}"
+        )
+
+    _ensure_custom_scorer_loaded(ref_scorer)
+    raw_frames: List[pd.DataFrame] = []
+    overall_rows: List[dict] = []
+    category_frames: List[pd.DataFrame] = []
+
+    for fold_idx, run_dir in enumerate(run_dirs):
+        fold_name, seed = _saved_run_metadata(run_dir)
+        console_print(f"[EXPORT] {run_dir.name}: evaluating saved model (no training)")
+        raw_df = evaluate_model_on_test(
+            run_dir / "model" / "model-best",
+            run_dir / "test.spacy",
+            [],
+            gpu_id,
+            eval_batch_size,
+        )
+        raw_df["fold"] = fold_idx
+        raw_df["fold_name"] = fold_name
+        raw_df["seed"] = seed
+        overall_row, category_df = summarize_evaluation(
+            raw_df, fold_idx=fold_idx, fold_name=fold_name, seed=seed
+        )
+        raw_frames.append(raw_df)
+        overall_rows.append(overall_row)
+        category_frames.append(category_df)
+
+    raw_combined_df = pd.concat(raw_frames, ignore_index=True)
+    overall_df = pd.DataFrame(overall_rows).sort_values(["fold_name", "seed"]).reset_index(drop=True)
+    category_df = pd.concat(category_frames, ignore_index=True)
+
+    fold_summary = overall_df.groupby(["fold_name", "test_case_series"], as_index=False).agg(
+        runs=("seed", "nunique"),
+        M=("M", "sum"),
+        C_boundary=("C_boundary", "sum"),
+        C_class=("C_class", "sum"),
+        C_total=("C_total", "sum"),
+        S_non_overlap=("S_non_overlap", "sum"),
+        N=("N", "sum"),
+        strict_F1_mean=("strict_F1", "mean"),
+        strict_F1_std=("strict_F1", "std"),
+        ade_F1_mean=("ade_F1", "mean"),
+        ade_F1_std=("ade_F1", "std"),
+    ).round(4)
+    fold_summary[["strict_F1_std", "ade_F1_std"]] = fold_summary[["strict_F1_std", "ade_F1_std"]].fillna(0.0)
+
+    category_summary = category_df.groupby("category", as_index=False).agg(
+        runs=("seed", "count"),
+        M=("M", "sum"),
+        C_boundary=("C_boundary", "sum"),
+        C_class=("C_class", "sum"),
+        C_total=("C_total", "sum"),
+        S_non_overlap=("S_non_overlap", "sum"),
+        N=("N", "sum"),
+        strict_F1_mean=("strict_F1", "mean"),
+        strict_F1_std=("strict_F1", "std"),
+        ade_F1_mean=("ade_F1", "mean"),
+        ade_F1_std=("ade_F1", "std"),
+    ).round(4)
+    category_summary[["strict_F1_std", "ade_F1_std"]] = category_summary[["strict_F1_std", "ade_F1_std"]].fillna(0.0)
+
+    results_dir.mkdir(parents=True, exist_ok=True)
+    raw_xlsx = results_dir / "raw.xlsx"
+    metrics_xlsx = results_dir / "metrics.xlsx"
+    with pd.ExcelWriter(raw_xlsx, engine="openpyxl") as writer:
+        raw_combined_df.to_excel(writer, sheet_name="Raw_Results", index=False)
+    with pd.ExcelWriter(metrics_xlsx, engine="openpyxl") as writer:
+        overall_df.to_excel(writer, sheet_name="All_Runs", index=False)
+        fold_summary.to_excel(writer, sheet_name="Fold_Summary", index=False)
+        category_df.to_excel(writer, sheet_name="Per_Category", index=False)
+        category_summary.to_excel(writer, sheet_name="Category_Summary", index=False)
+
+    console_print(f"[EXPORT] Saved {raw_xlsx} and {metrics_xlsx} from {len(run_dirs)} existing runs.")
 
 
 def run_single_run(
@@ -1232,6 +1425,20 @@ def parse_args():
         "--aggregate-only", action="store_true",
         help="Only aggregate existing finished task outputs in results-dir without running training."
     )
+    parser.add_argument(
+        "--export-existing", action="store_true",
+        help=(
+            "Re-evaluate saved model/model-best and test.spacy pairs and write raw.xlsx "
+            "and metrics.xlsx. This mode never trains or rebuilds data splits."
+        ),
+    )
+    parser.add_argument(
+        "--existing-work-dir", type=Path, default=None,
+        help=(
+            "Directory containing <fold_name>_seed_<seed> run directories for --export-existing. "
+            "Defaults to results-dir/workdir."
+        ),
+    )
     parser.add_argument("--db-path", type=Path, default=DEFAULT_DB_PATH)
     parser.add_argument("--data-dir", type=Path, default=DEFAULT_DATA_DIR)
     parser.add_argument("--results-dir", type=Path, default=DEFAULT_RESULTS_DIR)
@@ -1249,6 +1456,20 @@ def main():
     console_print("=" * 80)
     console_print(" High-Throughput Parallel BioBERT Evaluation Suite")
     console_print("=" * 80)
+
+    if args.export_existing:
+        existing_work_dir = args.existing_work_dir or work_dir
+        console_print(
+            "[MODE: Export Existing] Re-evaluating saved model/test.spacy pairs; training is disabled."
+        )
+        export_existing_runs(
+            existing_work_dir=existing_work_dir,
+            results_dir=args.results_dir,
+            gpu_id=args.gpu_ids[0],
+            eval_batch_size=args.eval_batch_size,
+            ref_scorer=args.ref_scorer,
+        )
+        return
 
     # 1. Load data
     if args.db_path.exists():
