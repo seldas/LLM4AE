@@ -270,7 +270,7 @@ def plot_confusion_bars(axis, pairs: list[tuple[str, int]], color: str, title: s
     axis.grid(axis="x", linestyle="--", alpha=0.35, zorder=0)
 
 
-def plot_word_cloud(axis, frequencies: Counter[str], colormap: str, title: str) -> None:
+def plot_word_cloud(axis, frequencies: Counter[str], colormap: str, title: str, max_words: int = 25) -> None:
     axis.set_title(title, fontsize=12, fontweight="bold", pad=8)
     if not frequencies:
         axis.text(0.5, 0.5, "No matching terms found", ha="center", va="center", fontsize=11)
@@ -278,7 +278,7 @@ def plot_word_cloud(axis, frequencies: Counter[str], colormap: str, title: str) 
         return
     cloud = WordCloud(
         width=800, height=450, background_color="white", colormap=colormap,
-        random_state=42, max_words=60, prefer_horizontal=0.9, collocations=False,
+        random_state=42, max_words=max_words, prefer_horizontal=0.9, collocations=False,
     ).generate_from_frequencies(frequencies)
     axis.imshow(cloud, interpolation="bilinear")
     axis.axis("off")
@@ -291,8 +291,8 @@ def save_audit_data(
     bert_seed: int,
     bert_raw_counts: dict[str, int],
     llama_raw_counts: dict[str, int],
-    bert_corrected_counts: dict[str, int],
-    llama_corrected_counts: dict[str, int],
+    bert_counts: dict[str, int],
+    llama_counts: dict[str, int],
     bert_top: list[tuple[str, int]],
     llama_top: list[tuple[str, int]],
     drug_terms: Counter[str],
@@ -307,18 +307,18 @@ def save_audit_data(
         },
         "raw_match_type_counts": {"BERT": bert_raw_counts, "LLaMA_4": llama_raw_counts},
         "corrected_match_type_counts": {
-            "BERT": bert_corrected_counts,
-            "LLaMA_4": llama_corrected_counts,
+            "BERT": bert_counts,
+            "LLaMA_4": llama_counts,
         },
-        "correction_rule": "Each one-to-one overlapping raw N/S pair with different labels is reclassified as C.",
+        "correction_rule": "Each one-to-one overlapping raw N/S pair with different labels is reclassified as C (Conflation).",
         "reclassified_N_S_pairs": {
-            "BERT": bert_raw_counts["S"] - bert_corrected_counts["S"],
-            "LLaMA_4": llama_raw_counts["S"] - llama_corrected_counts["S"],
+            "BERT": bert_raw_counts["S"] - bert_counts["S"],
+            "LLaMA_4": llama_raw_counts["S"] - llama_counts["S"],
         },
-        "top_label_confusions": {"BERT": bert_top, "LLaMA_4": llama_top},
+        "top_conflation_types": {"BERT": bert_top, "LLaMA_4": llama_top},
         "word_cloud_term_frequencies": {
-            "cDrug_or_Treatment_to_sDrug": dict(drug_terms.most_common()),
-            "MHx_Dx_AE_confusions": dict(history_terms.most_common()),
+            "cDrug_or_Treatment_to_sDrug": dict(drug_terms.most_common(25)),
+            "MHx_Dx_AE_confusions": dict(history_terms.most_common(25)),
         },
     }
     output_path.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
@@ -375,7 +375,7 @@ def main() -> None:
     figure = plt.figure(figsize=(15, 14), dpi=300)
     grid = figure.add_gridspec(3, 2, height_ratios=[1.0, 1.1, 1.0], hspace=0.34, wspace=0.24)
     axis_a = figure.add_subplot(grid[0, :])
-    error_labels = ["M: exact match", "C: coverage error", "S: spurious prediction", "N: miss"]
+    error_labels = ["M: Exact Match", "C: Conflation", "S: Spurious Prediction", "N: Miss"]
     bert_values = [bert_counts[code] for code in MATCH_TYPES]
     llama_values = [llama_counts[code] for code in MATCH_TYPES]
     x, width = np.arange(len(MATCH_TYPES)), 0.35
@@ -393,16 +393,31 @@ def main() -> None:
     axis_a.grid(axis="y", linestyle="--", alpha=0.35, zorder=0)
     axis_a.legend(title="Model", title_fontsize=10, loc="upper right", fontsize=10, framealpha=0.95)
 
-    plot_confusion_bars(figure.add_subplot(grid[1, 0]), bert_top, bert_color, "(b) BERT: Top Label Misclassifications")
-    plot_confusion_bars(figure.add_subplot(grid[1, 1]), llama_top, llama_color, "(c) LLM: Top Label Misclassifications")
-    plot_word_cloud(figure.add_subplot(grid[2, 0]), drug_terms, "Blues", "(d) cDrug / Treatment Terms Misclassified as sDrug by LLM")
-    plot_word_cloud(figure.add_subplot(grid[2, 1]), history_terms, "Reds", "(e) MHx ↔ Dx / AE Confusion Terms by LLM")
+    plot_confusion_bars(figure.add_subplot(grid[1, 0]), bert_top, bert_color, "(b) Top Conflation Types (Misclassification Labels) - BERT")
+    plot_confusion_bars(figure.add_subplot(grid[1, 1]), llama_top, llama_color, "(c) Top Conflation Types (Misclassification Labels) - LLM")
+    plot_word_cloud(figure.add_subplot(grid[2, 0]), drug_terms, "Blues", "(d) cDrug / Treatment Terms Misclassified as sDrug by LLM", max_words=25)
+    plot_word_cloud(figure.add_subplot(grid[2, 1]), history_terms, "Reds", "(e) MHx ↔ Dx / AE Confusion Terms by LLM", max_words=25)
     figure.subplots_adjust(left=0.08, right=0.98, bottom=0.05, top=0.96)
 
-    output_paths = [figures_dir / "figure5.png", manuscript_dir / "Figures" / "figure5.png"]
-    for path in output_paths:
-        figure.savefig(path, dpi=300, bbox_inches="tight")
+    output_paths = [
+        figures_dir / "figure5.png",
+        manuscript_dir / "Figures" / "figure5.png",
+        manuscript_dir / "figure5.png",
+    ]
+    primary_out = output_paths[0]
+    primary_out.parent.mkdir(parents=True, exist_ok=True)
+    figure.savefig(primary_out, dpi=300, bbox_inches="tight")
+    print(f"Saved figure: {primary_out}")
     plt.close(figure)
+
+    import shutil
+    for out_path in output_paths[1:]:
+        try:
+            out_path.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(str(primary_out), str(out_path))
+            print(f"Saved figure: {out_path}")
+        except Exception as e:
+            print(f"Warning: Could not copy figure to {out_path}: {e}")
 
     audit_path = figures_dir / "figure5_data.json"
     save_audit_data(

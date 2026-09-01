@@ -293,6 +293,12 @@ def write_outputs(
     llama_per_label: pd.DataFrame,
     llama_per_document: pd.DataFrame,
     llama_collapsed: pd.DataFrame,
+    sonnet_dir: Path | None = None,
+    sonnet_raw: pd.DataFrame | None = None,
+    sonnet_overall: dict | None = None,
+    sonnet_per_label: pd.DataFrame | None = None,
+    sonnet_per_document: pd.DataFrame | None = None,
+    sonnet_collapsed: pd.DataFrame | None = None,
 ) -> None:
     with pd.ExcelWriter(bert_dir / "raw.xlsx", engine="openpyxl") as writer:
         bert_raw.to_excel(writer, sheet_name="Raw_Results", index=False)
@@ -308,7 +314,18 @@ def write_outputs(
         llama_per_label.to_excel(writer, sheet_name="Per_Label", index=False)
         llama_collapsed.to_excel(writer, sheet_name="Collapsed_Category", index=False)
         llama_per_document.to_excel(writer, sheet_name="Per_Document", index=False)
-    print("Wrote normalized BERT and LLaMA result workbooks.")
+    if sonnet_dir and sonnet_raw is not None and sonnet_overall is not None:
+        with pd.ExcelWriter(sonnet_dir / "sonnet_raw.xlsx", engine="openpyxl") as writer:
+            sonnet_raw.to_excel(writer, sheet_name="Raw_Results", index=False)
+        with pd.ExcelWriter(sonnet_dir / "sonnet_metrics.xlsx", engine="openpyxl") as writer:
+            pd.DataFrame([sonnet_overall]).to_excel(writer, sheet_name="Overall", index=False)
+            if sonnet_per_label is not None:
+                sonnet_per_label.to_excel(writer, sheet_name="Per_Label", index=False)
+            if sonnet_collapsed is not None:
+                sonnet_collapsed.to_excel(writer, sheet_name="Collapsed_Category", index=False)
+            if sonnet_per_document is not None:
+                sonnet_per_document.to_excel(writer, sheet_name="Per_Document", index=False)
+    print("Wrote normalized BERT, LLaMA, and Sonnet result workbooks.")
 
 
 def main() -> None:
@@ -318,18 +335,25 @@ def main() -> None:
     args = parser.parse_args()
     bert_dir = RESULTS_DIR / "bert_runs_FAERS_LOO"
     llama_dir = RESULTS_DIR / "llama4_runs_FAERS"
+    sonnet_dir = RESULTS_DIR / "sonnet_runs_FAERS"
     bert_raw, bert_overall, bert_folds, bert_categories, bert_category_summary = reconcile_bert(bert_dir / "raw.xlsx")
     llama_raw, llama_overall, llama_labels, llama_docs, llama_collapsed = reconcile_llama(
         args.db_path, llama_dir / "predictions.jsonl"
     )
+    sonnet_raw, sonnet_overall, sonnet_labels, sonnet_docs, sonnet_collapsed = reconcile_llama(
+        args.db_path, sonnet_dir / "predictions.jsonl"
+    )
     print("BERT run rows:", len(bert_raw), "| seed 42:", bert_raw[bert_raw["seed"] == 42]["match_type"].value_counts().to_dict())
     print("LLaMA rows:", len(llama_raw), "| counts:", llama_raw["match_type"].value_counts().to_dict())
+    print("Sonnet rows:", len(sonnet_raw), "| counts:", sonnet_raw["match_type"].value_counts().to_dict())
     if args.write:
         write_outputs(bert_dir, bert_raw, bert_overall, bert_folds, bert_categories, bert_category_summary,
-                      llama_dir, llama_raw, llama_overall, llama_labels, llama_docs, llama_collapsed)
+                      llama_dir, llama_raw, llama_overall, llama_labels, llama_docs, llama_collapsed,
+                      sonnet_dir, sonnet_raw, sonnet_overall, sonnet_labels, sonnet_docs, sonnet_collapsed)
     else:
         print("Dry run only. Re-run with --write to overwrite result workbooks.")
 
 
 if __name__ == "__main__":
     main()
+
