@@ -1,6 +1,6 @@
 # Table 6: BioBERT Optimization Stability and Performance Invariance Across Five Independent Random Initialization Seeds
 
-Evaluation of neural network optimization stability across 5 independent training runs (seeds 42, 123, 456, 789, 1011) for supervised BioBERT on the FAERS 4-fold LOO benchmark (20 total model runs, 17 categories) and VAERS 10-fold CV benchmark (50 total model runs, 14 categories).
+Evaluation of neural network optimization stability across 5 independent training runs (seeds 42, 123, 456, 789, 1011) for supervised BioBERT on the FAERS 4-fold LOO benchmark (20 total model runs, 17 categories) and VAERS 10-fold CV benchmark (50 total model runs).
 
 | Dataset & Evaluation Protocol | Random Seed | Primary Tier: Strict Exact F1 | Secondary Tier: Adapted ADE F1 |
 | :--- | :--- | :---: | :---: |
@@ -21,5 +21,5 @@ Evaluation of neural network optimization stability across 5 independent trainin
 
 ### Footnotes & Methodological Notes:
 1. **FAERS Protocol:** 4-fold Leave-One-Drug-Event-Pair-Out cross-validation evaluated across all 17 clinical concept categories. For each seed, Mean $\pm$ SD represents out-of-fold cross-series variation.
-2. **VAERS Protocol:** 10-fold cross-validation evaluated across all 14 clinical concept categories. For each seed, Mean $\pm$ SD represents cross-fold variation across the 10 test partitions.
+2. **VAERS Protocol:** 10-fold cross-validation on the 1,000 VAERS reports. For each seed, Mean $\pm$ SD represents cross-fold variation across the 10 test partitions.
 3. **Pooled Invariance:** The pooled summary represents the Mean $\pm$ SD across the 5 independent random initialization seeds, demonstrating minimal stochastic variation ($SD = 0.0080$ on FAERS, $SD = 0.0015$ on VAERS).

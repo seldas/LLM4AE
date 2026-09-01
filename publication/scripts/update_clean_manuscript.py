@@ -144,11 +144,11 @@ def main():
     ]
     t3_styled = create_styled_table(doc, t3_data, col_widths=[2.8, 1.8, 1.8])
 
-    # --- TABLE 4: MASTER BENCHMARK ON VAERS (Section 3.5, 14 Categories) ---
+    # --- TABLE 4: MASTER BENCHMARK ON VAERS (Section 3.5) ---
     t4_data = [
         ["Model & Configuration", "Primary Tier: Strict Exact F1", "Secondary Tier: Adapted ADE F1"],
         ["BioBERT (10-Fold CV)", "0.6594 ± 0.0196", "0.7848 ± 0.0127"],
-        ["LLaMA 4 (1-shot, Tagged P2_TAG_VAERS)", "0.2364", "0.4766"]
+        ["LLaMA 4 (1-shot, Tagged P2_TAG_VAERS)", "0.2797", "0.5113"]
     ]
     t4_styled = create_styled_table(doc, t4_data, col_widths=[2.8, 1.8, 1.8])
 
@@ -163,7 +163,7 @@ def main():
     ]
     t5_styled = create_styled_table(doc, t5_data, col_widths=[2.4, 1.5, 1.6, 1.6])
 
-    # --- TABLE 6: RANDOM SEED INVARIANCE TABLE (Section 3.6, 17 FAERS / 14 VAERS Categories) ---
+    # --- TABLE 6: RANDOM SEED INVARIANCE TABLE (Section 3.6, 17 FAERS Categories / VAERS 10-Fold CV) ---
     t6_data = [
         ["Dataset & Evaluation Protocol", "Random Seed", "Primary Tier: Strict Exact F1", "Secondary Tier: Adapted ADE F1"],
         ["FAERS (4-Fold LOO, N = 829)", "Seed 42", "0.5582 ± 0.0649", "0.7431 ± 0.0295"],
@@ -295,25 +295,38 @@ def main():
                 )
 
         # Section 3.5 (VAERS Benchmark text & caption)
-        elif txt.startswith("Category-level analysis (Figure 6a) confirmed strong supervised encoder advantages"):
+        elif txt.startswith("To evaluate cross-domain generalization beyond"):
             p.text = (
-                "Category-level analysis (Figure 6a) across all 14 clinical and contextual concept categories confirmed strong supervised encoder advantages "
-                "across vaccines (VAX: 0.86 vs 0.60), treatments (Tx: 0.84 vs 0.40), patient status (STATUS: 0.71 vs 0.30), medical history (MHx: 0.75 vs 0.24), "
-                "confirmed adverse event diagnoses (sDx: 0.69 vs 0.08), provisional diagnoses (pDx: 0.62 vs 0.07), symptoms (SYM: 0.63 vs 0.22), "
-                "laboratory findings (Lab: 0.59 vs 0.16), and family history (FHx: 0.35 vs 0.10). "
-                "Error anatomy (Figure 6b–d) on the complete VAERS corpus (N = 1,000 reports) revealed that BioBERT achieved a high proportion "
-                "of exact matches (57.7% vs 13.7%; 15,068 vs 10,154 spans), while LLM few-shot predictions suffered from high spurious hallucinations "
-                "(45.2% vs 18.6%; 33,421 vs 4,846 spans) and extensive missed entities (30.7% vs 17.1%; 22,711 vs 4,459 spans). "
-                "Confusion breakdowns (Figure 6c & 6d) demonstrated that both models experienced diagnostic granularity conflations "
-                "(sDx → DX: 4,902 for BERT, 3,116 for LLM; and SYM → DX: 2,782 for BERT, 2,999 for LLM)."
+                "To evaluate cross-domain generalization beyond the FAERS dataset, we further analyzed the public VAERS corpus (N = 1,000 narratives). "
+                "As reported in Table 4, BioBERT fine-tuned via 10-fold cross-validation achieved a strict exact-match F1 of 0.6594 ± 0.0196 "
+                "(0.7848 ± 0.0127 Adapted ADE-Eval F1). In contrast, the 1-shot LLaMA 4 baseline evaluated under the official 11-category annotation guidance "
+                "achieved a strict F1 of 0.2797 and an adapted ADE-Eval F1 of 0.5113 (with 0.6714 Precision and 0.4129 Recall)."
+            )
+        elif txt.startswith("Category-level analysis (Figure 6a)"):
+            p.text = (
+                "Category-level analysis (Figure 6a) across all 11 clinical concept categories confirmed strong supervised encoder advantages "
+                "across vaccines (VAX: 0.92 vs 0.77), treatments (TX: 0.89 vs 0.73), patient clinical status (STATUS: 0.83 vs 0.60), "
+                "medical history (MHx: 0.83 vs 0.51), primary diagnoses (pDx: 0.66 vs 0.59), adverse-event symptoms (SYM: 0.77 vs 0.41), "
+                "laboratory findings (Lab: 0.72 vs 0.47), and family history (FHx: 0.48 vs 0.45). Notably, few-shot LLaMA 4 successfully identified "
+                "rare specialized categories unmodeled by the encoder, including cause of death (CoD: 0.50 F1; P = 0.67) and rule-out diagnoses (RO: 0.33 F1), "
+                "while confirmed secondary diagnoses presented the steepest generalization gap (sDx: 0.77 vs 0.19). "
+                "Error anatomy (Figure 6b) on the complete VAERS corpus (N = 1,000 reports) revealed that BioBERT achieved a high proportion "
+                "of exact matches (56.0% vs 21.3%; 29,984 vs 12,026 spans) and low coverage errors (6.9% vs 13.7%; 3,679 vs 7,762 spans). "
+                "Importantly, aligning the prompt to the official 11-category guideline substantially reduced LLaMA 4 hallucinations by 52.8% "
+                "(spurious spans decreased from 33,421 down to 15,782; 27.9% vs 20.5% for BioBERT), while missed entities accounted for 37.0% (20,902 spans) "
+                "versus 16.6% (8,875 spans) for BioBERT. "
+                "Confusion breakdowns (Figure 6c & 6d) demonstrated that the primary error mode for both models was distinguishing secondary diagnoses "
+                "from adverse symptoms (sDx → SYM: 2,174 for BioBERT; 8,295 for LLaMA 4), alongside reciprocal symptom-to-diagnosis shifts "
+                "(SYM → sDx: 921 for BioBERT; 1,320 for LLaMA 4) and symptom conflation with medical history (SYM → MHx: 908 for LLaMA 4) and lab findings "
+                "(SYM → Lab: 647 for BioBERT; 906 for LLaMA 4)."
             )
         elif "Fig. 6" in txt or "Figure 6" in txt:
             if "Caption:" in txt or txt.startswith("Figure 6.") or txt.startswith("Fig. 6"):
                 p.text = (
-                    "Figure 6. Cross-Domain Annotation Benchmark and Error Anatomy on the Full VAERS Vaccine Safety Corpus Across 14 Concept Categories (N = 1,000 Reports). "
-                    "(a) Per-category performance across all 14 clinical and contextual concept categories and overall micro-average for BioBERT (Blue) vs. LLaMA 4 (Pink-Coral), "
+                    "Figure 6. Cross-Domain Annotation Benchmark and Error Anatomy on the Full VAERS Vaccine Safety Corpus Across 11 Concept Categories (N = 1,000 Reports). "
+                    "(a) Per-category performance across all 11 clinical concept categories and overall micro-average for BioBERT (Blue) vs. LLaMA 4 (Pink-Coral), "
                     "showing F1 bars and precision/recall trajectories. (b) M/C/S/N error distribution for BioBERT vs. LLaMA 4 across the complete corpus. "
-                    "(c) BioBERT top label misclassifications (X-axis: 0–5,400). (d) LLaMA 4 top label misclassifications (X-axis: 0–5,400, aligned with panel c)."
+                    "(c) BioBERT top label misclassifications (X-axis: 0–9,500). (d) LLaMA 4 top label misclassifications (X-axis: 0–9,500, aligned with panel c)."
                 )
         elif txt.startswith("Table 4.") and "VAERS" in txt:
             p.text = "Table 4. Master Performance Benchmark on the VAERS Dataset (N = 1,000 Reports)."
@@ -338,7 +351,7 @@ def main():
             p.text = (
                 "To rigorously verify neural network optimization stability, we conducted 5 independent training runs "
                 "using random initialization seeds (42, 123, 456, 789, 1011) across both FAERS 4-fold LOO (20 total model runs, 17 categories) "
-                "and VAERS 10-fold CV (50 total model runs, 14 categories). As summarized in Table 6, cross-seed variance was exceptionally low across both datasets. "
+                "and VAERS 10-fold CV (50 total model runs). As summarized in Table 6, cross-seed variance was exceptionally low across both datasets. "
                 "On FAERS, strict F1 averaged 0.5685 ± 0.0080 (0.7463 ± 0.0076 Adapted F1) across the 5 seeds. "
                 "On VAERS, strict F1 averaged 0.6595 ± 0.0015 (0.7882 ± 0.0022 Adapted F1) across the 5 seeds. "
                 "These findings confirm that supervised BioBERT convergence is remarkably robust to stochastic weight initialization, "
@@ -381,15 +394,13 @@ def main():
         "word/media/image6.png": manuscript_dir / "figure6.png",
     }
 
-    try:
-        doc.save(str(dst_docx_path))
-        print(f"Saved directly to {dst_docx_path}")
-        replace_media_images_in_memory(dst_docx_path, img_map)
-    except PermissionError:
-        alt_path = manuscript_dir / "LLM4AE_rev1_clean_updated2.docx"
-        doc.save(str(alt_path))
-        print(f"PermissionError on {dst_docx_path}. Saved directly to alternative path: {alt_path}")
-        replace_media_images_in_memory(alt_path, img_map)
+    for path in [dst_docx_path, manuscript_dir / "LLM4AE_rev1_clean_updated2.docx"]:
+        try:
+            doc.save(str(path))
+            print(f"Saved directly to {path}")
+            replace_media_images_in_memory(path, img_map)
+        except Exception as e:
+            print(f"Could not save to {path}: {e}")
 
 
 if __name__ == "__main__":

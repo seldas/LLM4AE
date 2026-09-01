@@ -7,7 +7,7 @@ Overall performance of evaluated model families across the Two-Tier Evaluation F
 | | | | **P** | **R** | **F1** | **P** | **R** | **F1** |
 | **Fine-Tuned Encoder** | BioBERT (10-Fold CV, Seed 42 Default)$^\dagger$ | Sentence Token Classification | $0.6956 \pm 0.0199$ | $0.6268 \pm 0.0203$ | **$0.6594 \pm 0.0196$** | $0.8619 \pm 0.0095$ | $0.7205 \pm 0.0153$ | **$0.7848 \pm 0.0127$** |
 |  | BioBERT (10-Fold CV, 5-Seed Pooled)$^\ddagger$ | Sentence Token Classification | $0.6892 \pm 0.0195$ | $0.6324 \pm 0.0183$ | **$0.6595 \pm 0.0177$** | $0.8594 \pm 0.0092$ | $0.7279 \pm 0.0139$ | **$0.7882 \pm 0.0112$** |
-| **Open-Weight LLM** | LLaMA 4 (1-shot, Target Filtered) | Inline Tagged XML (`P2_TAG_VAERS`) | 0.2949 | 0.1973 | **0.2364** | 0.6448 | 0.3780 | **0.4766** |
+| **Open-Weight LLM** | LLaMA 4 (1-shot, Target Filtered) | Inline Tagged XML (`P2_TAG_VAERS`) | 0.3418 | 0.2368 | **0.2797** | 0.6714 | 0.4129 | **0.5113** |
 
 ---
 
