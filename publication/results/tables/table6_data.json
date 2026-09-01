@@ -1,0 +1,88 @@
+{
+  "FAERS_4Fold_LOO": {
+    "Seed_42": {
+      "strict_P": 0.5123,
+      "strict_R": 0.5867,
+      "strict_F1": 0.547,
+      "ade_P": 0.7802,
+      "ade_R": 0.7041,
+      "ade_F1": 0.7402
+    },
+    "Seed_123": {
+      "strict_P": 0.5289,
+      "strict_R": 0.578,
+      "strict_F1": 0.5524,
+      "ade_P": 0.7885,
+      "ade_R": 0.6917,
+      "ade_F1": 0.7369
+    },
+    "Seed_456": {
+      "strict_P": 0.5279,
+      "strict_R": 0.6044,
+      "strict_F1": 0.5636,
+      "ade_P": 0.7889,
+      "ade_R": 0.719,
+      "ade_F1": 0.7523
+    },
+    "Seed_789": {
+      "strict_P": 0.5346,
+      "strict_R": 0.5815,
+      "strict_F1": 0.5571,
+      "ade_P": 0.7919,
+      "ade_R": 0.6919,
+      "ade_F1": 0.7386
+    },
+    "Seed_1011": {
+      "strict_P": 0.5407,
+      "strict_R": 0.585,
+      "strict_F1": 0.562,
+      "ade_P": 0.7947,
+      "ade_R": 0.6961,
+      "ade_F1": 0.7422
+    },
+    "Pooled_Summary": {
+      "strict_F1_mean": 0.5564,
+      "strict_F1_std": 0.0069,
+      "ade_F1_mean": 0.742,
+      "ade_F1_std": 0.0061
+    }
+  },
+  "VAERS_10Fold_CV": {
+    "Seed_42": {
+      "strict_F1_mean": 0.7015,
+      "strict_F1_std": 0.0174,
+      "ade_F1_mean": 0.837,
+      "ade_F1_std": 0.0095
+    },
+    "Seed_123": {
+      "strict_F1_mean": 0.7013,
+      "strict_F1_std": 0.0156,
+      "ade_F1_mean": 0.8405,
+      "ade_F1_std": 0.007
+    },
+    "Seed_456": {
+      "strict_F1_mean": 0.7008,
+      "strict_F1_std": 0.0202,
+      "ade_F1_mean": 0.84,
+      "ade_F1_std": 0.0113
+    },
+    "Seed_789": {
+      "strict_F1_mean": 0.7026,
+      "strict_F1_std": 0.0152,
+      "ade_F1_mean": 0.8419,
+      "ade_F1_std": 0.0082
+    },
+    "Seed_1011": {
+      "strict_F1_mean": 0.6983,
+      "strict_F1_std": 0.0159,
+      "ade_F1_mean": 0.8389,
+      "ade_F1_std": 0.0091
+    },
+    "Pooled_Summary": {
+      "strict_F1_mean": 0.7009,
+      "strict_F1_std": 0.0016,
+      "ade_F1_mean": 0.8397,
+      "ade_F1_std": 0.0018
+    }
+  }
+}
