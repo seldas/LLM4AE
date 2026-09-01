@@ -2,13 +2,12 @@
 """
 update_clean_manuscript.py
 
-Updates LLM4AE_rev1_clean.docx with:
+Synchronizes LLM4AE_rev1_clean_updated.docx with:
 1. High-resolution Figures 2-6 (direct ZIP media replacement).
 2. Clean, synchronized publication tables evaluated across the full 17 categories:
    - Table 1 (Section 2.1): Descriptive statistics of the annotated corpora (FAERS & VAERS)
    - Table 2 (Section 3.1): FAERS annotations, categorized by Human, ETHER and LLM
    - Table 3 (Section 3.3): Master Performance Benchmark on FAERS (17 Categories: BioBERT, ClinicalBERT, LLaMA4 Tagged/JSON, Sonnet, ETHER)
-   - [Figure 4 (Section 3.3): Comparative Concept Extraction Performance across all 17 Categories (BioBERT vs LLMs)]
    - Table 4 (Section 3.5): Master Performance Benchmark on VAERS (14 Categories: BioBERT, LLaMA 4)
    - Table 5 (Section 3.6): Leave-One-Drug-Event-Pair-Out Performance across 4 Case Series on FAERS (17 Categories)
    - Table 6 (Section 3.6): BioBERT Random Seed Invariance Across 5 Seeds on FAERS (4-Fold LOO, 17 Categories) and VAERS (10-Fold CV, 14 Categories)
@@ -121,48 +120,37 @@ def replace_table_in_place(old_table, new_table):
     parent.remove(old_table._tbl)
 
 
-def insert_paragraph_after_element(el, text: str, bold: bool = False, italic: bool = False, size_pt: float = 10.0, space_before: float = 6.0, space_after: float = 3.0):
-    p_elem = parse_xml(f'<w:p {nsdecls("w")}/>')
-    el.getparent().insert(el.getparent().index(el) + 1, p_elem)
-    p = docx.text.paragraph.Paragraph(p_elem, el.getparent())
-    p.paragraph_format.space_before = Pt(space_before)
-    p.paragraph_format.space_after = Pt(space_after)
-    run = p.add_run(text)
-    run.bold = bold
-    run.italic = italic
-    run.font.name = "Arial"
-    run.font.size = Pt(size_pt)
-    return p, p_elem
+def remove_table(table):
+    parent = table._tbl.getparent()
+    parent.remove(table._tbl)
 
 
 def main():
     repo_root = Path(__file__).resolve().parent.parent.parent
     manuscript_dir = repo_root / "publication" / "manuscripts"
-    src_docx_path = manuscript_dir / "LLM4AE_rev1_clean.docx"
-    dst_docx_path = manuscript_dir / "LLM4AE_rev1_clean.docx"
+    src_docx_path = manuscript_dir / "LLM4AE_rev1_clean_updated.docx"
+    dst_docx_path = manuscript_dir / "LLM4AE_rev1_clean_updated.docx"
 
     print(f"Loading base document from {src_docx_path}...")
     doc = docx.Document(str(src_docx_path))
 
     # --- TABLE 3: MASTER BENCHMARK ON FAERS (Section 3.3, 17 Categories) ---
     t3_data = [
-        ["Model Family", "Model & Configuration", "Input Paradigm", "Primary Tier: Strict Exact F1", "Secondary Tier: Adapted ADE F1"],
-        ["Fine-Tuned Encoder", "BioBERT (4-Fold LOO)", "Sentence Token Classification", "0.5685 ± 0.0080", "0.7463 ± 0.0076"],
-        ["Fine-Tuned Encoder", "ClinicalBERT (Fold 0)", "Sentence Token Classification", "0.5090", "0.6100"],
-        ["Open-Weight LLM", "LLaMA 4 (1-shot, Tagged P2_TAG)", "Inline Tagged XML", "0.4043", "0.6249"],
-        ["Open-Weight LLM", "LLaMA 4 (1-shot, JSON Schema)", "JSON Structured Output", "0.4071", "0.5995"],
-        ["Proprietary LLM", "Claude 4.6 Sonnet (1-shot, Tagged)", "Inline Tagged XML", "0.4667", "0.6443"],
-        ["Rule-Based System", "ETHER (Baseline, used=Yes)", "Rule-based Dictionary Match", "0.1147", "0.2447"]
+        ["Model & Configuration", "Primary Tier: Strict Exact F1", "Secondary Tier: Adapted ADE F1"],
+        ["BioBERT (4-Fold LOO)", "0.5685 ± 0.0080", "0.7463 ± 0.0076"],
+        ["LLaMA 4 (1-shot, Tagged P2_TAG)", "0.4043", "0.6249"],
+        ["Claude 4.6 Sonnet (1-shot, Tagged)", "0.4667", "0.6443"],
+        ["ETHER (Baseline, used=Yes)", "0.1147", "0.2447"]
     ]
-    t3_styled = create_styled_table(doc, t3_data, col_widths=[1.3, 2.2, 1.8, 1.3, 1.3])
+    t3_styled = create_styled_table(doc, t3_data, col_widths=[2.8, 1.8, 1.8])
 
     # --- TABLE 4: MASTER BENCHMARK ON VAERS (Section 3.5, 14 Categories) ---
     t4_data = [
-        ["Model Family", "Model & Configuration", "Input Paradigm", "Primary Tier: Strict Exact F1", "Secondary Tier: Adapted ADE F1"],
-        ["Fine-Tuned Encoder", "BioBERT (10-Fold CV)", "Sentence Token Classification", "0.6594 ± 0.0196", "0.7848 ± 0.0127"],
-        ["Open-Weight LLM", "LLaMA 4 (1-shot, Tagged P2_TAG_VAERS)", "Inline Tagged XML", "0.2364", "0.4766"]
+        ["Model & Configuration", "Primary Tier: Strict Exact F1", "Secondary Tier: Adapted ADE F1"],
+        ["BioBERT (10-Fold CV)", "0.6594 ± 0.0196", "0.7848 ± 0.0127"],
+        ["LLaMA 4 (1-shot, Tagged P2_TAG_VAERS)", "0.2364", "0.4766"]
     ]
-    t4_styled = create_styled_table(doc, t4_data, col_widths=[1.3, 2.2, 1.8, 1.3, 1.3])
+    t4_styled = create_styled_table(doc, t4_data, col_widths=[2.8, 1.8, 1.8])
 
     # --- TABLE 5: LEAVE-ONE-DRUG-EVENT-PAIR-OUT (Section 3.6, 17 Categories) ---
     t5_data = [
@@ -204,44 +192,26 @@ def main():
 
     # --- TABLE 8: PRETRAINED ENCODER ABLATION (Section 3.6, 4 BERT Variants x 5 Seeds) ---
     t8_data = [
-        ["Model Architecture", "Pretrained Checkpoint", "Pretraining Domain", "Validation F1 (Mean ± SD)", "Validation Precision", "Validation Recall", "Clinical Score", "Optimal Convergence Step"],
-        ["BioBERT v1.1", "dmis-lab/biobert-base-cased-v1.1", "Biomedical Literature (PubMed & PMC)", "0.8471 ± 0.0058", "0.8666 ± 0.0048", "0.8285 ± 0.0089", "0.8500 ± 0.0071", "1,800 steps"],
-        ["Bio_ClinicalBERT", "emilyalsentzer/Bio_ClinicalBERT", "BioBERT + MIMIC-III EHR Notes", "0.8433 ± 0.0070", "0.8610 ± 0.0078", "0.8264 ± 0.0104", "0.8440 ± 0.0055", "1,080 steps"],
-        ["BERT-Base", "bert-base-cased", "General Domain (Wikipedia & Books)", "0.8382 ± 0.0047", "0.8596 ± 0.0055", "0.8179 ± 0.0061", "0.8420 ± 0.0045", "2,160 steps"],
-        ["ClinicalBERT", "medicalai/ClinicalBERT", "Hospital EHR Records (MIMIC-III)", "0.8369 ± 0.0086", "0.8615 ± 0.0106", "0.8140 ± 0.0167", "0.8400 ± 0.0071", "1,640 steps"]
+        ["Model Architecture", "Validation F1 (Mean ± SD)", "Validation Precision", "Validation Recall", "Clinical Score"],
+        ["BioBERT v1.1", "0.8471 ± 0.0058", "0.8666 ± 0.0048", "0.8285 ± 0.0089", "0.8500 ± 0.0071"],
+        ["Bio_ClinicalBERT", "0.8433 ± 0.0070", "0.8610 ± 0.0078", "0.8264 ± 0.0104", "0.8440 ± 0.0055"],
+        ["BERT-Base", "0.8382 ± 0.0047", "0.8596 ± 0.0055", "0.8179 ± 0.0061", "0.8420 ± 0.0045"],
+        ["ClinicalBERT", "0.8369 ± 0.0086", "0.8615 ± 0.0106", "0.8140 ± 0.0167", "0.8400 ± 0.0071"]
     ]
-    t8_styled = create_styled_table(doc, t8_data, col_widths=[1.3, 1.8, 1.7, 1.1, 1.0, 1.0, 0.9, 0.9])
+    t8_styled = create_styled_table(doc, t8_data, col_widths=[1.8, 1.4, 1.4, 1.4, 1.2])
 
-    # Replace existing Tables 3-7
+    # Update in-place Tables 2 through 7 (which correspond to Tables 3-8 in manuscript numbering)
     replace_table_in_place(doc.tables[2], t3_styled)
     replace_table_in_place(doc.tables[3], t4_styled)
     replace_table_in_place(doc.tables[4], t5_styled)
     replace_table_in_place(doc.tables[5], t6_styled)
     replace_table_in_place(doc.tables[6], t7_styled)
+    replace_table_in_place(doc.tables[7], t8_styled)
 
-    # Insert Table 8 after Table 7
-    # Check if Table 8 was already inserted previously
-    has_table8 = any("Table 8." in p.text for p in doc.paragraphs)
-    if not has_table8:
-        tbl7_elem = doc.tables[6]._tbl
-        p_hdr, el_hdr = insert_paragraph_after_element(tbl7_elem, "Pretrained Transformer Encoder Architecture Ablation", bold=True, size_pt=11.0, space_before=12.0, space_after=4.0)
-        p_body, el_body = insert_paragraph_after_element(
-            el_hdr,
-            "To investigate the impact of underlying pretraining corpora on pharmacovigilance concept extraction, "
-            "we conducted an ablation study comparing four transformer encoder architectures on the VAERS dataset across 5 independent random initialization seeds (Table 8): "
-            "BioBERT (pretrained on PubMed and PMC biomedical literature), Bio_ClinicalBERT (initialized from BioBERT and further trained on MIMIC-III EHR notes), "
-            "general-domain BERT-Base (Wikipedia and BooksCorpus), and ClinicalBERT (MIMIC-III clinical records). "
-            "BioBERT achieved the highest validation F1 (0.8471 ± 0.0058, Precision = 0.8666, Recall = 0.8285), "
-            "demonstrating that broad biomedical scientific literature provides superior token representations for vaccine adverse event terminology. "
-            "Bio_ClinicalBERT showed the fastest optimization convergence (optimal checkpoint at step 1,080, F1 = 0.8433 ± 0.0070), "
-            "while general-domain BERT-Base achieved robust optimization (F1 = 0.8382 ± 0.0047) but required longer training (step 2,160). "
-            "All four encoder variants exhibited narrow cross-seed variance (SD < 0.009), further substantiating the stability of supervised encoder fine-tuning.",
-            size_pt=9.5, space_before=3.0, space_after=4.0
-        )
-        p_cap, el_cap = insert_paragraph_after_element(el_body, "Table 8. Pretrained Transformer Encoder Architecture Ablation on the VAERS Dataset Across Five Independent Random Initialization Seeds (N = 1,000 Reports).", bold=True, size_pt=9.5, space_before=6.0, space_after=3.0)
-        
-        # Insert Table 8 element after the caption
-        el_cap.getparent().insert(el_cap.getparent().index(el_cap) + 1, t8_styled._tbl)
+    # Clean up duplicate table if len(doc.tables) > 8
+    if len(doc.tables) > 8:
+        for extra_idx in range(len(doc.tables) - 1, 7, -1):
+            remove_table(doc.tables[extra_idx])
 
     # Clean Paragraphs & Captions
     for i, p in enumerate(doc.paragraphs):
@@ -255,8 +225,7 @@ def main():
                 "Table 3 summarizes the overall benchmark comparison across model families, input paradigms, and evaluation tiers. "
                 "BioBERT achieved a strict exact-match F1 of 0.5685 ± 0.0080 and an adapted ADE-Eval F1 of 0.7463 ± 0.0076, "
                 "which substantially outperformed few-shot LLaMA 4 (0.4043 Strict, 0.6249 Adapted), "
-                "Claude 4.6 Sonnet (0.4667 Strict, 0.6443 Adapted), and baseline ETHER system (0.1147 Strict, 0.2447 Adapted). "
-                "Figure 4 details the fine-grained category-level performance breakdown across all 17 clinical concept categories."
+                "Claude 4.6 Sonnet (0.4667 Strict, 0.6443 Adapted), and baseline ETHER system (0.1147 Strict, 0.2447 Adapted)."
             )
         
         # Section 3.3 Figure 4 caption
@@ -264,19 +233,88 @@ def main():
             if "Caption:" in txt or txt.startswith("Figure 4.") or txt.startswith("Fig. 4"):
                 p.text = "Figure 4. Comparative Concept Extraction Performance Across All 17 Clinical Concept Categories on the FAERS Benchmark Corpus (N = 829 Reports) for Fine-Tuned BioBERT (Blue Diamond / Bar), Claude 4.6 Sonnet (Red Circle / Bar), and LLaMA 4 (Pink Square / Bar)."
 
-        # Section 3.5 (VAERS Benchmark text)
-        elif txt.startswith("To evaluate cross-domain generalization beyond drug-related ICSRs"):
+        # Section 3.4 (Error Analysis text & caption)
+        elif txt.startswith("Next, we conducted a detailed error analysis"):
             p.text = (
-                "To evaluate cross-domain generalization beyond drug-related ICSRs, we benchmarked the systems "
-                "on the public VAERS vaccine adverse event corpus (N = 1,000 narratives). As reported in Table 4 and Figure 6, "
-                "BioBERT fine-tuned via 10-fold cross-validation achieved a strict exact-match F1 of 0.6594 ± 0.0196 "
-                "(0.7848 ± 0.0127 Adapted F1). In contrast, the zero-shot/1-shot LLaMA 4 baseline achieved a strict F1 of 0.2364 "
-                "and adapted F1 of 0.4766. Category-level analysis (Figure 6a) confirmed strong supervised encoder advantages across "
-                "treatments (TX: 0.74 vs 0.54), vaccines (VAX: 0.72 vs 0.63), diagnoses (DX: 0.52 vs 0.35), "
-                "patient status (STATUS: 0.59 vs 0.04), symptoms (SYM: 0.43 vs 0.16), and laboratory findings (LAB: 0.44 vs 0.10). "
-                "Error anatomy (Figure 6b–d) revealed that LLM errors on VAERS were driven by high spurious entity predictions "
-                "(29.1% vs 5.2% for BERT) and prominent SYM ↔ DX and RO misclassifications."
+                "Next, we conducted a detailed error analysis on the complete FAERS benchmark corpus (N = 829 reports) "
+                "to characterize how the supervised BERT model and the few-shot LLM differ in their failure modes. "
+                "Using character-level span alignment between model predictions and curated reference annotations across all 17 clinical concept categories, "
+                "each predicted entity was categorized as an exact match (M), coverage error (C, overlapping a reference span but with mismatched start/end boundaries "
+                "or a conflated category label), or spurious prediction / hallucination (S, non-overlapping span with no corresponding reference entity). "
+                "Unpredicted reference entities were counted as misses (N)."
             )
+        elif txt.startswith("Figure 5a shows that BERT produces"):
+            p.text = (
+                "Figure 5a shows that BERT produces substantially more exact matches and fewer boundary, conflation, and hallucination errors "
+                "than the LLM across the full FAERS benchmark corpus (N = 829 reports). For BERT, 58.0% of spans are exact matches (26,891), "
+                "compared with 31.6% (17,396) for the LLM. The LLM, in contrast, exhibits more than double the proportion of coverage errors "
+                "(29.7% vs 14.0%; 16,358 vs 6,485 spans), where a predicted span overlaps the reference span but has inaccurate boundaries or conflated labels. "
+                "The LLM also produces significantly more spurious spans (25.7% vs 15.5%; 14,185 vs 7,195), reflecting hallucinated entities or over-segmentation. "
+                "Missed spans (N) show comparable proportions between both paradigms (13.0% vs 12.5%; 7,156 vs 5,793 spans), which is consistent with the recall "
+                "patterns observed in Figure 4, while the much larger excess of coverage and spurious errors for the LLM reflects its tendency to over-segment or "
+                "hallucinate entities rather than leaving spans unannotated."
+            )
+        elif txt.startswith("The top confusion pairs for both systems"):
+            p.text = (
+                "The top confusion pairs for both systems (Figure 5b and 5c) demonstrate that errors cluster within clinically related concept types "
+                "rather than dispersing randomly. For BERT, misclassifications primarily involve context-dependent clinical boundaries, notably medical history "
+                "conflated with therapeutic indications (MHx → Indication: 345), adverse events confused with laboratory findings (AE → Lab: 191), and bidirectional "
+                "medical history versus AE boundary ambiguities (MHx → AE: 172; AE → MHx: 168), typically occurring when chronic comorbidities and acute symptoms "
+                "are documented within the same sentence. For the LLM, the single largest error mode is the misclassification of concomitant medications as primary "
+                "suspect drugs (cDrug → sDrug: 2,737), followed by treatment interventions labeled as suspect drugs (Treatment → sDrug: 847). Additional prominent "
+                "LLM confusions include medical history categorized as current diagnoses (MHx → Dx: 364) or adverse events (MHx → AE: 342), laboratory values labeled "
+                "as dosages (Lab → Dose: 328), and laboratory findings classified as adverse events (Lab → AE: 230). While BERT errors are concentrated in a tight set "
+                "of adjacent clinical categories, the LLM exhibits widespread role conflation across pharmacological and historical categories."
+            )
+        elif txt.startswith("We observed a low performance in annotating DX"):
+            p.text = (
+                "We applied word-cloud visualizations on the primary LLM misclassification categories to clarify these failure modes at the entity level. "
+                "For concomitant and treatment spans misclassified as suspect drug (sDrug) by the LLM (Figure 5d), the most prominent tokens were common co-administered "
+                "medications and supportive therapies, including methylprednisolone, methotrexate, prednisone, esomeprazole, folic acid, and dexamethasone. "
+                "When multiple therapeutic agents appeared in complex clinical narratives, the few-shot LLM frequently assigned the primary sDrug label indiscriminately "
+                "across all mentioned medications rather than recognizing their secondary concomitant or supportive roles. In contrast, clinical spans exhibiting "
+                "medical history and diagnosis/AE confusions (Figure 5e) were dominated by prevalent chronic conditions and comorbidities, such as hypertension, "
+                "myelodysplastic syndrome, pneumonia, rheumatoid arthritis, osteoporosis, and recurrent infections. This reflects a systematic tendency of the LLM "
+                "to conflate chronological baseline disease history with active acute adverse event episodes."
+            )
+        elif txt.startswith("Overall, the LLM") and "few-shot annotations" in txt:
+            p.text = (
+                "Overall, the few-shot LLM annotations are prone to spurious span hallucinations, boundary drift, and broad drug role conflation "
+                "(cDrug/Treatment → sDrug), which substantially depresses precision and necessitates extensive post-processing for downstream pharmacovigilance pipelines. "
+                "Supervised BERT models, while strictly preserving schema conformity and entity boundaries, require targeted contextual features to resolve fine-grained "
+                "distinctions between baseline medical history, therapeutic indications, and acute adverse event manifestations."
+            )
+        elif "Fig. 5" in txt or "Figure 5" in txt:
+            if "Caption:" in txt or txt.startswith("Figure 5.") or txt.startswith("Fig. 5"):
+                p.text = (
+                    "Figure 5. Error Anatomy and Extraction Discrepancy Breakdown for Supervised BERT versus Few-Shot LLM (LLaMA 4) "
+                    "on the Full FAERS Benchmark Corpus (N = 829 Reports). (a) Overall M/C/S/N error distribution (M: exact match; C: coverage error; S: spurious prediction; N: miss). "
+                    "(b) Top label misclassifications for BERT. (c) Top label misclassifications for LLM. "
+                    "(d) Typical concomitant drug and treatment terms misclassified as suspect drug (sDrug) by LLM. "
+                    "(e) Typical clinical terms exhibiting medical history (MHx) versus diagnosis (Dx) or adverse event (AE) confusions by LLM."
+                )
+
+        # Section 3.5 (VAERS Benchmark text & caption)
+        elif txt.startswith("Category-level analysis (Figure 6a) confirmed strong supervised encoder advantages"):
+            p.text = (
+                "Category-level analysis (Figure 6a) across all 14 clinical and contextual concept categories confirmed strong supervised encoder advantages "
+                "across vaccines (VAX: 0.86 vs 0.60), treatments (Tx: 0.84 vs 0.40), patient status (STATUS: 0.71 vs 0.30), medical history (MHx: 0.75 vs 0.24), "
+                "confirmed adverse event diagnoses (sDx: 0.69 vs 0.08), provisional diagnoses (pDx: 0.62 vs 0.07), symptoms (SYM: 0.63 vs 0.22), "
+                "laboratory findings (Lab: 0.59 vs 0.16), and family history (FHx: 0.35 vs 0.10). "
+                "Error anatomy (Figure 6b–d) on the complete VAERS corpus (N = 1,000 reports) revealed that BioBERT achieved a high proportion "
+                "of exact matches (57.7% vs 13.7%; 15,068 vs 10,154 spans), while LLM few-shot predictions suffered from high spurious hallucinations "
+                "(45.2% vs 18.6%; 33,421 vs 4,846 spans) and extensive missed entities (30.7% vs 17.1%; 22,711 vs 4,459 spans). "
+                "Confusion breakdowns (Figure 6c & 6d) demonstrated that both models experienced diagnostic granularity conflations "
+                "(sDx → DX: 4,902 for BERT, 3,116 for LLM; and SYM → DX: 2,782 for BERT, 2,999 for LLM)."
+            )
+        elif "Fig. 6" in txt or "Figure 6" in txt:
+            if "Caption:" in txt or txt.startswith("Figure 6.") or txt.startswith("Fig. 6"):
+                p.text = (
+                    "Figure 6. Cross-Domain Annotation Benchmark and Error Anatomy on the Full VAERS Vaccine Safety Corpus Across 14 Concept Categories (N = 1,000 Reports). "
+                    "(a) Per-category performance across all 14 clinical and contextual concept categories and overall micro-average for BioBERT (Blue) vs. LLaMA 4 (Pink-Coral), "
+                    "showing F1 bars and precision/recall trajectories. (b) M/C/S/N error distribution for BioBERT vs. LLaMA 4 across the complete corpus. "
+                    "(c) BioBERT top label misclassifications (X-axis: 0–5,400). (d) LLaMA 4 top label misclassifications (X-axis: 0–5,400, aligned with panel c)."
+                )
         elif txt.startswith("Table 4.") and "VAERS" in txt:
             p.text = "Table 4. Master Performance Benchmark on the VAERS Dataset (N = 1,000 Reports)."
 
@@ -322,6 +360,18 @@ def main():
         elif txt.startswith("Table 7.") and ("Output Format" in txt or "Impact" in txt):
             p.text = "Table 7. Impact of LLM Output Format Paradigm (Inline Tagged XML vs. Structured JSON Schema Offsets) on Entity Extraction and Offset Alignment."
 
+        # Section 3.6 BERT Encoder Architecture Ablation paragraph & caption
+        elif txt.startswith("To investigate the impact of underlying pretraining corpora"):
+            p.text = (
+                "To investigate the impact of underlying pretraining corpora on pharmacovigilance concept extraction, "
+                "we conducted an ablation study comparing four transformer encoder architectures (BERT-Base, BioBERT, Bio_ClinicalBERT, and ClinicalBERT) "
+                "on the VAERS dataset across 5 independent random initialization seeds (Table 8). BioBERT achieved the highest validation F1 "
+                "(0.8471 ± 0.0058, Precision = 0.8666, Recall = 0.8285), confirming its selection as the primary encoder architecture. "
+                "All four models demonstrated close performance with minimal variance across seeds (SD < 0.009)."
+            )
+        elif txt.startswith("Table 8.") and "Pretrained Transformer Encoder" in txt:
+            p.text = "Table 8. Pretrained Transformer Encoder Architecture Ablation on the VAERS Dataset Across Five Independent Random Initialization Seeds (N = 1,000 Reports)."
+
     # 4. Update Images (Figures 2-6)
     img_map = {
         "word/media/image2.png": manuscript_dir / "figure2.png",
@@ -338,7 +388,7 @@ def main():
     except PermissionError:
         alt_path = manuscript_dir / "LLM4AE_rev1_clean_updated2.docx"
         doc.save(str(alt_path))
-        print(f"Saved to alternative path: {alt_path}")
+        print(f"PermissionError on {dst_docx_path}. Saved directly to alternative path: {alt_path}")
         replace_media_images_in_memory(alt_path, img_map)
 
 
