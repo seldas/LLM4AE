@@ -4,7 +4,8 @@
 Every displayed value is calculated at runtime from the permitted canonical
 sources:
 
-* Validation cohort sizes and SME1 labels: ``publication/dataset.db``
+* Validation cohort sizes and reviewed case-series membership:
+  ``publication/dataset.db``
 * BERT outcomes: ``publication/results/bert_runs_FAERS_LOO/raw.xlsx``
 
 Default output:
@@ -31,91 +32,8 @@ CASE_SERIES = (
     ("Erenumab-Stroke", "Erenumab – Stroke"),
 )
 
-# This is the case-series classification rule used to build the current LOO
-# raw results. It is methodology, not embedded result data: report text and
-# annotation spans are read from dataset.db and classified at runtime.
-CASE_SERIES_KEYWORDS = {
-    "Azacitidine-QT": {
-        "drugs": ("azacitidine", "vidaza", "5-aza", "azacytidine", "aza"),
-        "events": (
-            "qt",
-            "torsade",
-            "ventricular",
-            "cardiac",
-            "arrhythmia",
-            "ecg",
-            "electrocardiogram",
-            "prolongation",
-            "myelodysplastic",
-            "raeb",
-            "leukemia",
-            "aml",
-        ),
-    },
-    "Tramadol-Hypoglycemia": {
-        "drugs": (
-            "tramadol",
-            "ultram",
-            "tramacet",
-            "ixprim",
-            "trarmadol",
-            "tremadol",
-            "tramal",
-            "zydol",
-        ),
-        "events": (
-            "hypoglyc",
-            "glucose",
-            "glycemia",
-            "sweating",
-            "coma",
-            "blood sugar",
-            "insulin",
-        ),
-    },
-    "Baricitinib-Hypersensitivity": {
-        "drugs": ("baricitinib", "olumiant", "barcitinib", "olimiant"),
-        "events": (
-            "hypersensitiv",
-            "allergic",
-            "allergy",
-            "anaphylax",
-            "rash",
-            "urticaria",
-            "hives",
-            "swelling",
-            "angioedema",
-            "face swollen",
-            "lip",
-            "tongue",
-            "erythema",
-            "pruritus",
-            "dermatitis",
-            "rheumatoid",
-            "arthritis",
-        ),
-    },
-    "Erenumab-Stroke": {
-        "drugs": ("erenumab", "aimovig"),
-        "events": (
-            "stroke",
-            "cva",
-            "cerebrovascular",
-            "ischemi",
-            "infarct",
-            "transient ischemic",
-            "tia",
-            "migraine",
-            "headache",
-            "hemiplegia",
-        ),
-    },
-}
-
-DRUG_LABELS = frozenset({"sdrug", "cdrug", "odrug", "drug"})
-AE_LABELS = frozenset({"ae", "mae"})
 MATCH_TYPES = frozenset({"M", "C", "S", "N"})
-EXPECTED_SEED_COUNT = 5
+EXPECTED_SEEDS = (42, 123, 456, 789, 1011)
 
 
 @dataclass(frozen=True)
@@ -130,10 +48,6 @@ class Summary:
     strict_sd: float
     adapted_mean: float
     adapted_sd: float
-
-
-def canonical_label(value: object) -> str:
-    return "" if value is None else str(value).strip().lower()
 
 
 def score_counts(counts: Counter[str]) -> Scores:
@@ -170,9 +84,9 @@ def score_counts(counts: Counter[str]) -> Scores:
 
 
 def summarize(scores: list[Scores]) -> Summary:
-    if len(scores) != EXPECTED_SEED_COUNT:
+    if len(scores) != len(EXPECTED_SEEDS):
         raise ValueError(
-            f"Expected {EXPECTED_SEED_COUNT} seed results; found {len(scores)}"
+            f"Expected {len(EXPECTED_SEEDS)} seed results; found {len(scores)}"
         )
     strict = [score.strict_f1 for score in scores]
     adapted = [score.adapted_f1 for score in scores]
@@ -210,9 +124,9 @@ def load_raw_scores(raw_path: Path) -> tuple[dict[str, Summary], Summary]:
         )
 
     seeds = sorted(int(seed) for seed in frame["seed"].dropna().unique())
-    if len(seeds) != EXPECTED_SEED_COUNT:
+    if seeds != list(EXPECTED_SEEDS):
         raise ValueError(
-            f"Expected {EXPECTED_SEED_COUNT} BERT seeds; found {seeds}"
+            f"Expected BERT seeds {list(EXPECTED_SEEDS)}; found {seeds}"
         )
 
     fold_scores: dict[str, list[Scores]] = defaultdict(list)
@@ -230,36 +144,19 @@ def load_raw_scores(raw_path: Path) -> tuple[dict[str, Summary], Summary]:
     return by_fold, summarize(micro_scores)
 
 
-def classify_case_series(
-    text: str,
-    annotations: list[tuple[int, int, str]],
-) -> str:
-    normalized_text = text.replace("↵", "\n")
-    drug_terms = " ".join(
-        normalized_text[start:end].lower()
-        for start, end, label in annotations
-        if label in DRUG_LABELS
-    )
-    ae_terms = " ".join(
-        normalized_text[start:end].lower()
-        for start, end, label in annotations
-        if label in AE_LABELS
-    )
-    combined = f"{normalized_text.lower()} {drug_terms} {ae_terms}"
-
-    weighted_counts = {}
-    for series_name, keywords in CASE_SERIES_KEYWORDS.items():
-        drug_matches = sum(combined.count(term) for term in keywords["drugs"])
-        event_matches = sum(combined.count(term) for term in keywords["events"])
-        weighted_counts[series_name] = 10 * drug_matches + event_matches
-    return max(weighted_counts, key=weighted_counts.get)
-
-
 def validation_cohort_sizes(database_path: Path) -> dict[str, int]:
     if not database_path.is_file():
         raise FileNotFoundError(f"Database not found: {database_path}")
 
     with sqlite3.connect(database_path) as connection:
+        table_exists = connection.execute(
+            "SELECT 1 FROM sqlite_master "
+            "WHERE type = 'table' AND name = 'faers_case_series'"
+        ).fetchone()
+        if table_exists is None:
+            raise ValueError(
+                f"{database_path} does not contain faers_case_series"
+            )
         rows = connection.execute(
             """
             SELECT case_series, count(*)
@@ -269,6 +166,16 @@ def validation_cohort_sizes(database_path: Path) -> dict[str, int]:
             """
         ).fetchall()
     counts = dict(rows)
+    unexpected = set(counts).difference(
+        internal_name for internal_name, _ in CASE_SERIES
+    )
+    if unexpected:
+        raise ValueError(f"Unexpected included case series: {sorted(unexpected)}")
+    missing = [
+        series for series, _ in CASE_SERIES if counts.get(series, 0) <= 0
+    ]
+    if missing:
+        raise ValueError(f"Missing or empty included case series: {missing}")
     return {series: counts.get(series, 0) for series, _ in CASE_SERIES}
 
 

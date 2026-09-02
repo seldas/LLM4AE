@@ -18,7 +18,6 @@ from __future__ import annotations
 import argparse
 import csv
 import sqlite3
-import statistics
 from collections import Counter, defaultdict
 from dataclasses import dataclass
 from pathlib import Path
@@ -28,6 +27,12 @@ import pandas as pd
 
 MATCH_TYPES = ("M", "C", "S", "N")
 DEFAULT_SEED = 42
+EXPECTED_BERT_FOLDS = {
+    "Azacitidine-QT",
+    "Tramadol-Hypoglycemia",
+    "Baricitinib-Hypersensitivity",
+    "Erenumab-Stroke",
+}
 
 GOLD_CATEGORY_MAP = {
     "ae": "AE",
@@ -157,51 +162,24 @@ def match_type_counts(frame: pd.DataFrame) -> dict[str, int]:
     return {kind: int(counts.get(kind, 0)) for kind in MATCH_TYPES}
 
 
-def bert_summary(
-    path: Path, default_seed: int
-) -> tuple[float, float, float, float, float, float]:
+def bert_scores(path: Path, seed: int) -> Scores:
+    """Pool all four LOO folds for one seed and calculate micro scores."""
     required = {"fold_name", "seed", "match_type"}
     frame = read_raw_workbook(path, required)
 
-    seed_scores: dict[int, list[Scores]] = defaultdict(list)
-    for (_, seed), group in frame.groupby(["fold_name", "seed"], sort=True):
-        counts = match_type_counts(group)
-        seed_scores[int(seed)].append(calculate_scores(**counts))
-
-    if default_seed not in seed_scores:
+    available_seeds = sorted(int(value) for value in frame["seed"].dropna().unique())
+    if seed not in available_seeds:
         raise ValueError(
-            f"Default BERT seed {default_seed} not found; available: {sorted(seed_scores)}"
+            f"BERT seed {seed} not found; available: {available_seeds}"
         )
-    if len(seed_scores) != 5:
+    selected = frame.loc[frame["seed"] == seed]
+    actual_folds = set(selected["fold_name"].dropna().astype(str).unique())
+    if actual_folds != EXPECTED_BERT_FOLDS:
         raise ValueError(
-            f"Expected 5 BERT seeds for Table 3; found {len(seed_scores)}: "
-            f"{sorted(seed_scores)}"
+            f"Unexpected BERT folds for seed {seed}; expected "
+            f"{sorted(EXPECTED_BERT_FOLDS)}, found {sorted(actual_folds)}"
         )
-    fold_counts = {len(scores) for scores in seed_scores.values()}
-    if len(fold_counts) != 1:
-        raise ValueError(f"BERT seeds do not have equal fold counts: {sorted(fold_counts)}")
-
-    strict_by_seed = {
-        seed: statistics.mean(score.strict_f1 for score in scores)
-        for seed, scores in seed_scores.items()
-    }
-    adapted_by_seed = {
-        seed: statistics.mean(score.adapted_f1 for score in scores)
-        for seed, scores in seed_scores.items()
-    }
-
-    strict_values = list(strict_by_seed.values())
-    adapted_values = list(adapted_by_seed.values())
-    strict_sd = statistics.stdev(strict_values) if len(strict_values) > 1 else 0.0
-    adapted_sd = statistics.stdev(adapted_values) if len(adapted_values) > 1 else 0.0
-    return (
-        strict_by_seed[default_seed],
-        adapted_by_seed[default_seed],
-        statistics.mean(strict_values),
-        statistics.mean(adapted_values),
-        strict_sd,
-        adapted_sd,
-    )
+    return calculate_scores(**match_type_counts(selected))
 
 
 def corrected_llm_scores(path: Path) -> tuple[Scores, int]:
@@ -373,30 +351,17 @@ def format_score(value: float) -> str:
 
 
 def table_rows(
-    bert: tuple[float, float, float, float, float, float],
+    bert: Scores,
     llama: Scores,
     sonnet: Scores,
     ether: Scores,
 ) -> list[list[str]]:
-    (
-        bert_seed_strict,
-        bert_seed_adapted,
-        bert_mean_strict,
-        bert_mean_adapted,
-        bert_sd_strict,
-        bert_sd_adapted,
-    ) = bert
     return [
         ["Model", "Strict Exact F1", "Adapted ADE-Eval F1"],
         [
-            f"BERT (1 run; seed {DEFAULT_SEED})",
-            format_score(bert_seed_strict),
-            format_score(bert_seed_adapted),
-        ],
-        [
-            "BERT (Avg. 5 runs)",
-            f"{bert_mean_strict:.4f} ± {bert_sd_strict:.4f}",
-            f"{bert_mean_adapted:.4f} ± {bert_sd_adapted:.4f}",
+            f"BERT (seed {DEFAULT_SEED})",
+            format_score(bert.strict_f1),
+            format_score(bert.adapted_f1),
         ],
         ["LLaMA-4", format_score(llama.strict_f1), format_score(llama.adapted_f1)],
         [
@@ -448,7 +413,7 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
-    bert = bert_summary(args.bert_raw.resolve(), DEFAULT_SEED)
+    bert = bert_scores(args.bert_raw.resolve(), DEFAULT_SEED)
     llama, llama_corrections = corrected_llm_scores(args.llama_raw.resolve())
     sonnet, sonnet_corrections = corrected_llm_scores(args.sonnet_raw.resolve())
     ether = ether_scores(args.database.resolve())

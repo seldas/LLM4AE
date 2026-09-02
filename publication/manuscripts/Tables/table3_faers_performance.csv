@@ -1,6 +1,5 @@
 ﻿Model,Strict Exact F1,Adapted ADE-Eval F1
-BERT (1 run; seed 42),0.5582,0.7431
-BERT (Avg. 5 runs),0.5685 ± 0.0080,0.7463 ± 0.0075
+BERT (seed 42),0.5508,0.7312
 LLaMA-4,0.3944,0.6495
 Claude 4.6 Sonnet,0.4535,0.6597
 ETHER,0.1147,0.2691
