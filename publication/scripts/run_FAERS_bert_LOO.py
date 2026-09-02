@@ -83,6 +83,11 @@ except ImportError:
     DocBin = None
     filter_spans = None
 
+try:
+    import torch
+except ImportError:
+    torch = None
+
 _nlp_sent = None
 
 try:
@@ -504,7 +509,7 @@ vectors = null
 init_tok2vec = null
 
 [system]
-gpu_allocator = "pytorch"
+gpu_allocator = "{gpu_allocator}"
 seed = {seed}
 
 [nlp]
@@ -886,9 +891,12 @@ def evaluate_model_on_test(
     eval_batch_size: int = 64,
 ) -> pd.DataFrame:
     """Evaluate trained spaCy model on held-out test documents."""
-    try:
-        spacy.require_gpu(gpu_id)
-    except Exception:
+    if gpu_id >= 0:
+        try:
+            spacy.require_gpu(gpu_id)
+        except Exception:
+            spacy.require_cpu()
+    else:
         spacy.require_cpu()
 
     nlp = spacy.load(str(model_path))
@@ -1090,6 +1098,7 @@ def export_existing_runs(
     console_print(f"[EXPORT] Saved {raw_xlsx} and {metrics_xlsx} from {len(run_dirs)} existing runs.")
 
 
+
 def run_single_run(
     *,
     fold_idx: int,
@@ -1126,6 +1135,7 @@ def run_single_run(
     dev_db.to_disk(dev_path)
     test_db.to_disk(test_path)
 
+    gpu_allocator = "pytorch" if gpu_id >= 0 else "null"
     cfg_text = CONFIG_TEMPLATE.format(
         train_path=str(train_path),
         dev_path=str(dev_path),
@@ -1134,6 +1144,7 @@ def run_single_run(
         batch_size=batch_size,
         max_batch_items=max_batch_items,
         batch_size_items=max_batch_items // 2,
+        gpu_allocator=gpu_allocator,
     )
     cfg_path = run_dir / "train.cfg"
     cfg_path.write_text(cfg_text, encoding="utf-8")
@@ -1144,8 +1155,9 @@ def run_single_run(
         train_python, "-m", "spacy", "train",
         str(cfg_path),
         "--output", str(model_dir),
-        "--gpu-id", str(gpu_id),
     ]
+    if gpu_id >= 0:
+        cmd.extend(["--gpu-id", str(gpu_id)])
     if ref_scorer.exists():
         cmd.extend(["--code", str(ref_scorer)])
 
@@ -1375,9 +1387,10 @@ def parse_args():
         "--seeds", type=int, nargs="+", default=[42, 123, 456, 789, 1011],
         help="Random initialization seeds per fold."
     )
+    default_gpu_ids = [0] if (torch is not None and torch.cuda.is_available()) else [-1]
     parser.add_argument(
-        "--gpu-ids", type=int, nargs="+", default=[0],
-        help="List of GPU device IDs to run on simultaneously (e.g. --gpu-ids 0 1 2 3 4 5 6)."
+        "--gpu-ids", type=int, nargs="+", default=default_gpu_ids,
+        help="List of GPU device IDs to run on simultaneously (e.g. --gpu-ids 0 1 2 3 4 5 6, or -1 for CPU)."
     )
     parser.add_argument(
         "--workers-per-gpu", type=int, default=1,

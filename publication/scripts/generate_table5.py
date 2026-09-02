@@ -260,39 +260,16 @@ def validation_cohort_sizes(database_path: Path) -> dict[str, int]:
         raise FileNotFoundError(f"Database not found: {database_path}")
 
     with sqlite3.connect(database_path) as connection:
-        documents = connection.execute(
+        rows = connection.execute(
             """
-            SELECT doc_id, page_text
-            FROM documents
-            WHERE dataset = 'FAERS'
-            ORDER BY doc_id
-            """
-        ).fetchall()
-        annotation_rows = connection.execute(
-            """
-            SELECT a.doc_id, lower(trim(a.label)), a.tc_start, a.tc_end
-            FROM annotations AS a
-            JOIN documents AS d ON d.doc_id = a.doc_id
-            WHERE d.dataset = 'FAERS' AND a.note = 'SME1'
-            ORDER BY a.doc_id, a.tc_start
+            SELECT case_series, count(*)
+            FROM faers_case_series
+            WHERE include_in_loo = 1
+            GROUP BY case_series
             """
         ).fetchall()
-    if not documents:
-        raise ValueError("No FAERS documents found in the database")
-
-    annotations_by_document: dict[str, list[tuple[int, int, str]]] = defaultdict(list)
-    for document, label, start, end in annotation_rows:
-        annotations_by_document[str(document)].append(
-            (int(start), int(end), canonical_label(label))
-        )
-
-    counts: Counter[str] = Counter()
-    for document, text in documents:
-        series = classify_case_series(
-            str(text), annotations_by_document.get(str(document), [])
-        )
-        counts[series] += 1
-    return {series: counts[series] for series, _ in CASE_SERIES}
+    counts = dict(rows)
+    return {series: counts.get(series, 0) for series, _ in CASE_SERIES}
 
 
 def format_summary(summary: Summary, metric: str) -> str:
