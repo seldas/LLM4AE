@@ -1,5 +1,3 @@
-# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
-
 # dependencies
 **/node_modules
 /.pnp
@@ -8,11 +6,7 @@
 venv/
 .venv/
 certbot/
-
-# testing
 /coverage
-
-# production
 **/build
 
 # misc
@@ -24,37 +18,29 @@ __pycache__
 .env.test.local
 .env.production.local
 **/server_status.log
-
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
-
-archived/
-
-#train data folder
-development/BERT/Error_analysis/model
-development/BERT/new_results/model
-development/BERT/new_results/data
-development/NER/output/model-best/transformer/model
-development/NER/data
-
-# data folder
-/server/history
-/server/database/
-
 .geminiignore
-
 .claude/
 .venv/
 __pycache__/
 .ipynb_checkpoints/
 .env
+.codex_work/
+~$*
 
-publication/Datasets/FAERS_D1_clean/*.json
-publication/Datasets/VAERS/*.json
+# Specific to this project
+archived/
+# data folder
+/server/history
+/server/database/
+# hide from publication
+publication/Datasets/
 publication/results/**/model/
 publication/results/**/*.spacy
 publication/results/**/workdir/
+publication/*.db
 
-.codex_work/
-~$*
+publication/results/
+publication/missing_entities.csv
