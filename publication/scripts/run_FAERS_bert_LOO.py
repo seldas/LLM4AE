@@ -1030,19 +1030,36 @@ def export_existing_runs(
     overall_rows: List[dict] = []
     category_frames: List[pd.DataFrame] = []
 
-    for fold_idx, run_dir in enumerate(run_dirs):
+    series_to_fold = {
+        "Azacitidine-QT": 0,
+        "Tramadol-Hypoglycemia": 1,
+        "Baricitinib-Hypersensitivity": 2,
+        "Erenumab-Stroke": 3,
+    }
+    for fold_idx_auto, run_dir in enumerate(run_dirs):
         fold_name, seed = _saved_run_metadata(run_dir)
-        console_print(f"[EXPORT] {run_dir.name}: evaluating saved model (no training)")
-        raw_df = evaluate_model_on_test(
-            run_dir / "model" / "model-best",
-            run_dir / "test.spacy",
-            [],
-            gpu_id,
-            eval_batch_size,
-        )
-        raw_df["fold"] = fold_idx
-        raw_df["fold_name"] = fold_name
-        raw_df["seed"] = seed
+        fold_idx = series_to_fold.get(fold_name, fold_idx_auto)
+        eval_csv = run_dir / "raw_eval.csv"
+        if eval_csv.is_file():
+            console_print(f"[EXPORT] {run_dir.name}: loading saved predictions from {eval_csv.name}")
+            raw_df = pd.read_csv(eval_csv)
+        else:
+            console_print(f"[EXPORT] {run_dir.name}: evaluating saved model (no training)")
+            raw_df = evaluate_model_on_test(
+                run_dir / "model" / "model-best",
+                run_dir / "test.spacy",
+                [],
+                gpu_id,
+                eval_batch_size,
+            )
+            raw_df["fold"] = fold_idx
+            raw_df["fold_name"] = fold_name
+            raw_df["seed"] = seed
+            try:
+                raw_df.to_csv(eval_csv, index=False)
+            except Exception:
+                pass
+
         overall_row, category_df = summarize_evaluation(
             raw_df, fold_idx=fold_idx, fold_name=fold_name, seed=seed
         )
@@ -1084,9 +1101,28 @@ def export_existing_runs(
     ).round(4)
     category_summary[["strict_F1_std", "ade_F1_std"]] = category_summary[["strict_F1_std", "ade_F1_std"]].fillna(0.0)
 
+    # Fold summary across seeds
+    fold_summary_across = overall_df.groupby(["fold", "fold_name", "test_case_series"], as_index=False).agg(
+        strict_F1_mean=("strict_F1", "mean"),
+        strict_F1_std=("strict_F1", "std"),
+        ade_F1_mean=("ade_F1", "mean"),
+        ade_F1_std=("ade_F1", "std"),
+    ).round(4)
+
+    cat_summary_across = category_df.groupby("category", as_index=False).agg(
+        strict_F1_mean=("strict_F1", "mean"),
+        strict_F1_std=("strict_F1", "std"),
+        ade_F1_mean=("ade_F1", "mean"),
+        ade_F1_std=("ade_F1", "std"),
+    ).round(4) if not category_df.empty else pd.DataFrame()
+
+    bootstrap_ci = paired_bootstrap_ci(raw_combined_df)
+
     results_dir.mkdir(parents=True, exist_ok=True)
     raw_xlsx = results_dir / "raw.xlsx"
     metrics_xlsx = results_dir / "metrics.xlsx"
+    loo_summary_xlsx = results_dir / "loo_evaluation_summary.xlsx"
+
     with pd.ExcelWriter(raw_xlsx, engine="openpyxl") as writer:
         raw_combined_df.to_excel(writer, sheet_name="Raw_Results", index=False)
     with pd.ExcelWriter(metrics_xlsx, engine="openpyxl") as writer:
@@ -1094,8 +1130,28 @@ def export_existing_runs(
         fold_summary.to_excel(writer, sheet_name="Fold_Summary", index=False)
         category_df.to_excel(writer, sheet_name="Per_Category", index=False)
         category_summary.to_excel(writer, sheet_name="Category_Summary", index=False)
+    with pd.ExcelWriter(loo_summary_xlsx, engine="openpyxl") as writer:
+        overall_df.to_excel(writer, sheet_name="All_Runs_Per_Seed", index=False)
+        fold_summary_across.to_excel(writer, sheet_name="Fold_Summary_Across_Seeds", index=False)
+        cat_summary_across.to_excel(writer, sheet_name="Per_Category_Summary", index=False)
+        pd.DataFrame([bootstrap_ci]).to_excel(writer, sheet_name="Bootstrap_95CI", index=False)
 
-    console_print(f"[EXPORT] Saved {raw_xlsx} and {metrics_xlsx} from {len(run_dirs)} existing runs.")
+    console_print(f"[EXPORT] Saved {raw_xlsx}, {metrics_xlsx}, and {loo_summary_xlsx} from {len(run_dirs)} existing runs.")
+    console_print("\n" + "=" * 80)
+    console_print(" EXPORTED EXPERIMENT SUMMARY")
+    console_print("=" * 80)
+    console_print(f"Strict F1:   {overall_df['strict_F1'].mean():.4f} +/- {overall_df['strict_F1'].std():.4f}")
+    console_print(f"ADE-Eval F1: {overall_df['ade_F1'].mean():.4f} +/- {overall_df['ade_F1'].std():.4f}")
+    if bootstrap_ci:
+        console_print(f"Strict F1 95% CI:   {bootstrap_ci.get('strict_f1_95ci')}")
+        console_print(f"ADE-Eval F1 95% CI: {bootstrap_ci.get('ade_f1_95ci')}")
+    console_print("\nPer-Fold Performance (Seed Mean +/- SD):")
+    for _, row in fold_summary_across.iterrows():
+        console_print(
+            f"  * {row['test_case_series']:<32}: "
+            f"Strict F1 = {row['strict_F1_mean']:.4f} +/- {row['strict_F1_std']:.4f} | "
+            f"ADE F1 = {row['ade_F1_mean']:.4f} +/- {row['ade_F1_std']:.4f}"
+        )
 
 
 
@@ -1174,6 +1230,10 @@ def run_single_run(
     raw_df["fold"] = fold_idx
     raw_df["fold_name"] = fold_name
     raw_df["seed"] = seed
+    try:
+        raw_df.to_csv(run_dir / "raw_eval.csv", index=False)
+    except Exception:
+        pass
 
     schemes = calculate_three_schemes(raw_df)
     strict = schemes["strict_scheme3"]
@@ -1631,7 +1691,7 @@ def main():
                     t_str = res.get("time_str", "")
                     console_print(
                         f"[{t_str}] [GPU {res['gpu_id']} | Worker {res['worker_id']:02d}] << DONE  Fold [{row['fold_name']}] Seed {row['seed']} "
-                        f"in {dur_min:.1f}m -> Strict F1 = {row['strict_F1']:.4f} | ADE F1 = {row['ade_F1']:.4f} | Det F1 = {row['detection_F1']:.4f} "
+                        f"in {dur_min:.1f}m -> Strict F1 = {row['strict_F1']:.4f} | ADE F1 = {row['ade_F1']:.4f} "
                         f"({completed_count}/{total_runs})"
                     )
 
@@ -1716,6 +1776,48 @@ def main():
     ).round(4) if not cat_combined_df.empty else pd.DataFrame()
 
     bootstrap_ci = paired_bootstrap_ci(raw_combined_df)
+
+    raw_xlsx = args.results_dir / "raw.xlsx"
+    with pd.ExcelWriter(raw_xlsx, engine="openpyxl") as writer:
+        raw_combined_df.to_excel(writer, sheet_name="Raw_Results", index=False)
+
+    metrics_xlsx = args.results_dir / "metrics.xlsx"
+    fold_metrics_summary = overall_df.groupby(["fold_name", "test_case_series"], as_index=False).agg(
+        runs=("seed", "nunique"),
+        M=("M", "sum"),
+        C_boundary=("C_boundary", "sum"),
+        C_class=("C_class", "sum"),
+        C_total=("C_total", "sum"),
+        S_non_overlap=("S_non_overlap", "sum"),
+        N=("N", "sum"),
+        strict_F1_mean=("strict_F1", "mean"),
+        strict_F1_std=("strict_F1", "std"),
+        ade_F1_mean=("ade_F1", "mean"),
+        ade_F1_std=("ade_F1", "std"),
+    ).round(4)
+    fold_metrics_summary[["strict_F1_std", "ade_F1_std"]] = fold_metrics_summary[["strict_F1_std", "ade_F1_std"]].fillna(0.0)
+
+    category_metrics_summary = cat_combined_df.groupby("category", as_index=False).agg(
+        runs=("seed", "count"),
+        M=("M", "sum"),
+        C_boundary=("C_boundary", "sum"),
+        C_class=("C_class", "sum"),
+        C_total=("C_total", "sum"),
+        S_non_overlap=("S_non_overlap", "sum"),
+        N=("N", "sum"),
+        strict_F1_mean=("strict_F1", "mean"),
+        strict_F1_std=("strict_F1", "std"),
+        ade_F1_mean=("ade_F1", "mean"),
+        ade_F1_std=("ade_F1", "std"),
+    ).round(4) if not cat_combined_df.empty else pd.DataFrame()
+    if not category_metrics_summary.empty:
+        category_metrics_summary[["strict_F1_std", "ade_F1_std"]] = category_metrics_summary[["strict_F1_std", "ade_F1_std"]].fillna(0.0)
+
+    with pd.ExcelWriter(metrics_xlsx, engine="openpyxl") as writer:
+        overall_df.to_excel(writer, sheet_name="All_Runs", index=False)
+        fold_metrics_summary.to_excel(writer, sheet_name="Fold_Summary", index=False)
+        cat_combined_df.to_excel(writer, sheet_name="Per_Category", index=False)
+        category_metrics_summary.to_excel(writer, sheet_name="Category_Summary", index=False)
 
     out_xlsx = args.results_dir / f"{args.mode}_evaluation_summary.xlsx"
     with pd.ExcelWriter(out_xlsx, engine="openpyxl") as writer:
