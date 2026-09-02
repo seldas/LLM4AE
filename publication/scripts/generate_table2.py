@@ -1,213 +1,267 @@
 #!/usr/bin/env python3
-"""
-generate_table2.py
+"""Generate manuscript Table 2 from canonical database and raw predictions.
 
-Generates publication-ready Table 2 (FAERS Master Performance Benchmark)
-in both Markdown (.md) and Excel (.xlsx with ESM Metadata Cover Sheet) formats.
+The output reproduces Table 2 ("FAERS annotations, categorized by Human,
+ETHER and LLM") in ``publication/manuscripts/LLM4AE_rev1.docx``.
 
-Reads directly from:
-- publication/results/comparison_three_schemes/three_schemes_summary.xlsx
-- publication/results/error_analysis/error_breakdown_summary.xlsx
-- publication/results/bert_runs_FAERS_LOO/loo_evaluation_summary.xlsx
+Data lineage:
+  * Human and ETHER counts: ``publication/dataset.db``
+  * LLaMA-4 counts: ``publication/results/llama4_runs_FAERS/llama4_raw.xlsx``
+  * Sonnet counts: ``publication/results/sonnet_runs_FAERS/sonnet_raw.xlsx``
+
+Default output:
+    publication/manuscripts/Tables/table2_faers_annotations.csv
 """
 
 from __future__ import annotations
 
+import argparse
+import csv
+import sqlite3
+from collections import Counter
 from pathlib import Path
+
 import pandas as pd
 
 
-def main():
-    repo_root = Path(__file__).resolve().parent.parent.parent
-    results_dir = repo_root / "publication" / "results"
-    tables_dir = results_dir / "tables"
-    tables_dir.mkdir(parents=True, exist_ok=True)
-    manuscript_dir = repo_root / "publication" / "manuscripts"
+TABLE_CATEGORIES = (
+    "SDrug",
+    "CDrug",
+    "ODrug",
+    "Dose",
+    "Indication",
+    "Treatment",
+    "AE",
+    "mAE",
+    "Dx",
+    "Lab",
+    "Status",
+    "R/O",
+    "CoD",
+    "MHx",
+    "FHx",
+    "Age",
+    "Sex",
+)
 
-    # Paths to source data
-    three_schemes_path = results_dir / "comparison_three_schemes" / "three_schemes_summary.xlsx"
-    error_summary_path = results_dir / "error_analysis" / "error_breakdown_summary.xlsx"
+# Raw-label groups define how each source taxonomy maps to the manuscript's
+# 17 clinical categories. Values are never embedded here; they are counted
+# from the source database/workbooks at runtime.
+HUMAN_LABELS = {
+    "SDrug": frozenset({"sdrug"}),
+    "CDrug": frozenset({"cdrug"}),
+    "ODrug": frozenset({"drug", "odrug"}),
+    "Dose": frozenset({"dose"}),
+    "Indication": frozenset({"indication"}),
+    "Treatment": frozenset({"treatment"}),
+    "AE": frozenset({"ae"}),
+    "mAE": frozenset({"mae"}),
+    # Table 2 reports baseline symptoms under the harmonized Dx category.
+    "Dx": frozenset({"diagnostic", "dx", "bsym", "baseline symptom"}),
+    "Lab": frozenset({"lab"}),
+    "Status": frozenset({"status"}),
+    "R/O": frozenset({"r/o", "ro"}),
+    "CoD": frozenset({"cause of death", "cod"}),
+    "MHx": frozenset({"mhx", "medical history"}),
+    "FHx": frozenset({"fhx", "family history"}),
+    "Age": frozenset({"age"}),
+    "Sex": frozenset({"sex"}),
+}
 
-    print(f"Loading benchmark data from {three_schemes_path}...")
-    df_faers_master = pd.read_excel(three_schemes_path, sheet_name="FAERS_Master_Benchmark")
-    df_ether = pd.read_excel(error_summary_path, sheet_name="ETHER_Overall")
+LLM_LABELS = {
+    "SDrug": frozenset({"sdrug"}),
+    "CDrug": frozenset({"cdrug"}),
+    "ODrug": frozenset({"odrug", "drug"}),
+    "Dose": frozenset({"dose"}),
+    "Indication": frozenset({"indication"}),
+    "Treatment": frozenset({"treatment"}),
+    "AE": frozenset({"ae"}),
+    "mAE": frozenset({"mae"}),
+    "Dx": frozenset({"diagnostic", "dx", "bsym"}),
+    "Lab": frozenset({"lab"}),
+    "Status": frozenset({"status"}),
+    "R/O": frozenset({"ro", "r/o"}),
+    "CoD": frozenset({"cod", "cause of death"}),
+    "MHx": frozenset({"mhx", "medical history"}),
+    "FHx": frozenset({"fhx", "family history"}),
+    "Age": frozenset({"age"}),
+    "Sex": frozenset({"sex"}),
+}
 
-    # Extract ETHER metrics
-    ether_row = df_ether.iloc[0]
-    ether_strict_p = f"{ether_row['S3 (Strict) P']:.4f}"
-    ether_strict_r = f"{ether_row['S3 (Strict) R']:.4f}"
-    ether_strict_f1 = f"{ether_row['S3 (Strict) F1']:.4f}"
-    ether_ade_p = f"{ether_row['S2 (Weighted) P']:.4f}"
-    ether_ade_r = f"{ether_row['S2 (Weighted) R']:.4f}"
-    ether_ade_f1 = f"{ether_row['S2 (Weighted) F1']:.4f}"
+# ETHER does not distinguish the three drug roles or AE severity. The shared
+# aggregate is intentionally repeated in those manuscript rows and marked '*'.
+ETHER_SHARED_LABELS = {
+    "Drug": frozenset({"drug", "vaccine"}),
+    "AE": frozenset({"symptom"}),
+}
+ETHER_LABELS = {
+    "Dx": frozenset({"diagnosis", "second_level_diagnosis"}),
+    "R/O": frozenset({"rule_out"}),
+    "CoD": frozenset({"cause_of_death"}),
+    "MHx": frozenset({"medical_history"}),
+    "FHx": frozenset({"family_history"}),
+}
 
-    # Extract LLaMA4 JSON metrics if available
-    llama4_json_p_s3, llama4_json_r_s3, llama4_json_f1_s3 = "0.3785", "0.4404", "0.4071"
-    llama4_json_p_s2, llama4_json_r_s2, llama4_json_f1_s2 = "0.7019", "0.5232", "0.5995"
 
-    try:
-        df_json_cat = pd.read_excel(three_schemes_path, sheet_name="LLaMA4_FAERS_JSON_Categories")
-        m_tot = df_json_cat["M"].sum()
-        c_tot = df_json_cat["C_total"].sum()
-        s_tot = df_json_cat["S_non_overlap"].sum()
-        n_tot = df_json_cat["N"].sum()
-        
-        p3 = m_tot / (m_tot + c_tot + s_tot)
-        r3 = m_tot / (m_tot + c_tot + n_tot)
-        f1_3 = 2 * p3 * r3 / (p3 + r3)
+def canonical_label(value: object) -> str:
+    return "" if value is None else str(value).strip().lower()
 
-        mc2 = m_tot + 0.5 * c_tot
-        p2 = mc2 / (m_tot + c_tot + 0.25 * s_tot)
-        r2 = mc2 / (m_tot + c_tot + n_tot)
-        f1_2 = 2 * p2 * r2 / (p2 + r2)
 
-        llama4_json_p_s3, llama4_json_r_s3, llama4_json_f1_s3 = f"{p3:.4f}", f"{r3:.4f}", f"{f1_3:.4f}"
-        llama4_json_p_s2, llama4_json_r_s2, llama4_json_f1_s2 = f"{p2:.4f}", f"{r2:.4f}", f"{f1_2:.4f}"
-    except Exception as e:
-        print(f"Note on LLaMA4 JSON extraction: {e}")
+def grouped_counts(
+    raw_counts: Counter[str],
+    label_groups: dict[str, frozenset[str]],
+) -> dict[str, int]:
+    return {
+        category: sum(raw_counts[label] for label in labels)
+        for category, labels in label_groups.items()
+    }
 
-    # Build Table 2 Structure
-    table2_rows = []
 
-    for _, r in df_faers_master.iterrows():
-        model_name = r["Model"]
-        if "Seed 42" in model_name:
-            family = "Fine-Tuned Encoder"
-            paradigm = "Sentence Token Classification"
-        elif "5-Seed" in model_name:
-            family = "Fine-Tuned Encoder"
-            paradigm = "Sentence Token Classification"
-        elif "Sonnet" in model_name:
-            family = "Proprietary Frontier LLM"
-            paradigm = "Inline Tagged XML (`P2_TAG`)"
-        elif "LLaMA 4" in model_name and "Tagged" in model_name:
-            family = "Open-Weight LLM"
-            paradigm = "Inline Tagged XML (`P2_TAG`)"
-        else:
-            family = "Model Family"
-            paradigm = "Text Processing"
+def database_label_counts(
+    connection: sqlite3.Connection,
+    note: str,
+) -> Counter[str]:
+    rows = connection.execute(
+        """
+        SELECT lower(trim(a.label)), count(*)
+        FROM annotations AS a
+        JOIN documents AS d ON d.doc_id = a.doc_id
+        WHERE d.dataset = 'FAERS' AND a.note = ?
+        GROUP BY lower(trim(a.label))
+        """,
+        (note,),
+    ).fetchall()
+    if not rows:
+        raise ValueError(f"No FAERS annotations found for note={note!r}")
+    return Counter({canonical_label(label): int(count) for label, count in rows})
 
-        table2_rows.append({
-            "Model Family": family,
-            "Model & Configuration": model_name,
-            "Input Paradigm": paradigm,
-            "Strict Precision": r["Strict P"],
-            "Strict Recall": r["Strict R"],
-            "Strict F1": r["Strict F1"],
-            "ADE-Eval Precision": r["ADE-Eval P"],
-            "ADE-Eval Recall": r["ADE-Eval R"],
-            "ADE-Eval F1": r["ADE-Eval F1"],
-        })
 
-    # Append LLaMA 4 JSON
-    table2_rows.append({
-        "Model Family": "Open-Weight LLM",
-        "Model & Configuration": "LLaMA 4 (1-shot, Structured JSON)",
-        "Input Paradigm": "Structured JSON (`P1_JSON`)",
-        "Strict Precision": llama4_json_p_s3,
-        "Strict Recall": llama4_json_r_s3,
-        "Strict F1": llama4_json_f1_s3,
-        "ADE-Eval Precision": llama4_json_p_s2,
-        "ADE-Eval Recall": llama4_json_r_s2,
-        "ADE-Eval F1": llama4_json_f1_s2,
-    })
+def llm_prediction_counts(path: Path) -> Counter[str]:
+    if not path.is_file():
+        raise FileNotFoundError(f"Raw prediction workbook not found: {path}")
 
-    # Append ETHER Baseline
-    table2_rows.append({
-        "Model Family": "Rule-Based Baseline",
-        "Model & Configuration": "ETHER (Dictionary / Regex Baseline)",
-        "Input Paradigm": "Dictionary String Match",
-        "Strict Precision": ether_strict_p,
-        "Strict Recall": ether_strict_r,
-        "Strict F1": ether_strict_f1,
-        "ADE-Eval Precision": ether_ade_p,
-        "ADE-Eval Recall": ether_ade_r,
-        "ADE-Eval F1": ether_ade_f1,
-    })
+    frame = pd.read_excel(path, sheet_name="Raw_Results")
+    required = {"match_type", "label_pred"}
+    missing = required.difference(frame.columns)
+    if missing:
+        raise ValueError(f"{path} is missing required columns: {sorted(missing)}")
 
-    df_table2 = pd.DataFrame(table2_rows)
-
-    # 1. Generate Markdown File
-    md_lines = [
-        "# Table 2: Master Performance Benchmark on the FAERS Dataset (N = 829 Reports)",
-        "",
-        "Overall performance of evaluated model families across the Two-Tier Evaluation Framework on the FDA Adverse Event Reporting System (FAERS) benchmark corpus. Micro-averaged precision (P), recall (R), and F1 scores are reported.",
-        "",
-        "| Model Family | Model & Configuration | Input Paradigm | Primary Tier: Strict Exact-Match NER ||| Secondary Tier: Adapted ADE-Eval Weighted Metric |||",
-        "| :--- | :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: |",
-        "| | | | **P** | **R** | **F1** | **P** | **R** | **F1** |"
+    prediction_rows = frame.loc[
+        frame["match_type"].isin({"M", "C", "S"}) & frame["label_pred"].notna(),
+        "label_pred",
     ]
+    if prediction_rows.empty:
+        raise ValueError(f"No prediction entities found in {path}")
+    return Counter(canonical_label(label) for label in prediction_rows)
 
-    def fmt_stat(val: str) -> str:
-        s = str(val)
-        if "+-" in s:
-            return "$" + s.replace("+-", r"\pm") + "$"
-        return s
 
-    for _, r in df_table2.iterrows():
-        fam = f"**{r['Model Family']}**" if ("BioBERT" in r['Model & Configuration'] or "Sonnet" in r['Model & Configuration'] or "Tagged" in r['Model & Configuration'] or "ETHER" in r['Model & Configuration']) else ""
-        m_cfg = r['Model & Configuration']
-        if "Seed 42 Default" in m_cfg:
-            m_cfg = m_cfg + "$^\\dagger$"
-        elif "5-Seed Pooled" in m_cfg:
-            m_cfg = m_cfg + "$^\\ddagger$"
-            
-        p_strict = fmt_stat(r['Strict Precision'])
-        r_strict = fmt_stat(r['Strict Recall'])
-        f1_strict = fmt_stat(r['Strict F1'])
-        p_ade = fmt_stat(r['ADE-Eval Precision'])
-        r_ade = fmt_stat(r['ADE-Eval Recall'])
-        f1_ade = fmt_stat(r['ADE-Eval F1'])
+def ether_display_counts(raw_counts: Counter[str]) -> dict[str, str]:
+    shared = grouped_counts(raw_counts, ETHER_SHARED_LABELS)
+    distinct = grouped_counts(raw_counts, ETHER_LABELS)
+    values = {category: "n/a" for category in TABLE_CATEGORIES}
+    for category in ("SDrug", "CDrug", "ODrug"):
+        values[category] = f"{shared['Drug']:,}*"
+    for category in ("AE", "mAE"):
+        values[category] = f"{shared['AE']:,}*"
+    for category, count in distinct.items():
+        values[category] = f"{count:,}"
+    return values
 
-        md_lines.append(
-            f"| {fam} | {m_cfg} | {r['Input Paradigm']} | "
-            f"{p_strict} | {r_strict} | **{f1_strict}** | "
-            f"{p_ade} | {r_ade} | **{f1_ade}** |"
+
+def numeric_display_counts(
+    raw_counts: Counter[str],
+    label_groups: dict[str, frozenset[str]],
+) -> dict[str, str]:
+    counts = grouped_counts(raw_counts, label_groups)
+    return {category: f"{counts[category]:,}" for category in TABLE_CATEGORIES}
+
+
+def table_rows(
+    human: dict[str, str],
+    ether: dict[str, str],
+    llama: dict[str, str],
+    sonnet: dict[str, str],
+) -> list[list[str]]:
+    rows = [["Category", "Human", "ETHER", "LLM (LLaMA-4)", "LLM (Sonnet 4.6)"]]
+    rows.extend(
+        [category, human[category], ether[category], llama[category], sonnet[category]]
+        for category in TABLE_CATEGORIES
+    )
+    return rows
+
+
+def parse_args() -> argparse.Namespace:
+    repo_root = Path(__file__).resolve().parents[2]
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--database",
+        type=Path,
+        default=repo_root / "publication" / "dataset.db",
+        help="Canonical SQLite database (default: publication/dataset.db).",
+    )
+    parser.add_argument(
+        "--llama-raw",
+        type=Path,
+        default=(
+            repo_root
+            / "publication"
+            / "results"
+            / "llama4_runs_FAERS"
+            / "llama4_raw.xlsx"
+        ),
+        help="LLaMA-4 FAERS raw prediction workbook.",
+    )
+    parser.add_argument(
+        "--sonnet-raw",
+        type=Path,
+        default=(
+            repo_root
+            / "publication"
+            / "results"
+            / "sonnet_runs_FAERS"
+            / "sonnet_raw.xlsx"
+        ),
+        help="Sonnet FAERS raw prediction workbook.",
+    )
+    parser.add_argument(
+        "--output",
+        type=Path,
+        default=(
+            repo_root
+            / "publication"
+            / "manuscripts"
+            / "Tables"
+            / "table2_faers_annotations.csv"
+        ),
+        help="Output CSV path.",
+    )
+    return parser.parse_args()
+
+
+def main() -> None:
+    args = parse_args()
+    database_path = args.database.resolve()
+    output_path = args.output.resolve()
+
+    if not database_path.is_file():
+        raise FileNotFoundError(f"Database not found: {database_path}")
+
+    with sqlite3.connect(database_path) as connection:
+        human_raw = database_label_counts(connection, "SME1")
+        ether_raw = database_label_counts(connection, "ETHER")
+
+    human = numeric_display_counts(human_raw, HUMAN_LABELS)
+    ether = ether_display_counts(ether_raw)
+    llama = numeric_display_counts(llm_prediction_counts(args.llama_raw.resolve()), LLM_LABELS)
+    sonnet = numeric_display_counts(llm_prediction_counts(args.sonnet_raw.resolve()), LLM_LABELS)
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with output_path.open("w", encoding="utf-8-sig", newline="") as handle:
+        csv.writer(handle, lineterminator="\n").writerows(
+            table_rows(human, ether, llama, sonnet)
         )
 
-    md_lines.extend([
-        "",
-        "---",
-        "",
-        "### Footnotes & Methodological Notes:",
-        "- **Primary Tier (Strict Exact-Match NER / Scheme 3):** Standard exact character-boundary and exact-category match. $\\text{Precision} = M / (M + C_{\\text{total}} + S_{\\text{non\\_overlap}})$, $\\text{Recall} = M / (M + C_{\\text{total}} + N)$, $\\text{F1} = 2PR / (P+R)$, where $M$ is exact match, $C_{\\text{total}} = C_{\\text{boundary}} + C_{\\text{class}}$ represents boundary inexactness and category misclassification, $S_{\\text{non\\_overlap}}$ represents ungrounded false positives with zero gold overlap, and $N$ represents false negatives.",
-        "- **Secondary Tier (Adapted ADE-Eval Clinical Weighted Metric / Scheme 2):** Grants partial credit (0.5 weight) to partially localized/misclassified clinical mentions ($C_{\\text{total}}$) and applies a 0.25 denominator weight to non-overlapping false positives ($S_{\\text{non\\_overlap}}$). $\\text{Precision} = (M + 0.5 C_{\\text{total}}) / (M + C_{\\text{total}} + 0.25 S_{\\text{non\\_overlap}})$, $\\text{Recall} = (M + 0.5 C_{\\text{total}}) / (M + C_{\\text{total}} + N)$.",
-        "- $^\\dagger$ **BioBERT (Seed 42 Default):** Evaluates cross-case-series generalization using Leave-One-Drug-AE-Pair-Out (4-Fold LOO) cross-validation with initialization random seed 42. Mean $\\pm$ SD reflects variation across the 4 held-out case series.",
-        "- $^\\ddagger$ **BioBERT (5-Seed Pooled):** Evaluates Leave-One-Drug-AE-Pair-Out (4-Fold LOO) cross-validation across 5 independent random initialization seeds (`42, 123, 456, 789, 1011`), summarizing cross-case-series and optimization stability.",
-        "- **Target Schema:** Standard 11 core clinical categories (`AE`, `DRUG`, `DX`, `HX`, `LAB`, `DOSE`, `AGE`, `SEX`, `STATUS`, `INDICATION`, `RO`).",
-        ""
-    ])
-
-    md_content = "\n".join(md_lines)
-
-    # Write Markdown outputs
-    out_md_tables = tables_dir / "table2_master_benchmark_faers.md"
-    out_md_manuscript = manuscript_dir / "table2.md"
-    out_md_results = results_dir / "table2.md"
-
-    with open(out_md_tables, "w", encoding="utf-8") as f:
-        f.write(md_content)
-    with open(out_md_manuscript, "w", encoding="utf-8") as f:
-        f.write(md_content)
-    with open(out_md_results, "w", encoding="utf-8") as f:
-        f.write(md_content)
-
-    # 2. Generate Excel Workbook with ESM Cover Sheet
-    esm_cover = pd.DataFrame([
-        {"Metadata Field": "Article Title", "Value": "Benchmarking Fine-Tuned Encoders and Instruction-Tuned Large Language Models for Adverse Event Clinical Concept Extraction from Spontaneous Reporting Narratives"},
-        {"Metadata Field": "Journal", "Value": "Drug Safety"},
-        {"Metadata Field": "Table Identifier", "Value": "Table 2: FAERS Master Performance Benchmark"},
-        {"Metadata Field": "Corpus", "Value": "FDA Adverse Event Reporting System (FAERS D1, N = 829 Reports)"},
-        {"Metadata Field": "Evaluation Framework", "Value": "Two-Tier Evaluation Framework (Tier 1: Strict CoNLL; Tier 2: Adapted ADE-Eval)"},
-        {"Metadata Field": "Generated By", "Value": "publication/scripts/generate_table2.py"}
-    ])
-
-    out_excel = tables_dir / "table2_master_benchmark_faers.xlsx"
-    with pd.ExcelWriter(out_excel, engine="openpyxl") as writer:
-        esm_cover.to_excel(writer, sheet_name="ESM_Cover_Sheet", index=False)
-        df_table2.to_excel(writer, sheet_name="Table_2_FAERS_Benchmark", index=False)
-
-    print(f"Table 2 successfully exported to:\n  - {out_md_tables}\n  - {out_md_manuscript}\n  - {out_excel}")
+    print(f"Generated manuscript Table 2: {output_path}")
 
 
 if __name__ == "__main__":

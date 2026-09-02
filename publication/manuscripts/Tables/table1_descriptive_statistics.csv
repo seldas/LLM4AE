@@ -1,0 +1,9 @@
+﻿Statistic,FAERS D1,VAERS
+#Reports,829,"1,000"
+Total tokens,"414,576","439,681"
+Total sentences,"17,766","22,043"
+Avg tokens per report,500.1 ± 254.6,439.7 ± 143.0
+Median tokens per report,476,395
+SME annotations,"30,163","40,711"
+Unique AE terms,"3,991","13,819"
+Unique Drug/Vaccine terms,"2,085",863

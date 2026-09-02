@@ -1,139 +1,477 @@
 #!/usr/bin/env python3
-"""
-generate_table3.py
+"""Generate the updated manuscript Table 3 from current raw data.
 
-Generates publication-ready Table 3 (VAERS Master Performance Benchmark)
-in both Markdown (.md) and Excel (.xlsx with ESM Metadata Cover Sheet) formats.
+The manuscript document is used only as a structural reference. All reported
+metrics are recomputed at runtime from these canonical sources:
 
-Reads directly from:
-- publication/results/comparison_three_schemes/three_schemes_summary.xlsx
+* BERT: ``publication/results/bert_runs_FAERS_LOO/raw.xlsx``
+* LLaMA-4: ``publication/results/llama4_runs_FAERS/llama4_raw.xlsx``
+* Sonnet: ``publication/results/sonnet_runs_FAERS/sonnet_raw.xlsx``
+* ETHER and SME1 gold: ``publication/dataset.db``
+
+Default output:
+    publication/manuscripts/Tables/table3_faers_performance.csv
 """
 
 from __future__ import annotations
 
+import argparse
+import csv
+import sqlite3
+import statistics
+from collections import Counter, defaultdict
+from dataclasses import dataclass
 from pathlib import Path
+
 import pandas as pd
 
 
-def main():
-    repo_root = Path(__file__).resolve().parent.parent.parent
-    results_dir = repo_root / "publication" / "results"
-    tables_dir = results_dir / "tables"
-    tables_dir.mkdir(parents=True, exist_ok=True)
-    manuscript_dir = repo_root / "publication" / "manuscripts"
+MATCH_TYPES = ("M", "C", "S", "N")
+DEFAULT_SEED = 42
 
-    three_schemes_path = results_dir / "comparison_three_schemes" / "three_schemes_summary.xlsx"
-    print(f"Loading VAERS benchmark data from {three_schemes_path}...")
-    df_vaers_master = pd.read_excel(three_schemes_path, sheet_name="VAERS_Master_Benchmark")
+GOLD_CATEGORY_MAP = {
+    "ae": "AE",
+    "mae": "AE",
+    "sdrug": "DRUG",
+    "cdrug": "DRUG",
+    "odrug": "DRUG",
+    "drug": "DRUG",
+    "treatment": "DX",
+    "bsym": "DX",
+    "baseline symptom": "DX",
+    "diagnostic": "DX",
+    "dx": "DX",
+    "mhx": "HX",
+    "medical history": "HX",
+    "fhx": "HX",
+    "family history": "HX",
+    "indication": "INDICATION",
+    "lab": "LAB",
+    "dose": "DOSE",
+    "age": "AGE",
+    "sex": "SEX",
+    "status": "STATUS",
+    "r/o": "RO",
+    "ro": "RO",
+    "cause of death": "COD",
+    "cod": "COD",
+}
 
-    table3_rows = []
-    for _, r in df_vaers_master.iterrows():
-        model_name = r["Model"]
-        if "BioBERT" in model_name:
-            family = "Fine-Tuned Encoder"
-            paradigm = "Sentence Token Classification"
-        elif "LLaMA" in model_name:
-            family = "Open-Weight LLM"
-            paradigm = "Inline Tagged XML (`P2_TAG_VAERS`)"
-        else:
-            family = "Model Family"
-            paradigm = "Text Processing"
+ETHER_CATEGORY_MAP = {
+    "symptom": "AE",
+    "drug": "DRUG",
+    "vaccine": "DRUG",
+    "diagnosis": "DX",
+    "second_level_diagnosis": "DX",
+    "medical_history": "HX",
+    "family_history": "HX",
+    "rule_out": "RO",
+    "cause_of_death": "COD",
+}
 
-        table3_rows.append({
-            "Model Family": family,
-            "Model & Configuration": model_name,
-            "Input Paradigm": paradigm,
-            "Strict Precision": r["Strict P"],
-            "Strict Recall": r["Strict R"],
-            "Strict F1": r["Strict F1"],
-            "ADE-Eval Precision": r["ADE-Eval P"],
-            "ADE-Eval Recall": r["ADE-Eval R"],
-            "ADE-Eval F1": r["ADE-Eval F1"],
-        })
 
-    df_table3 = pd.DataFrame(table3_rows)
+@dataclass(frozen=True)
+class Scores:
+    M: int
+    C: int
+    S: int
+    N: int
+    strict_precision: float
+    strict_recall: float
+    strict_f1: float
+    adapted_precision: float
+    adapted_recall: float
+    adapted_f1: float
 
-    # 1. Generate Markdown File
-    md_lines = [
-        "# Table 3: Master Performance Benchmark on the VAERS Dataset (N = 1,000 Reports)",
-        "",
-        "Overall performance of evaluated model families across the Two-Tier Evaluation Framework on the Vaccine Adverse Event Reporting System (VAERS) benchmark corpus. Micro-averaged precision (P), recall (R), and F1 scores are reported.",
-        "",
-        "| Model Family | Model & Configuration | Input Paradigm | Primary Tier: Strict Exact-Match NER ||| Secondary Tier: Adapted ADE-Eval Weighted Metric |||",
-        "| :--- | :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: |",
-        "| | | | **P** | **R** | **F1** | **P** | **R** | **F1** |"
+
+def canonical_label(value: object) -> str:
+    return "" if pd.isna(value) else str(value).strip().lower()
+
+
+def spans_overlap(a_start: int, a_end: int, b_start: int, b_end: int) -> bool:
+    return (
+        a_start == b_start
+        or a_end == b_end
+        or a_start < b_start < a_end
+        or a_start < b_end < a_end
+        or b_start < a_start < b_end
+    )
+
+
+def span_iou(a_start: int, a_end: int, b_start: int, b_end: int) -> float:
+    intersection = max(0, min(a_end, b_end) - max(a_start, b_start))
+    union = max(a_end, b_end) - min(a_start, b_start)
+    return intersection / union if union else 0.0
+
+
+def calculate_scores(M: int, C: int, S: int, N: int) -> Scores:
+    strict_p_den = M + C + S
+    strict_r_den = M + C + N
+    strict_precision = M / strict_p_den if strict_p_den else 0.0
+    strict_recall = M / strict_r_den if strict_r_den else 0.0
+    strict_f1 = (
+        2 * strict_precision * strict_recall / (strict_precision + strict_recall)
+        if strict_precision + strict_recall
+        else 0.0
+    )
+
+    matched_credit = M + 0.5 * C
+    adapted_p_den = M + C + 0.25 * S
+    adapted_r_den = M + C + N
+    adapted_precision = matched_credit / adapted_p_den if adapted_p_den else 0.0
+    adapted_recall = matched_credit / adapted_r_den if adapted_r_den else 0.0
+    adapted_f1 = (
+        2 * adapted_precision * adapted_recall / (adapted_precision + adapted_recall)
+        if adapted_precision + adapted_recall
+        else 0.0
+    )
+    return Scores(
+        M=M,
+        C=C,
+        S=S,
+        N=N,
+        strict_precision=strict_precision,
+        strict_recall=strict_recall,
+        strict_f1=strict_f1,
+        adapted_precision=adapted_precision,
+        adapted_recall=adapted_recall,
+        adapted_f1=adapted_f1,
+    )
+
+
+def read_raw_workbook(path: Path, required_columns: set[str]) -> pd.DataFrame:
+    if not path.is_file():
+        raise FileNotFoundError(f"Raw workbook not found: {path}")
+    frame = pd.read_excel(path, sheet_name="Raw_Results")
+    missing = required_columns.difference(frame.columns)
+    if missing:
+        raise ValueError(f"{path} is missing required columns: {sorted(missing)}")
+    unknown = set(frame["match_type"].dropna().unique()).difference(MATCH_TYPES)
+    if unknown:
+        raise ValueError(f"{path} has unknown match types: {sorted(unknown)}")
+    return frame
+
+
+def match_type_counts(frame: pd.DataFrame) -> dict[str, int]:
+    counts = frame["match_type"].value_counts()
+    return {kind: int(counts.get(kind, 0)) for kind in MATCH_TYPES}
+
+
+def bert_summary(
+    path: Path, default_seed: int
+) -> tuple[float, float, float, float, float, float]:
+    required = {"fold_name", "seed", "match_type"}
+    frame = read_raw_workbook(path, required)
+
+    seed_scores: dict[int, list[Scores]] = defaultdict(list)
+    for (_, seed), group in frame.groupby(["fold_name", "seed"], sort=True):
+        counts = match_type_counts(group)
+        seed_scores[int(seed)].append(calculate_scores(**counts))
+
+    if default_seed not in seed_scores:
+        raise ValueError(
+            f"Default BERT seed {default_seed} not found; available: {sorted(seed_scores)}"
+        )
+    if len(seed_scores) != 5:
+        raise ValueError(
+            f"Expected 5 BERT seeds for Table 3; found {len(seed_scores)}: "
+            f"{sorted(seed_scores)}"
+        )
+    fold_counts = {len(scores) for scores in seed_scores.values()}
+    if len(fold_counts) != 1:
+        raise ValueError(f"BERT seeds do not have equal fold counts: {sorted(fold_counts)}")
+
+    strict_by_seed = {
+        seed: statistics.mean(score.strict_f1 for score in scores)
+        for seed, scores in seed_scores.items()
+    }
+    adapted_by_seed = {
+        seed: statistics.mean(score.adapted_f1 for score in scores)
+        for seed, scores in seed_scores.items()
+    }
+
+    strict_values = list(strict_by_seed.values())
+    adapted_values = list(adapted_by_seed.values())
+    strict_sd = statistics.stdev(strict_values) if len(strict_values) > 1 else 0.0
+    adapted_sd = statistics.stdev(adapted_values) if len(adapted_values) > 1 else 0.0
+    return (
+        strict_by_seed[default_seed],
+        adapted_by_seed[default_seed],
+        statistics.mean(strict_values),
+        statistics.mean(adapted_values),
+        strict_sd,
+        adapted_sd,
+    )
+
+
+def corrected_llm_scores(path: Path) -> tuple[Scores, int]:
+    """Collapse one-to-one overlapping wrong-label N/S pairs into C."""
+    required = {
+        "document",
+        "match_type",
+        "label_gold",
+        "gold_start",
+        "gold_end",
+        "label_pred",
+        "pred_start",
+        "pred_end",
+    }
+    frame = read_raw_workbook(path, required)
+
+    correction_count = 0
+    for _, rows in frame.groupby("document", sort=False):
+        unmatched_gold = []
+        for row in rows.loc[rows["match_type"] == "N"].itertuples(index=False):
+            if pd.notna(row.gold_start) and pd.notna(row.gold_end):
+                unmatched_gold.append(
+                    (int(row.gold_start), int(row.gold_end), canonical_label(row.label_gold))
+                )
+        unmatched_gold.sort(key=lambda span: (span[0], span[1], span[2]))
+
+        predictions = [
+            row
+            for row in rows.loc[rows["match_type"] == "S"].itertuples(index=False)
+            if pd.notna(row.pred_start) and pd.notna(row.pred_end)
+        ]
+        candidate_edges: list[list[int]] = []
+        for gold_start, gold_end, gold_label in unmatched_gold:
+            candidates = []
+            for prediction_index, prediction in enumerate(predictions):
+                pred_start = int(prediction.pred_start)
+                pred_end = int(prediction.pred_end)
+                pred_label = canonical_label(prediction.label_pred)
+                if (
+                    gold_label != pred_label
+                    and spans_overlap(pred_start, pred_end, gold_start, gold_end)
+                ):
+                    candidates.append(prediction_index)
+            candidates.sort(
+                key=lambda prediction_index: (
+                    -span_iou(
+                        int(predictions[prediction_index].pred_start),
+                        int(predictions[prediction_index].pred_end),
+                        gold_start,
+                        gold_end,
+                    ),
+                    int(predictions[prediction_index].pred_start),
+                    int(predictions[prediction_index].pred_end),
+                    canonical_label(predictions[prediction_index].label_pred),
+                )
+            )
+            candidate_edges.append(candidates)
+
+        prediction_to_gold: dict[int, int] = {}
+
+        def augment(gold_index: int, visited: set[int]) -> bool:
+            for prediction_index in candidate_edges[gold_index]:
+                if prediction_index in visited:
+                    continue
+                visited.add(prediction_index)
+                previous_gold = prediction_to_gold.get(prediction_index)
+                if previous_gold is None or augment(previous_gold, visited):
+                    prediction_to_gold[prediction_index] = gold_index
+                    return True
+            return False
+
+        for gold_index in range(len(unmatched_gold)):
+            augment(gold_index, set())
+        correction_count += len(prediction_to_gold)
+
+    counts = match_type_counts(frame)
+    if correction_count > counts["S"] or correction_count > counts["N"]:
+        raise ValueError("Wrong-label correction exceeds available S/N outcomes")
+    counts["C"] += correction_count
+    counts["S"] -= correction_count
+    counts["N"] -= correction_count
+    return calculate_scores(**counts), correction_count
+
+
+def load_ether_inputs(
+    connection: sqlite3.Connection,
+) -> tuple[dict[str, list[tuple]], dict[str, list[tuple]]]:
+    gold_rows = connection.execute(
+        """
+        SELECT a.doc_id, lower(trim(a.label)), a.tc_start, a.tc_end
+        FROM annotations AS a
+        JOIN documents AS d ON d.doc_id = a.doc_id
+        WHERE d.dataset = 'FAERS' AND a.note = 'SME1'
+        """
+    ).fetchall()
+    prediction_rows = connection.execute(
+        """
+        SELECT a.doc_id, lower(trim(a.label)), a.tc_start, a.tc_end, a.used
+        FROM annotations AS a
+        JOIN documents AS d ON d.doc_id = a.doc_id
+        WHERE d.dataset = 'FAERS' AND a.note = 'ETHER'
+        """
+    ).fetchall()
+
+    gold_by_document: dict[str, list[tuple]] = defaultdict(list)
+    for document, label, start, end in gold_rows:
+        category = GOLD_CATEGORY_MAP.get(str(label))
+        if category is not None:
+            gold_by_document[str(document)].append((int(start), int(end), category))
+
+    pred_by_document: dict[str, list[tuple]] = defaultdict(list)
+    for document, label, start, end, used in prediction_rows:
+        category = ETHER_CATEGORY_MAP.get(str(label))
+        if category is not None and str(used).strip().lower() == "yes":
+            pred_by_document[str(document)].append((int(start), int(end), category))
+    return gold_by_document, pred_by_document
+
+
+def ether_scores(database_path: Path) -> Scores:
+    if not database_path.is_file():
+        raise FileNotFoundError(f"Database not found: {database_path}")
+    with sqlite3.connect(database_path) as connection:
+        gold_by_document, pred_by_document = load_ether_inputs(connection)
+
+    M = C = S = N = 0
+    for document, gold_spans in gold_by_document.items():
+        predictions = pred_by_document.get(document, [])
+        prediction_matched = [False] * len(predictions)
+
+        for gold_start, gold_end, gold_category in gold_spans:
+            exact_index = None
+            partial_index = None
+            best_overlap = 0
+            for index, (pred_start, pred_end, pred_category) in enumerate(predictions):
+                if prediction_matched[index]:
+                    continue
+                if (
+                    pred_start == gold_start
+                    and pred_end == gold_end
+                    and pred_category == gold_category
+                ):
+                    exact_index = index
+                    break
+                if pred_category == gold_category and spans_overlap(
+                    gold_start, gold_end, pred_start, pred_end
+                ):
+                    overlap_length = max(
+                        0, min(gold_end, pred_end) - max(gold_start, pred_start)
+                    )
+                    if overlap_length > best_overlap:
+                        best_overlap = overlap_length
+                        partial_index = index
+
+            if exact_index is not None:
+                M += 1
+                prediction_matched[exact_index] = True
+            elif partial_index is not None:
+                C += 1
+                prediction_matched[partial_index] = True
+            else:
+                N += 1
+
+        S += sum(not matched for matched in prediction_matched)
+    return calculate_scores(M, C, S, N)
+
+
+def format_score(value: float) -> str:
+    return f"{value:.4f}"
+
+
+def table_rows(
+    bert: tuple[float, float, float, float, float, float],
+    llama: Scores,
+    sonnet: Scores,
+    ether: Scores,
+) -> list[list[str]]:
+    (
+        bert_seed_strict,
+        bert_seed_adapted,
+        bert_mean_strict,
+        bert_mean_adapted,
+        bert_sd_strict,
+        bert_sd_adapted,
+    ) = bert
+    return [
+        ["Model", "Strict Exact F1", "Adapted ADE-Eval F1"],
+        [
+            f"BERT (1 run; seed {DEFAULT_SEED})",
+            format_score(bert_seed_strict),
+            format_score(bert_seed_adapted),
+        ],
+        [
+            "BERT (Avg. 5 runs)",
+            f"{bert_mean_strict:.4f} ± {bert_sd_strict:.4f}",
+            f"{bert_mean_adapted:.4f} ± {bert_sd_adapted:.4f}",
+        ],
+        ["LLaMA-4", format_score(llama.strict_f1), format_score(llama.adapted_f1)],
+        [
+            "Claude 4.6 Sonnet",
+            format_score(sonnet.strict_f1),
+            format_score(sonnet.adapted_f1),
+        ],
+        ["ETHER", format_score(ether.strict_f1), format_score(ether.adapted_f1)],
     ]
 
-    def fmt_stat(val: str) -> str:
-        s = str(val)
-        if "+-" in s:
-            return "$" + s.replace("+-", r"\pm") + "$"
-        return s
 
-    for _, r in df_table3.iterrows():
-        fam = f"**{r['Model Family']}**" if ("Seed 42" in r["Model & Configuration"] or "LLaMA" in r["Model & Configuration"]) else ""
-        m_cfg = r["Model & Configuration"]
-        if "Seed 42 Default" in m_cfg:
-            m_cfg = m_cfg + "$^\\dagger$"
-        elif "5-Seed Pooled" in m_cfg:
-            m_cfg = m_cfg + "$^\\ddagger$"
-            
-        p_strict = fmt_stat(r['Strict Precision'])
-        r_strict = fmt_stat(r['Strict Recall'])
-        f1_strict = fmt_stat(r['Strict F1'])
-        p_ade = fmt_stat(r['ADE-Eval Precision'])
-        r_ade = fmt_stat(r['ADE-Eval Recall'])
-        f1_ade = fmt_stat(r['ADE-Eval F1'])
+def parse_args() -> argparse.Namespace:
+    repo_root = Path(__file__).resolve().parents[2]
+    results = repo_root / "publication" / "results"
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--database",
+        type=Path,
+        default=repo_root / "publication" / "dataset.db",
+    )
+    parser.add_argument(
+        "--bert-raw",
+        type=Path,
+        default=results / "bert_runs_FAERS_LOO" / "raw.xlsx",
+    )
+    parser.add_argument(
+        "--llama-raw",
+        type=Path,
+        default=results / "llama4_runs_FAERS" / "llama4_raw.xlsx",
+    )
+    parser.add_argument(
+        "--sonnet-raw",
+        type=Path,
+        default=results / "sonnet_runs_FAERS" / "sonnet_raw.xlsx",
+    )
+    parser.add_argument(
+        "--output",
+        type=Path,
+        default=(
+            repo_root
+            / "publication"
+            / "manuscripts"
+            / "Tables"
+            / "table3_faers_performance.csv"
+        ),
+    )
+    return parser.parse_args()
 
-        md_lines.append(
-            f"| {fam} | {m_cfg} | {r['Input Paradigm']} | "
-            f"{p_strict} | {r_strict} | **{f1_strict}** | "
-            f"{p_ade} | {r_ade} | **{f1_ade}** |"
+
+def main() -> None:
+    args = parse_args()
+    bert = bert_summary(args.bert_raw.resolve(), DEFAULT_SEED)
+    llama, llama_corrections = corrected_llm_scores(args.llama_raw.resolve())
+    sonnet, sonnet_corrections = corrected_llm_scores(args.sonnet_raw.resolve())
+    ether = ether_scores(args.database.resolve())
+
+    output_path = args.output.resolve()
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with output_path.open("w", encoding="utf-8-sig", newline="") as handle:
+        csv.writer(handle, lineterminator="\n").writerows(
+            table_rows(bert, llama, sonnet, ether)
         )
 
-    md_lines.extend([
-        "",
-        "---",
-        "",
-        "### Footnotes & Methodological Notes:",
-        "- **Primary Tier (Strict Exact-Match NER / Scheme 3):** Standard exact character-boundary and exact-category match. $\\text{Precision} = M / (M + C_{\\text{total}} + S_{\\text{non\\_overlap}})$, $\\text{Recall} = M / (M + C_{\\text{total}} + N)$, $\\text{F1} = 2PR / (P+R)$, where $M$ is exact match, $C_{\\text{total}} = C_{\\text{boundary}} + C_{\\text{class}}$ represents boundary inexactness and category misclassification, $S_{\\text{non\\_overlap}}$ represents ungrounded false positives with zero gold overlap, and $N$ represents false negatives.",
-        "- **Secondary Tier (Adapted ADE-Eval Clinical Weighted Metric / Scheme 2):** Grants partial credit (0.5 weight) to partially localized/misclassified clinical mentions ($C_{\\text{total}}$) and applies a 0.25 denominator weight to non-overlapping false positives ($S_{\\text{non\\_overlap}}$). $\\text{Precision} = (M + 0.5 C_{\\text{total}}) / (M + C_{\\text{total}} + 0.25 S_{\\text{non\\_overlap}})$, $\\text{Recall} = (M + 0.5 C_{\\text{total}}) / (M + C_{\\text{total}} + N)$.",
-        "- $^\\dagger$ **BioBERT (Seed 42 Default):** Primary in-distribution 10-fold cross-validation on the 1,000 VAERS reports using random initialization seed 42. Mean $\\pm$ SD reflects variance across the 10 test folds.",
-        "- $^\\ddagger$ **BioBERT (5-Seed Pooled):** 10-fold cross-validation repeated across 5 independent random initialization seeds (`42, 123, 456, 789, 1011`), summarizing cross-fold variance and optimization stability ($N = 50$ total training runs).",
-        "- **Target Schema Evaluation:** Performance is evaluated across all 11 active VAERS concept categories (`VAX`, `TX`, `STATUS`, `MHx`, `sDx`, `pDx`, `SYM`, `Lab`, `FHx`, `CoD`, `RO`) in accordance with the VAERS annotation guideline.",
-        ""
-    ])
-
-    md_content = "\n".join(md_lines)
-
-    # Write Markdown outputs
-    out_md_tables = tables_dir / "table3_master_benchmark_vaers.md"
-    out_md_manuscript = manuscript_dir / "table3.md"
-    out_md_results = results_dir / "table3.md"
-
-    with open(out_md_tables, "w", encoding="utf-8") as f:
-        f.write(md_content)
-    with open(out_md_manuscript, "w", encoding="utf-8") as f:
-        f.write(md_content)
-    with open(out_md_results, "w", encoding="utf-8") as f:
-        f.write(md_content)
-
-    # 2. Generate Excel Workbook with ESM Cover Sheet
-    esm_cover = pd.DataFrame([
-        {"Metadata Field": "Article Title", "Value": "Benchmarking Fine-Tuned Encoders and Instruction-Tuned Large Language Models for Adverse Event Clinical Concept Extraction from Spontaneous Reporting Narratives"},
-        {"Metadata Field": "Journal", "Value": "Drug Safety"},
-        {"Metadata Field": "Table Identifier", "Value": "Table 3: VAERS Master Performance Benchmark"},
-        {"Metadata Field": "Corpus", "Value": "Vaccine Adverse Event Reporting System (VAERS, N = 1,000 Reports)"},
-        {"Metadata Field": "Evaluation Framework", "Value": "Two-Tier Evaluation Framework (Tier 1: Strict CoNLL; Tier 2: Adapted ADE-Eval)"},
-        {"Metadata Field": "Generated By", "Value": "publication/scripts/generate_table3.py"}
-    ])
-
-    out_excel = tables_dir / "table3_master_benchmark_vaers.xlsx"
-    with pd.ExcelWriter(out_excel, engine="openpyxl") as writer:
-        esm_cover.to_excel(writer, sheet_name="ESM_Cover_Sheet", index=False)
-        df_table3.to_excel(writer, sheet_name="Table_3_VAERS_Benchmark", index=False)
-
-    print(f"Table 3 successfully exported to:\n  - {out_md_tables}\n  - {out_md_manuscript}\n  - {out_excel}")
+    print(f"Generated updated manuscript Table 3: {output_path}")
+    print(
+        "Corrected overlapping wrong-label pairs: "
+        f"LLaMA-4={llama_corrections:,}, Sonnet={sonnet_corrections:,}"
+    )
+    print(
+        f"LLaMA-4 corrected M/C/S/N: {llama.M:,}/{llama.C:,}/{llama.S:,}/{llama.N:,}"
+    )
+    print(
+        f"Sonnet corrected M/C/S/N: {sonnet.M:,}/{sonnet.C:,}/{sonnet.S:,}/{sonnet.N:,}"
+    )
+    print(f"ETHER M/C/S/N: {ether.M:,}/{ether.C:,}/{ether.S:,}/{ether.N:,}")
 
 
 if __name__ == "__main__":
