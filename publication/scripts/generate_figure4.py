@@ -11,10 +11,8 @@ All data are computed dynamically from raw model predictions and the Two-Tier Ev
 - 'N': Missed gold entity with zero pred overlap (False Negative).
 
 Outputs:
-- publication/results/figures/figure4.png
 - publication/manuscripts/Figures/figure4.png
-- publication/manuscripts/figure4.png
-- publication/results/figures/figure4_data.json
+- publication/manuscripts/Figures/figure4_data.json
 """
 
 from __future__ import annotations
@@ -42,8 +40,7 @@ import pandas as pd
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DB_PATH_DEFAULT = PROJECT_ROOT / "dataset.db"
 RESULTS_DIR_DEFAULT = PROJECT_ROOT / "results"
-FIGURES_DIR_DEFAULT = RESULTS_DIR_DEFAULT / "figures"
-MANUSCRIPT_DIR_DEFAULT = PROJECT_ROOT / "manuscripts"
+FIGURE_OUTPUT_DIR_DEFAULT = PROJECT_ROOT / "manuscripts" / "Figures"
 
 # 17 Fine-grained clinical concept categories in canonical presentation order
 CATS_17 = [
@@ -322,7 +319,7 @@ def generate_figure4(
     bert_seed: int,
     llama_predictions_path: Path,
     sonnet_predictions_path: Path,
-    output_png_paths: List[Path],
+    output_png_path: Path,
     output_json_path: Path,
 ) -> None:
     """Generate Figure 4 comparing BioBERT, Claude 4.6 Sonnet, and LLaMA-4."""
@@ -523,20 +520,10 @@ def generate_figure4(
     ax.legend(handles=custom_handles, loc="upper left", bbox_to_anchor=(0.01, 0.98),
               fontsize=9.5, framealpha=0.96, ncol=3, columnspacing=1.8, handletextpad=0.6)
 
-    primary_out = output_png_paths[0]
-    primary_out.parent.mkdir(parents=True, exist_ok=True)
-    plt.savefig(primary_out, dpi=300, bbox_inches="tight")
-    print(f"Saved figure: {primary_out}")
+    output_png_path.parent.mkdir(parents=True, exist_ok=True)
+    plt.savefig(output_png_path, dpi=300, bbox_inches="tight")
+    print(f"Saved figure: {output_png_path}")
     plt.close()
-
-    import shutil
-    for out_path in output_png_paths[1:]:
-        try:
-            out_path.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copyfile(str(primary_out), str(out_path))
-            print(f"Saved figure: {out_path}")
-        except Exception as e:
-            print(f"Warning: Could not copy figure to {out_path}: {e}")
 
     output_json_path.parent.mkdir(parents=True, exist_ok=True)
     with output_json_path.open("w", encoding="utf-8") as f:
@@ -548,7 +535,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--db-path", type=Path, default=DB_PATH_DEFAULT, help="Path to dataset.db")
     parser.add_argument("--results-dir", type=Path, default=RESULTS_DIR_DEFAULT, help="Path to results directory")
-    parser.add_argument("--manuscript-dir", type=Path, default=MANUSCRIPT_DIR_DEFAULT, help="Path to manuscripts directory")
+    parser.add_argument("--output-dir", type=Path, default=FIGURE_OUTPUT_DIR_DEFAULT, help="Canonical figure and audit-data output directory")
     parser.add_argument("--bert-seed", type=int, default=42, help="Random seed for BioBERT LOO (default: 42)")
     args = parser.parse_args()
 
@@ -556,12 +543,8 @@ def main():
     llama_preds = args.results_dir / "llama4_runs_FAERS" / "predictions.jsonl"
     sonnet_preds = args.results_dir / "sonnet_runs_FAERS" / "predictions.jsonl"
 
-    png_outputs = [
-        args.results_dir / "figures" / "figure4.png",
-        args.manuscript_dir / "Figures" / "figure4.png",
-        args.manuscript_dir / "figure4.png",
-    ]
-    json_output = args.results_dir / "figures" / "figure4_data.json"
+    png_output = args.output_dir / "figure4.png"
+    json_output = args.output_dir / "figure4_data.json"
 
     generate_figure4(
         db_path=args.db_path,
@@ -569,7 +552,7 @@ def main():
         bert_seed=args.bert_seed,
         llama_predictions_path=llama_preds,
         sonnet_predictions_path=sonnet_preds,
-        output_png_paths=png_outputs,
+        output_png_path=png_output,
         output_json_path=json_output,
     )
 

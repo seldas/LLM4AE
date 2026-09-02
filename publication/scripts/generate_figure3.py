@@ -14,11 +14,8 @@ Data sources:
 3. Claude 4.6 Sonnet predictions: publication/results/sonnet_runs_FAERS/predictions.jsonl (or raw)
 
 Outputs:
-- publication/results/figures/figure3.png
 - publication/manuscripts/Figures/figure3.png
-- publication/manuscripts/figure3.png
-- publication/results/manuscripts/Figures/figure3.png
-- publication/results/figures/figure3_data.json
+- publication/manuscripts/Figures/figure3_data.json
 """
 
 from __future__ import annotations
@@ -46,8 +43,7 @@ import pandas as pd
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DB_PATH_DEFAULT = PROJECT_ROOT / "dataset.db"
 RESULTS_DIR_DEFAULT = PROJECT_ROOT / "results"
-FIGURES_DIR_DEFAULT = RESULTS_DIR_DEFAULT / "figures"
-MANUSCRIPT_DIR_DEFAULT = PROJECT_ROOT / "manuscripts"
+FIGURE_OUTPUT_DIR_DEFAULT = PROJECT_ROOT / "manuscripts" / "Figures"
 
 # 17 Fine-grained clinical concept categories for Panel (a)
 CATS_17 = [
@@ -352,7 +348,7 @@ def generate_figure3(
     db_path: Path,
     llama_predictions_path: Path,
     sonnet_predictions_path: Path,
-    output_png_paths: List[Path],
+    output_png_path: Path,
     output_json_path: Path,
 ) -> None:
     """Generate Figure 3 directly from raw spans with canonical Two-Tier evaluation."""
@@ -662,20 +658,10 @@ def generate_figure3(
     ]
     ax1.legend(handles=custom_handles, loc="upper left", bbox_to_anchor=(0.01, 0.98), fontsize=8.5, framealpha=0.95, ncol=3)
 
-    primary_out = output_png_paths[0]
-    primary_out.parent.mkdir(parents=True, exist_ok=True)
-    plt.savefig(primary_out, dpi=300, bbox_inches="tight")
-    print(f"Saved figure: {primary_out}")
+    output_png_path.parent.mkdir(parents=True, exist_ok=True)
+    plt.savefig(output_png_path, dpi=300, bbox_inches="tight")
+    print(f"Saved figure: {output_png_path}")
     plt.close()
-
-    import shutil
-    for out_path in output_png_paths[1:]:
-        try:
-            out_path.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copyfile(str(primary_out), str(out_path))
-            print(f"Saved figure: {out_path}")
-        except Exception as e:
-            print(f"Warning: Could not copy figure to {out_path}: {e}")
 
     audit_data = {
         "framework": "Two-Tier Evaluation Framework (Class Confusion -> Conflation C)",
@@ -692,24 +678,20 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--db-path", type=Path, default=DB_PATH_DEFAULT, help="Path to dataset.db")
     parser.add_argument("--results-dir", type=Path, default=RESULTS_DIR_DEFAULT, help="Path to results directory")
-    parser.add_argument("--manuscript-dir", type=Path, default=MANUSCRIPT_DIR_DEFAULT, help="Path to manuscripts directory")
+    parser.add_argument("--output-dir", type=Path, default=FIGURE_OUTPUT_DIR_DEFAULT, help="Canonical figure and audit-data output directory")
     args = parser.parse_args()
 
     llama_preds = args.results_dir / "llama4_runs_FAERS" / "predictions.jsonl"
     sonnet_preds = args.results_dir / "sonnet_runs_FAERS" / "predictions.jsonl"
 
-    png_outputs = [
-        args.results_dir / "figures" / "figure3.png",
-        args.manuscript_dir / "Figures" / "figure3.png",
-        args.manuscript_dir / "figure3.png",
-    ]
-    json_output = args.results_dir / "figures" / "figure3_data.json"
+    png_output = args.output_dir / "figure3.png"
+    json_output = args.output_dir / "figure3_data.json"
 
     generate_figure3(
         db_path=args.db_path,
         llama_predictions_path=llama_preds,
         sonnet_predictions_path=sonnet_preds,
-        output_png_paths=png_outputs,
+        output_png_path=png_output,
         output_json_path=json_output,
     )
 

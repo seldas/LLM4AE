@@ -71,9 +71,8 @@ def draw_badge(draw: ImageDraw.ImageDraw, x: int, y: int, text: str, font: Image
 
 def main():
     repo_root = Path(__file__).resolve().parent.parent.parent
-    figures_dir = repo_root / "publication" / "results" / "figures"
+    figures_dir = repo_root / "publication" / "manuscripts" / "Figures"
     figures_dir.mkdir(parents=True, exist_ok=True)
-    manuscript_dir = repo_root / "publication" / "manuscripts"
 
     width, height = 1907, 861
     img = Image.new("RGB", (width, height), "white")
@@ -144,16 +143,12 @@ def main():
     cur_x += draw_styled_segment(draw, cur_x, y_a2, "for unknown", fonts["bold"], c_dark_green)
     cur_x += draw_styled_segment(draw, cur_x, y_a2, " indication.", fonts["regular"], c_black)
 
-    # Save to files
+    # Save once to the canonical manuscript figure directory.
     out_fig_path = figures_dir / "figure2.png"
-    out_manuscript_fig = manuscript_dir / "figure2.png"
-    out_docx_img = manuscript_dir / "extracted_images" / "image_01.png"
 
     img.save(out_fig_path, "PNG", dpi=(300, 300))
-    img.save(out_manuscript_fig, "PNG", dpi=(300, 300))
-    img.save(out_docx_img, "PNG", dpi=(300, 300))
 
-    print(f"Figure 2 successfully generated and saved to:\n  - {out_fig_path}\n  - {out_manuscript_fig}\n  - {out_docx_img}")
+    print(f"Figure 2 successfully generated: {out_fig_path}")
 
 
 if __name__ == "__main__":

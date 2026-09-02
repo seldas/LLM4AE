@@ -330,6 +330,10 @@ def parse_args() -> argparse.Namespace:
         "--bert-seed", type=int, default=42,
         help="LOO BERT random seed to include in Figure 5 (default: 42).",
     )
+    parser.add_argument(
+        "--output-dir", type=Path, default=None,
+        help="Canonical figure and audit-data output directory.",
+    )
     return parser.parse_args()
 
 
@@ -337,8 +341,7 @@ def main() -> None:
     args = parse_args()
     repo_root = Path(__file__).resolve().parents[2]
     results_dir = repo_root / "publication" / "results"
-    figures_dir = results_dir / "figures"
-    manuscript_dir = repo_root / "publication" / "manuscripts"
+    figures_dir = args.output_dir or repo_root / "publication" / "manuscripts" / "Figures"
     figures_dir.mkdir(parents=True, exist_ok=True)
 
     llama, bert, bert_path = load_inputs(repo_root, args.bert_seed)
@@ -399,25 +402,10 @@ def main() -> None:
     plot_word_cloud(figure.add_subplot(grid[2, 1]), history_terms, "Reds", "(e) MHx ↔ Dx / AE Confusion Terms by LLM", max_words=25)
     figure.subplots_adjust(left=0.08, right=0.98, bottom=0.05, top=0.96)
 
-    output_paths = [
-        figures_dir / "figure5.png",
-        manuscript_dir / "Figures" / "figure5.png",
-        manuscript_dir / "figure5.png",
-    ]
-    primary_out = output_paths[0]
-    primary_out.parent.mkdir(parents=True, exist_ok=True)
-    figure.savefig(primary_out, dpi=300, bbox_inches="tight")
-    print(f"Saved figure: {primary_out}")
+    output_path = figures_dir / "figure5.png"
+    figure.savefig(output_path, dpi=300, bbox_inches="tight")
+    print(f"Saved figure: {output_path}")
     plt.close(figure)
-
-    import shutil
-    for out_path in output_paths[1:]:
-        try:
-            out_path.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copyfile(str(primary_out), str(out_path))
-            print(f"Saved figure: {out_path}")
-        except Exception as e:
-            print(f"Warning: Could not copy figure to {out_path}: {e}")
 
     audit_path = figures_dir / "figure5_data.json"
     save_audit_data(
@@ -425,9 +413,7 @@ def main() -> None:
         bert_raw_counts, llama_raw_counts, bert_counts, llama_counts,
         bert_top, llama_top, drug_terms, history_terms,
     )
-    print("Saved Figure 5:")
-    for path in output_paths:
-        print(f"  - {path}")
+    print(f"Saved Figure 5: {output_path}")
     print(f"Saved audit data: {audit_path}")
 
 
