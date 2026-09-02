@@ -97,7 +97,6 @@ except ImportError:
 # -----------------------------------------------------------------------------
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_DB_PATH = PROJECT_ROOT / "dataset.db"
-DEFAULT_DATA_DIR = PROJECT_ROOT / "Datasets" / "FAERS_D1_clean"
 DEFAULT_RESULTS_DIR = PROJECT_ROOT / "results" / "bert_runs_FAERS_LOO"
 # Saved models retain this registry reference in config.cfg.  Keep the scorer
 # with the repository so ``--export-existing`` can load cloud-trained models.
@@ -124,25 +123,6 @@ FAERS_CASE_SERIES = [
     "Baricitinib-Hypersensitivity",
     "Erenumab-Stroke",
 ]
-
-CASE_SERIES_KEYWORDS = {
-    "Azacitidine-QT": {
-        "drugs": ["azacitidine", "vidaza", "5-aza", "azacytidine", "aza"],
-        "aes": ["qt", "torsade", "ventricular", "cardiac", "arrhythmia", "ecg", "electrocardiogram", "prolongation", "myelodysplastic", "raeb", "leukemia", "aml"],
-    },
-    "Tramadol-Hypoglycemia": {
-        "drugs": ["tramadol", "ultram", "tramacet", "ixprim", "trarmadol", "tremadol", "tramal", "zydol"],
-        "aes": ["hypoglyc", "glucose", "glycemia", "sweating", "coma", "blood sugar", "insulin"],
-    },
-    "Baricitinib-Hypersensitivity": {
-        "drugs": ["baricitinib", "olumiant", "barcitinib", "olimiant"],
-        "aes": ["hypersensitiv", "allergic", "allergy", "anaphylax", "rash", "urticaria", "hives", "swelling", "angioedema", "face swollen", "lip", "tongue", "erythema", "pruritus", "dermatitis", "rheumatoid", "arthritis"],
-    },
-    "Erenumab-Stroke": {
-        "drugs": ["erenumab", "aimovig"],
-        "aes": ["stroke", "cva", "cerebrovascular", "ischemi", "infarct", "transient ischemic", "tia", "migraine", "headache", "hemiplegia"],
-    },
-}
 
 # -----------------------------------------------------------------------------
 # Label normalization & Taxonomy
@@ -287,41 +267,65 @@ def _normalize_raw_label(raw_label: object) -> Optional[str]:
     return _RAW_TO_LABEL_CASEFOLD.get(raw.casefold())
 
 
-def classify_case_series(text: str, annotations: List[Tuple[int, int, str]]) -> str:
-    """
-    Classify a FAERS document into one of the 4 Drug-AE case series using narrative text
-    and gold annotations.
-    """
-    text_lower = text.lower()
-    ann_drugs = " ".join([text[s:e].lower() for s, e, l in annotations if l in ("sdrug", "cdrug", "odrug", "drug")])
-    ann_aes = " ".join([text[s:e].lower() for s, e, l in annotations if l in ("ae", "mae")])
-    combined = f"{text_lower} {ann_drugs} {ann_aes}"
-
-    scores = {}
-    for series_name, kw in CASE_SERIES_KEYWORDS.items():
-        drug_matches = sum(combined.count(d) for d in kw["drugs"])
-        ae_matches = sum(combined.count(a) for a in kw["aes"])
-        scores[series_name] = drug_matches * 10 + ae_matches
-
-    best_series = max(scores, key=scores.get)
-    return best_series
-
-
 def load_records_from_db(db_path: Path) -> Tuple[List[dict], Dict[str, Any]]:
-    """Load FAERS documents and SME1 gold annotations from SQLite dataset.db."""
+    """Load included FAERS documents, fixed case series, and SME1 annotations."""
     if not db_path.exists():
         raise FileNotFoundError(f"Database not found: {db_path}")
 
     conn = sqlite3.connect(str(db_path))
     cursor = conn.cursor()
 
+    table_exists = cursor.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='faers_case_series'"
+    ).fetchone()
+    if table_exists is None:
+        conn.close()
+        raise ValueError(
+            "dataset.db has no faers_case_series table. Run "
+            "publication/scripts/store_faers_case_series.py first."
+        )
+
+    metadata_rows = cursor.execute(
+        """
+        SELECT d.doc_id, cs.case_series, cs.include_in_loo
+        FROM documents AS d
+        LEFT JOIN faers_case_series AS cs ON cs.doc_id = d.doc_id
+        WHERE d.dataset = 'FAERS'
+        ORDER BY d.doc_id
+        """
+    ).fetchall()
+    missing_metadata = [doc_id for doc_id, _, include in metadata_rows if include is None]
+    if missing_metadata:
+        conn.close()
+        raise ValueError(
+            "Missing faers_case_series metadata for FAERS documents: "
+            f"{missing_metadata[:10]}"
+        )
+
+    invalid_series = [
+        (doc_id, series)
+        for doc_id, series, include in metadata_rows
+        if include == 1 and series not in FAERS_CASE_SERIES
+    ]
+    if invalid_series:
+        conn.close()
+        raise ValueError(f"Invalid included FAERS case-series values: {invalid_series[:10]}")
+
     docs_rows = cursor.execute(
-        "SELECT doc_id, base_id, suffix, page_text FROM documents WHERE dataset='FAERS' ORDER BY doc_id;"
+        """
+        SELECT d.doc_id, d.base_id, d.suffix, d.page_text, cs.case_series
+        FROM documents AS d
+        JOIN faers_case_series AS cs ON cs.doc_id = d.doc_id
+        WHERE d.dataset = 'FAERS' AND cs.include_in_loo = 1
+        ORDER BY d.doc_id
+        """
     ).fetchall()
 
     anns_rows = cursor.execute(
-        "SELECT doc_id, label, tc_start, tc_end FROM annotations "
-        "WHERE note='SME1' ORDER BY doc_id, tc_start;"
+        "SELECT annotations.doc_id, label, tc_start, tc_end FROM annotations "
+        "JOIN faers_case_series AS cs ON cs.doc_id = annotations.doc_id "
+        "WHERE note='SME1' AND cs.include_in_loo = 1 "
+        "ORDER BY annotations.doc_id, tc_start;"
     ).fetchall()
     conn.close()
 
@@ -349,7 +353,7 @@ def load_records_from_db(db_path: Path) -> Tuple[List[dict], Dict[str, Any]]:
     records = []
     series_distribution = Counter()
 
-    for doc_id, base_id, suffix, raw_text in docs_rows:
+    for doc_id, base_id, suffix, raw_text, case_series in docs_rows:
         text_norm = raw_text.replace("↵", "\n")
         doc_anns = anns_by_doc.get(doc_id, [])
 
@@ -360,7 +364,6 @@ def load_records_from_db(db_path: Path) -> Tuple[List[dict], Dict[str, Any]]:
             else:
                 stats["out_of_bounds_offsets"] += 1
 
-        case_series = classify_case_series(text_norm, valid_anns)
         series_distribution[case_series] += 1
 
         records.append({
@@ -372,59 +375,21 @@ def load_records_from_db(db_path: Path) -> Tuple[List[dict], Dict[str, Any]]:
             "case_series": case_series,
         })
 
+    stats["documents_available"] = len(metadata_rows)
+    stats["documents_excluded_from_loo"] = sum(
+        1 for _, _, include in metadata_rows if include == 0
+    )
     stats["documents_loaded"] = len(records)
     stats["case_series_distribution"] = dict(series_distribution)
     return records, dict(stats)
 
 
 def load_records_from_json(data_dir: Path) -> Tuple[List[dict], Dict[str, Any]]:
-    """Fallback: Load FAERS records from JSON directory."""
-    if not data_dir.exists():
-        raise FileNotFoundError(f"JSON data dir not found: {data_dir}")
-
-    records = []
-    stats = defaultdict(int)
-    files = sorted(data_dir.glob("*.json"))
-
-    for fpath in files:
-        with fpath.open(encoding="utf-8") as f:
-            doc = json.load(f)
-        pages = doc.get("pages", [])
-        page_text = str(pages[0]) if pages else ""
-        text_norm = page_text.replace("↵", "\n")
-
-        sme_anns = []
-        for ann in doc.get("annotations", []):
-            if ann.get("note") != "SME1":
-                continue
-            stats["sme1_annotations_seen"] += 1
-            raw_label = ann.get("label", "")
-            canon = _normalize_raw_label(raw_label)
-            if canon is None:
-                stats["excluded_or_unmapped_labels"] += 1
-                continue
-            tc = ann.get("textContext") or {}
-            try:
-                start = int(tc.get("start"))
-                end = int(tc.get("end"))
-            except (TypeError, ValueError):
-                continue
-            if 0 <= start < end <= len(text_norm):
-                sme_anns.append((start, end, canon))
-                stats["annotations_kept"] += 1
-
-        case_series = classify_case_series(text_norm, sme_anns)
-        records.append({
-            "doc_id": fpath.stem,
-            "base_id": fpath.stem.split("-")[0] if "-" in fpath.stem else fpath.stem,
-            "suffix": 1,
-            "text": text_norm,
-            "annotations": sme_anns,
-            "case_series": case_series,
-        })
-
-    stats["documents_loaded"] = len(records)
-    return records, dict(stats)
+    """Reject the legacy JSON fallback, which lacks reviewed series metadata."""
+    raise RuntimeError(
+        "FAERS BERT LOO requires dataset.db with persisted case-series "
+        "assignments; keyword-based JSON classification is disabled."
+    )
 
 
 # -----------------------------------------------------------------------------
@@ -1446,7 +1411,6 @@ def parse_args():
         ),
     )
     parser.add_argument("--db-path", type=Path, default=DEFAULT_DB_PATH)
-    parser.add_argument("--data-dir", type=Path, default=DEFAULT_DATA_DIR)
     parser.add_argument("--results-dir", type=Path, default=DEFAULT_RESULTS_DIR)
     parser.add_argument("--ref-scorer", type=Path, default=DEFAULT_REF_SCORER)
     parser.add_argument("--train-python", type=str, default=DEFAULT_TRAIN_PYTHON)
@@ -1478,14 +1442,14 @@ def main():
         return
 
     # 1. Load data
-    if args.db_path.exists():
-        console_print(f"Loading authoritative FAERS dataset from SQLite: {args.db_path}")
-        records, stats = load_records_from_db(args.db_path)
-    else:
-        console_print(f"Database not found. Loading from JSON directory: {args.data_dir}")
-        records, stats = load_records_from_json(args.data_dir)
+    console_print(f"Loading authoritative FAERS dataset from SQLite: {args.db_path}")
+    records, stats = load_records_from_db(args.db_path)
 
-    console_print(f"Total FAERS Documents: {len(records)} | Annotations: {stats.get('annotations_kept', 0)}")
+    console_print(
+        f"FAERS Documents Used: {len(records)} | "
+        f"Excluded: {stats.get('documents_excluded_from_loo', 0)} | "
+        f"Annotations: {stats.get('annotations_kept', 0)}"
+    )
     console_print("Case Series Stratification:")
     for series, count in stats.get("case_series_distribution", {}).items():
         console_print(f"  * {series:<32}: {count:4d} reports ({count/len(records):.1%})")

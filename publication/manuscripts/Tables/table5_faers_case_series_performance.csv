@@ -1,0 +1,6 @@
+﻿Drug–Event Case Series,Validation Cohort Size,Strict Exact F1,Adapted ADE-Eval F1
+Azacitidine – QT Prolongation,199,0.6003 ± 0.0114,0.7733 ± 0.0092
+Baricitinib – Hypersensitivity,97,0.6366 ± 0.0201,0.7751 ± 0.0128
+Tramadol – Hypoglycemia,339,0.5289 ± 0.0093,0.7242 ± 0.0036
+Erenumab – Stroke,194,0.5084 ± 0.0122,0.7126 ± 0.0077
+Total (Micro-Average),829,0.5564 ± 0.0069,0.7420 ± 0.0061
