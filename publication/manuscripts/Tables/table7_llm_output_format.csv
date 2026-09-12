@@ -1,0 +1,4 @@
+﻿Model,Output Paradigm,Strict Exact-Match F1,Adapted ADE-Eval F1
+LLaMA-4,Inline Tagged,0.3944,0.6495
+LLaMA-4,JSON,0.4071,0.6305
+Claude 4.6 Sonnet,Inline Tagged,0.4535,0.6597

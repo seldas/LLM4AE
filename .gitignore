@@ -1,0 +1,69 @@
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+# dependencies
+**/node_modules
+/.pnp
+.pnp.js
+**/.ipynb_checkpoints
+venv/
+.venv/
+certbot/
+
+# testing
+/coverage
+
+# production
+**/build
+
+# misc
+__pycache__
+.DS_Store
+**/.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+**/server_status.log
+
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+archived/
+
+#train data folder
+development/BERT/Error_analysis/model
+development/BERT/new_results/model
+development/BERT/new_results/data
+development/NER/output/model-best/transformer/model
+development/NER/data
+
+# data folder
+/server/history
+/server/database/
+
+.geminiignore
+
+.claude/
+.venv/
+__pycache__/
+.ipynb_checkpoints/
+.env
+
+publication/Datasets/FAERS_D1_clean/*.json
+publication/Datasets/VAERS/*.json
+publication/results/**/model/
+publication/results/**/*.spacy
+publication/results/**/workdir/
+
+.codex_work/
+~$*
+# Sensitive Raw Data / Patient Narratives (Publication Protection)
+*.db
+*.sqlite
+*.sqlite3
+*.jsonl
+*.log
+publication/results/**/raw.xlsx
+publication/results/**/*raw*.xlsx
+publication/Datasets/
